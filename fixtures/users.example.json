@@ -1,0 +1,41 @@
+{
+  "$schema": "https://github.com/nemarOrg/orcid-mock/blob/main/fixtures/users.schema.json",
+  "clients": [
+    { "client_id": "APP-MOCKCLIENT000001", "client_secret": "mock-secret", "redirect_uris": ["http://localhost:4321/auth/orcid/callback"], "member": false }
+  ],
+  "users": [
+    {
+      "orcid": "",
+      "password": "test",
+      "name": { "given_names": "Ada", "family_name": "Lovelace", "credit_name": null, "visibility": "public" },
+      "emails": [
+        { "email": "ada@example.test", "primary": true, "verified": true, "visibility": "private" }
+      ],
+      "biography": { "value": "First programmer.", "visibility": "public" },
+      "employments": [
+        { "put_code": 1001, "organization": "Analytical Engine Society", "department": "Computation", "role_title": "Mathematician", "start_date": "1843-01", "end_date": null, "visibility": "public" }
+      ],
+      "works": [
+        { "put_code": 2001, "title": "Notes on the Analytical Engine", "type": "journal-article", "publication_date": "1843", "external_ids": [{ "type": "doi", "value": "10.5555/example.1843" }], "visibility": "public" }
+      ]
+    },
+    {
+      "orcid": "0009-0009-0000-0012",
+      "password": "test",
+      "name": { "given_names": "Grace", "family_name": null, "credit_name": null, "visibility": "public" },
+      "emails": [
+        { "email": "grace@example.test", "primary": true, "verified": false, "visibility": "private" }
+      ],
+      "employments": [],
+      "works": []
+    },
+    {
+      "orcid": "0009-0009-0000-0020",
+      "password": "test",
+      "name": { "given_names": "Private", "family_name": "Person", "credit_name": null, "visibility": "private" },
+      "emails": [],
+      "employments": [],
+      "works": []
+    }
+  ]
+}
