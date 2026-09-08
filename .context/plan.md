@@ -68,6 +68,27 @@ One codebase, four ways to run it, in order of how much the user controls:
 Control comes from the same three knobs everywhere: the users file, `PUBLIC_BASE_URL`, and the admin API (`reset`, `users`); the hosted mode adds a tenant token and a time-to-live.
 Paths 1 and 2 are MVP1; paths 3 and 4 are MVP2 and share the storage interface decided above.
 
+### Every other channel worth having
+
+All of these wrap the same binary or image; none needs new server code.
+
+MVP1, nearly free once the image and the `bun build --compile` binary exist:
+
+- Container image on GitHub's registry (`ghcr.io/nemarorg/orcid-mock`), multi-arch (amd64 and arm64), tagged by version and `latest`, with a `docker-compose.yml` example.
+- Static binaries per platform attached to each GitHub Release (Linux, macOS, Windows, both architectures), so no runtime install at all.
+- A GitHub Action (`nemarOrg/orcid-mock-action` or `uses: nemarOrg/orcid-mock@v1`) that pulls the image, waits for health, and exports `ORCID_API_BASE`; one line in a workflow instead of a `services:` block.
+- A Testcontainers module for Node and for Python, so integration tests start and stop it themselves.
+- A Playwright fixture (`signInAs(iD)`) and a pytest plugin (`orcid_mock` fixture) built on the admin API.
+
+MVP2:
+
+- Homebrew tap and a Nix flake for the binary.
+- A Dev Container feature, so a codespace has it running on open.
+- Helm chart and a plain Kubernetes manifest for teams whose CI runs in a cluster.
+- One-click templates for Cloudflare (deploy button), Fly.io, Railway, and Render, each pointing at the same image or Worker.
+- A VS Code task and an `npx`-compatible shim for people without Bun.
+
+
 ## Open questions
 
 1. The website repository forbids mocks by policy; a real ORCID-shaped server on the network is a boundary stand-in like the backend's existing fixtures, but that reading needs the owner's sign-off before a live website test lands.
