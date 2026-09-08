@@ -56,6 +56,18 @@ so that an integration written against it also works against the real ORCID.
 - Hosted service: multi-tenant, a tenant per token with an isolated user set and a time-to-live, deployed as a Cloudflare Worker with Durable Objects (or on nemar infrastructure), with a small page to create a tenant and upload a fixture, so anyone can point a staging system at it without running anything.
 - XML representation, webhooks, rate-limit and 503 emulation, JWKS rotation.
 
+## Distribution: how people get one
+
+One codebase, four ways to run it, in order of how much the user controls:
+
+1. Local process: `bunx @nemarorg/orcid-mock --users users.json`; the user owns everything, nothing leaves the machine.
+2. CI service container: `ghcr.io/nemarorg/orcid-mock` in a GitHub Actions `services:` block with a health check; one fresh instance per job, gone when the job ends; the fixture file ships with the repository under test.
+3. Self-hosted Worker: `wrangler deploy` from the repository (or a deploy button) puts a private instance on the user's own Cloudflare account; the same code, the Durable Object store, their own base URL.
+4. Hosted by NEMAR: one public multi-tenant instance where a caller creates a tenant, uploads a fixture, and receives an isolated base URL that expires; nothing to install, for people who only want to point a staging system somewhere.
+
+Control comes from the same three knobs everywhere: the users file, `PUBLIC_BASE_URL`, and the admin API (`reset`, `users`); the hosted mode adds a tenant token and a time-to-live.
+Paths 1 and 2 are MVP1; paths 3 and 4 are MVP2 and share the storage interface decided above.
+
 ## Open questions
 
 1. The website repository forbids mocks by policy; a real ORCID-shaped server on the network is a boundary stand-in like the backend's existing fixtures, but that reading needs the owner's sign-off before a live website test lands.
