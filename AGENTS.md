@@ -42,6 +42,32 @@ Project-specific rules:
 
 `fixtures/users.example.json` shows the fixture shape until the JSON Schema lands.
 
+## Reading the shared documentation, and what to do when you cannot
+
+`docs.nemar.org` is the canonical surface for anything about the NEMAR platform rather than about
+this repository (nemar-cli ADR 0057). Public pages need nothing; fetch the URL. **Every page also
+has a Markdown mirror at the same path plus `.md`**, which is what to fetch if you are a program,
+and `https://docs.nemar.org/llms.txt` indexes them.
+
+```bash
+curl -s https://docs.nemar.org/platform/hosts-and-routes.md
+```
+
+Pages under `/admin/` are gated: `nemarOrg/docs` is private at source and the gate admits the
+`admin` and `owner` roles only. An admin holding a NEMAR CLI key reads one without a browser:
+
+```bash
+nemar admin docs admin/operations/systems-inventory
+```
+
+**If you cannot read something you need, open the issue anyway.** Losing read access must not
+cost you the ability to report a problem. File it on the relevant repository, say plainly what
+you could not read and what you were trying to do, and tag **`@nemarOrg/admins`**. Someone with
+access will either answer or open the page for you.
+
+Escalation replaces read access. **Silence does not.** A blocked agent that stops without saying
+so is the failure mode this instruction exists to prevent.
+
 ## Workflow
 
 Multi-phase work runs through the epic workflow (`/project:epic-dev` in Claude Code) from the MVP1 epic issue:
