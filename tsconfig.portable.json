@@ -5,6 +5,6 @@
     "lib": ["ES2023", "WebWorker"],
     "skipLibCheck": true
   },
-  "files": ["src/app.ts"],
-  "include": []
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/main.ts", "src/server.ts"]
 }
