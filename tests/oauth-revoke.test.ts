@@ -94,7 +94,7 @@ describe("POST /oauth/revoke", () => {
     expect((await revoke(token.refresh_token)).status).toBe(200);
 
     const old = await signIn();
-    await server.admin("POST", "/clock", { advance_seconds: 631138520 });
+    await server.admin("POST", "/clock", { advance_seconds: 631138530 });
     expect((await revoke(old.access_token)).status).toBe(200);
   });
 

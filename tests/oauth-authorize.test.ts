@@ -85,7 +85,7 @@ describe("the headless round trip with login_as", () => {
     expect(result.location).toContain("%2541");
     expect(result.location).not.toContain("%252541");
 
-    // A session cookie with the flags the brief fixes, and nothing else (no Max-Age, no Domain).
+    // A session cookie with exactly these flags (no Max-Age, no Domain).
     const setCookie = result.response.headers.getSetCookie();
     expect(setCookie).toHaveLength(1);
     expect(setCookie[0]).toMatch(

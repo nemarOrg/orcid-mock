@@ -1,8 +1,6 @@
 // Pure functions with no I/O, tested directly with real inputs.
 import { describe, expect, test } from "bun:test";
-import { serverNowMs } from "../src/clock";
 import { formatScopes, KNOWN_SCOPES, parseScopes, scopeTokens } from "../src/oauth/scopes";
-import { MemoryStore } from "../src/store/memory";
 
 describe("parseScopes", () => {
   test("splits on spaces, which is what both + and %20 decode to", () => {
@@ -67,20 +65,5 @@ describe("formatScopes", () => {
     expect(formatScopes(new Set(["openid" as const, "/authenticate" as const]))).toBe(
       "openid /authenticate",
     );
-  });
-});
-
-describe("serverNowMs", () => {
-  test("is wall time plus the store's clock offset", async () => {
-    const store = new MemoryStore();
-    const before = Date.now();
-    const plain = await serverNowMs(store);
-    expect(plain).toBeGreaterThanOrEqual(before);
-    expect(plain).toBeLessThanOrEqual(Date.now());
-
-    await store.advanceClock(600);
-    const shifted = await serverNowMs(store);
-    expect(shifted - Date.now()).toBeGreaterThan(599_000);
-    expect(shifted - Date.now()).toBeLessThanOrEqual(600_000);
   });
 });

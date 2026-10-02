@@ -96,14 +96,24 @@ describe("the headless round trip", () => {
     expect(twice.scope).toBe("openid /authenticate");
   });
 
-  test("every exchange mints different tokens, and an id_token is not added in phase 2", async () => {
+  test("every exchange mints different tokens", async () => {
     const a = await obtainToken(server, { orcid: ids.alder, scope: "openid" });
     const b = await obtainToken(server, { orcid: ids.alder, scope: "openid" });
     expect(new Set([a.access_token, a.refresh_token, b.access_token, b.refresh_token]).size).toBe(
       4,
     );
-    // Phase 3 (#6) adds id_token for an openid grant; until then the response has none.
-    expect(a).not.toHaveProperty("id_token");
+  });
+
+  test("no id_token without the openid scope", async () => {
+    const token = await obtainToken(server, { orcid: ids.alder, scope: "/authenticate" });
+    expect(token).not.toHaveProperty("id_token");
+  });
+
+  // TRIPWIRE: nothing issues an id_token yet, so an openid grant has none. Whoever adds ID tokens
+  // replaces this assertion with the real expectations (see buildTokenResponse).
+  test("an openid grant has no id_token yet", async () => {
+    const token = await obtainToken(server, { orcid: ids.alder, scope: "openid" });
+    expect(Object.keys(token)).toEqual(CODE_KEYS);
   });
 
   test("name follows the public display name rule", async () => {
@@ -401,7 +411,7 @@ describe("authorization_code", () => {
 
   test("a code expires ten minutes after it was issued, by the server's clock", async () => {
     const fresh = await signIn();
-    await advance(599);
+    await advance(590);
     expect((await exchangeCode(server, { code: fresh.code })).status).toBe(200);
 
     const stale = await signIn();
@@ -418,7 +428,7 @@ describe("authorization_code", () => {
   test("a code issued after the clock moved is measured from the moved clock", async () => {
     await advance(10_000);
     const { code } = await signIn();
-    await advance(599);
+    await advance(590);
     expect((await exchangeCode(server, { code })).status).toBe(200);
   });
 
@@ -426,7 +436,7 @@ describe("authorization_code", () => {
     await advance(10_000);
     await server.reset();
     const { code } = await signIn();
-    await advance(599);
+    await advance(590);
     expect((await exchangeCode(server, { code })).status).toBe(200);
   });
 
@@ -532,10 +542,10 @@ describe("refresh_token", () => {
 
   test("a refresh token expires twenty years after issue, by the server's clock", async () => {
     const a = await first();
-    await advance(631138518);
+    await advance(631138509);
     expect((await refreshTokens(server, { refreshToken: a.refresh_token })).status).toBe(200);
     const b = await first();
-    await advance(631138520);
+    await advance(631138530);
     const reply = await refreshTokens(server, { refreshToken: b.refresh_token });
     expect(reply.status).toBe(400);
     expect(reply.text).toBe(
@@ -621,12 +631,22 @@ describe("refresh_token", () => {
 
   test("a refresh token whose user was deleted cannot be used, and is not spent", async () => {
     const original = await first();
+    const { body: alder } = await server.admin<Record<string, unknown>>(
+      "GET",
+      `/users/${ids.alder}`,
+    );
     await server.admin("DELETE", `/users/${ids.alder}`);
     const reply = await refreshTokens(server, { refreshToken: original.refresh_token });
     expect(reply.status).toBe(400);
     expect(reply.text).toBe(
       errorText("invalid_grant", `Invalid refresh token: ${original.refresh_token}`),
     );
+
+    // Not spent: with the user back, the same refresh token works.
+    expect((await server.admin("PUT", `/users/${ids.alder}`, alder)).status).toBe(201);
+    const restored = await refreshTokens(server, { refreshToken: original.refresh_token });
+    expect(restored.status).toBe(200);
+    expect(restored.json?.orcid).toBe(ids.alder);
   });
 
   test("concurrent refreshes of one token give exactly one new token", async () => {

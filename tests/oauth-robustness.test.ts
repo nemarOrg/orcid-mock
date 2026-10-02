@@ -60,6 +60,7 @@ describe("malformed input never reaches a 5xx", () => {
         expect(response.status).toBeLessThan(500);
         await response.arrayBuffer();
       }
+      // Every value in WEIRD is legal as a header value, so a rejection here is a real failure.
       const withCookie = await fetch(
         authorizeUrl(server.baseUrl, {
           client_id: CLIENTS.public.client_id,
@@ -69,8 +70,8 @@ describe("malformed input never reaches a 5xx", () => {
           prompt: "none",
         }),
         { redirect: "manual", headers: { cookie: `orcid_mock_session=${weird.slice(0, 200)}` } },
-      ).catch(() => null);
-      if (withCookie) expect(withCookie.status).toBeLessThan(500);
+      );
+      expect(withCookie.status).toBeLessThan(500);
     }
   });
 
