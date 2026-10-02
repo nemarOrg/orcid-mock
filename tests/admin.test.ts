@@ -870,6 +870,73 @@ describe("DNS-rebinding protection", () => {
     }
   });
 
+  test("only the listed loopback spellings pass: not a trailing dot, an expanded ::1, or fullwidth letters", async () => {
+    for (const host of [
+      "localhost.",
+      "localhost.:9700",
+      "[0:0:0:0:0:0:0:1]",
+      "[0:0:0:0:0:0:0:1]:9700",
+      "[::ffff:127.0.0.1]",
+      "127.1",
+      "0x7f.0.0.1",
+      "\uFF4C\uFF4F\uFF43\uFF41\uFF4C\uFF48\uFF4F\uFF53\uFF54", // fullwidth "localhost"
+      "\uFF4C\uFF4F\uFF43\uFF41\uFF4C\uFF48\uFF4F\uFF53\uFF54:9700",
+    ]) {
+      const reply = await get("/users", host);
+      expect([host, reply.status, reply.json]).toEqual([host, 403, { error: "forbidden_host" }]);
+    }
+  });
+
+  test("two Host headers are refused whichever comes first", async () => {
+    const own = new URL(server.baseUrl).host;
+    // The helper writes its own `Host` line first, then any header given, so each order is a
+    // request with two `Host` headers.
+    for (const [first, second] of [
+      [own, "evil.example"],
+      ["evil.example", own],
+      ["evil.example", "evil.example"],
+    ] as const) {
+      const reply = await rawRequest(
+        server,
+        "GET",
+        "/__admin/users",
+        { Accept: "application/json", Host: second },
+        first,
+      );
+      // Bun joins the two values with a comma, which is not a valid hostname.
+      expect([first, second, reply.status, reply.json]).toEqual([
+        first,
+        second,
+        403,
+        { error: "forbidden_host" },
+      ]);
+    }
+  });
+
+  test("an absolute-form request target is judged by its Host header, which a browser controls", async () => {
+    // A browser always sends the origin form, so a rebinding page cannot produce this request, and
+    // whoever can write one can send any `Host` anyway. Bun builds the URL from `Host` and ignores
+    // the target's authority, so the guard sees the same name the router does.
+    const refused = await rawRequest(
+      server,
+      "GET",
+      "http://evil/__admin/users",
+      { Accept: "application/json" },
+      "evil",
+    );
+    expect([refused.status, refused.json]).toEqual([403, { error: "forbidden_host" }]);
+
+    const served = await rawRequest(
+      server,
+      "GET",
+      "http://evil/__admin/users",
+      { Accept: "application/json" },
+      new URL(server.baseUrl).host,
+    );
+    expect(served.status).toBe(200);
+    expect(Array.isArray(served.json)).toBe(true);
+  });
+
   test("a foreign Origin on a loopback Host is still the origin error", async () => {
     const reply = await get("/health", "localhost", { Origin: "https://evil.example.test" });
     expect([reply.status, reply.json]).toEqual([403, { error: "forbidden_origin" }]);
