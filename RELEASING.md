@@ -113,9 +113,14 @@ Do them in this order.
    Expect green, with notices that the npm token and the PyPI trusted publisher were not checked ([Dry run](#dry-run)).
 4. **npm.**
    The `@nemarorg` scope must exist.
-   Create a granular access token ([npm's documentation](https://docs.npmjs.com/about-access-tokens): classic tokens were revoked in November 2025, so a granular token is the only kind) with read and write permission on `@nemarorg/orcid-mock` and `@nemarorg/orcid-mock-testing`, or on the scope (a package that does not exist yet cannot be named, so a scope-wide token is the simple choice before the first release), and with the two-factor authentication (2FA) bypass ("Bypass 2FA") checked, because nobody is present to enter a one-time password in a workflow.
-   A granular token that can write is capped at 90 days ([GitHub changelog, 5 November 2025](https://github.blog/changelog/2025-11-05-npm-security-update-classic-token-creation-disabled-and-granular-token-changes/)), so put the expiry date in your calendar and replace the secret before it passes; the workflow's `bun pm whoami` check fails the release early, before anything is public, when the token has expired.
-   Be aware that npm's documentation says the ability to publish directly with a bypass-2FA token is scheduled for removal in January 2027, in favor of trusted publishing (OpenID Connect) or stage-only tokens, and that trusted publishing needs the npm command line, not `bun publish` ([oven-sh/bun#22423](https://github.com/oven-sh/bun/issues/22423)).
+   Create a granular access token ([npm's documentation](https://docs.npmjs.com/about-access-tokens): classic tokens were revoked on [9 December 2025](https://github.blog/changelog/2025-12-09-npm-classic-tokens-revoked-session-based-auth-and-cli-token-management-now-available/), so a granular token is the only kind)
+   with read and write permission on `@nemarorg/orcid-mock` and `@nemarorg/orcid-mock-testing`, or on the scope (a package that does not exist yet cannot be named, so a scope-wide token is the simple choice before the first release),
+   and with the two-factor authentication (2FA) bypass ("Bypass 2FA") checked, because nobody is present to enter a one-time password in a workflow.
+   A granular token that can write is capped at 90 days ([GitHub changelog, 5 November 2025](https://github.blog/changelog/2025-11-05-npm-security-update-classic-token-creation-disabled-and-granular-token-changes/)),
+   so put the expiry date in your calendar and replace the secret before it passes;
+   the workflow's `bun pm whoami` check fails the release early, before anything is public, when the token has expired.
+   Be aware that npm's documentation says the ability to publish directly with a bypass-2FA token is scheduled for removal in January 2027, in favor of trusted publishing (OpenID Connect) or stage-only tokens,
+   and that trusted publishing needs the npm command line, not `bun publish` ([oven-sh/bun#22423](https://github.com/oven-sh/bun/issues/22423)).
    The publish job will need rework before then; [ADR 0005](.context/decisions/0005-distribution-and-release.md) records this.
 5. **GitHub environment `release`** (Settings, Environments, New environment), created before any run.
    Under "Deployment branches and tags", choose "Selected branches and tags" and add a tag rule `v*.*.*`.
@@ -124,11 +129,15 @@ Do them in this order.
    Only the `preflight` and `npm` jobs use the environment, and only on real runs.
 6. **PyPI.**
    The name `orcid-mock-testing` was free on PyPI on 2026-10-01.
-   The first release creates the project, through a pending trusted publisher, so create that before tagging: sign in at pypi.org, open Your account, Publishing, and add a pending publisher for the project `orcid-mock-testing` with owner `nemarOrg`, repository `orcid-mock`, workflow `release.yml`, and environment `pypi` ([PyPI's documentation](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)).
+   The first release creates the project, through a pending trusted publisher, so create that before tagging:
+   sign in at pypi.org, open Your account, Publishing, and add a pending publisher for the project `orcid-mock-testing` with owner `nemarOrg`, repository `orcid-mock`, workflow `release.yml`, and environment `pypi` ([PyPI's documentation](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)).
    There is no token to create or rotate; the `pypi` job's OpenID Connect identity is the credential.
-   Nothing can check this setup before it is used: a mistyped repository, workflow, or environment name in the pending publisher surfaces only when the `pypi` job runs, which is after the image and the npm packages are public.
-   A re-run converges (the image tag, the npm versions, and the files already published are skipped), so the repair is to fix the publisher on pypi.org and re-run the failed job; but check the four values twice before tagging.
-   Then create the **GitHub environment `pypi`** (Settings, Environments, New environment) with the same tag rule `v*.*.*`; "Required reviewers" is optional, and it needs no secret.
+   Nothing can check this setup before it is used:
+   a mistyped repository, workflow, or environment name in the pending publisher surfaces only when the `pypi` job runs, which is after the image and the npm packages are public.
+   A re-run converges (the image tag, the npm versions, and the files already published are skipped),
+   so the repair is to fix the publisher on pypi.org and re-run the failed job; but check the four values twice before tagging.
+   Then create the **GitHub environment `pypi`** (Settings, Environments, New environment) with the same tag rule `v*.*.*`;
+   "Required reviewers" is optional, and it needs no secret.
    The environment's name must match the one in the pending publisher.
 7. **Package settings.**
    In the organization's package settings on GitHub, allow public packages, so that the image's package can be made public after its first push (a new package starts private).
