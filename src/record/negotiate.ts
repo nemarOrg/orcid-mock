@@ -132,10 +132,15 @@ interface Option {
   server: ServerType | null;
 }
 
-/** `*` is least specific, then `type/*`, then a full type. */
+/**
+ * A full type is the most specific range, then `type/*` and a wildcard type with a subtype,
+ * which tie, then the full wildcard. Observed on pub.orcid.org/v3.0 on 2026-10-01: at equal
+ * quality and equal server weight, `application/json` beat both `application/*` and a wildcard
+ * type with `xml`, and `application/*` listed first beat a wildcard type with `json`.
+ */
 function specificity(range: MediaRange): number {
-  if (range.type === "*" && range.subtype === "*") return 0;
-  return range.subtype === "*" || range.type === "*" ? 1 : 2;
+  if (range.type === "*" && range.subtype === "*") return 1;
+  return range.type === "*" || range.subtype === "*" ? 2 : 3;
 }
 
 /**
@@ -148,6 +153,12 @@ function candidates(range: MediaRange): ServerType[] | "any-xml" {
   const type = range.type.toLowerCase();
   const subtype = range.subtype.toLowerCase();
   if (subtype === "*" && (type === "*" || type === "application")) return "any-xml";
+  // The suffix of a structured type must be lowercase to match: ORCID does not recognize
+  // `application/vnd.orcid+Json`, and answers a 500 when nothing else matches (observed, with
+  // `+Json`, `+JSON`, `+Xml`, and `+XML`). orcid-mock does not copy the 500; nothing matching is
+  // the 406.
+  const suffix = range.subtype.split("+")[1];
+  if (suffix !== undefined && suffix !== suffix.toLowerCase()) return [];
   return SERVER_TYPES.filter(
     (server) =>
       server.mediaType === `${type}/${subtype}` ||
@@ -163,10 +174,12 @@ function paramText(name: string, value: string): string {
 /**
  * Picks the representation for an `Accept` header, as ORCID does (every rule observed on
  * pub.orcid.org/v3.0 on 2026-10-01): ranges are tried by the client's quality (a `q=0` range is
- * still acceptable, last), then specificity, then the server's own weight `qs`, then the order
- * written; the first range that names a type ORCID produces wins, so `application/json,
- * application/vnd.orcid+xml` is JSON in either order (`qs` 1 against 0.5) and `application/xml,
- * application/json` is XML only because it is listed first.
+ * still acceptable, last), then the server's own weight `qs` of what the range names (1 for a
+ * wildcard, which can name `application/xml`), then specificity, then the order written; the
+ * first that names a type ORCID produces wins, so `application/json, application/vnd.orcid+xml`
+ * is JSON in either order (`qs` 1 against 0.5), `application/xml, application/json` is XML only
+ * because it is listed first, and a wildcard beats `application/orcid+json` (1 against 0.2) but
+ * not `application/json` (equal, and the full type is more specific).
  * A missing or blank header accepts anything, so it answers `xml`.
  * The `Content-Type` echo is the chosen range as the client wrote it: type and subtype in the
  * client's case, parameters lowercased with a repeat keeping its last value and `q` and `qs`
@@ -187,8 +200,8 @@ export function negotiate(accept: string | null | undefined): Negotiation {
     .sort(
       (a, b) =>
         b.range.q - a.range.q ||
+        (b.server?.qs ?? 1) - (a.server?.qs ?? 1) ||
         specificity(b.range) - specificity(a.range) ||
-        (b.server?.qs ?? 0) - (a.server?.qs ?? 0) ||
         a.range.index - b.range.index,
     );
 
@@ -198,10 +211,12 @@ export function negotiate(accept: string | null | undefined): Negotiation {
   if (server === null || server.family === "xml") return { kind: "xml" };
   const params = [...range.params].map(([name, value]) => paramText(name, value));
   if (!range.params.has("charset")) params.push("charset=UTF-8");
-  // A wildcard type has no spelling of its own to echo, so the type it matched is written.
-  const written = range.type === "*" ? server.mediaType : `${range.type}/${range.subtype}`;
-  return {
-    kind: "json",
-    negotiated: { contentType: [written, ...params].join(";"), pretty: server.pretty },
-  };
+  // A wildcard type has no spelling of its own to echo, so the type it matched is written, with
+  // the default charset whatever parameters the client sent (observed: a wildcard type with `json` and `charset=utf-8`
+  // got `application/json;charset=UTF-8`).
+  const contentType =
+    range.type === "*"
+      ? `${server.mediaType};charset=UTF-8`
+      : [`${range.type}/${range.subtype}`, ...params].join(";");
+  return { kind: "json", negotiated: { contentType, pretty: server.pretty } };
 }

@@ -54,9 +54,25 @@ describe("the JSON representations", () => {
     const reply = await getRecord(server, PATH, { accept: "APPLICATION/JSON" });
     expect(reply.headers.get("content-type")).toBe("APPLICATION/JSON;charset=UTF-8");
     expect(reply.text).toBe(COMPACT);
-    const mixed = await getRecord(server, PATH, { accept: "Application/Vnd.Orcid+Json" });
-    expect(mixed.headers.get("content-type")).toBe("Application/Vnd.Orcid+Json;charset=UTF-8");
+    const mixed = await getRecord(server, PATH, { accept: "Application/Vnd.Orcid+json" });
+    expect(mixed.headers.get("content-type")).toBe("Application/Vnd.Orcid+json;charset=UTF-8");
     expect(mixed.text).toBe(PRETTY);
+  });
+
+  test("the suffix after + must be lowercase: ORCID answers a 500 there, and orcid-mock a 406 (not copied)", async () => {
+    for (const accept of [
+      "application/vnd.orcid+Json",
+      "application/orcid+JSON",
+      "Application/Vnd.Orcid+Json",
+    ]) {
+      expect([accept, (await getRecord(server, PATH, { accept })).status]).toEqual([accept, 406]);
+    }
+    // In a list the range matches nothing, so the next one is used (observed).
+    const listed = await getRecord(server, PATH, {
+      accept: "application/vnd.orcid+Json, application/json;q=0.1",
+    });
+    expect(listed.headers.get("content-type")).toBe("application/json;charset=UTF-8");
+    expect(listed.text).toBe(COMPACT);
   });
 
   test("a list is read in order of quality, so a JSON type before a wildcard wins", async () => {
@@ -91,6 +107,13 @@ describe("the JSON representations", () => {
         200,
         contentType,
       ]);
+    }
+  });
+
+  test("a wildcard type with a subtype echoes the type it matched, with the default charset", async () => {
+    for (const accept of ["*/json;foo=bar", "*/json;charset=utf-8"]) {
+      const reply = await getRecord(server, PATH, { accept });
+      expect(reply.headers.get("content-type")).toBe("application/json;charset=UTF-8");
     }
   });
 
@@ -167,6 +190,14 @@ describe("the JSON representations", () => {
       ["application/xml;q=0.5, application/json;q=0.5", "xml"],
       ["application/vnd.orcid+xml;q=0.5, application/json;q=0.5", "application/json;charset=UTF-8"],
       ["application/xml;qs=0.1, application/json;qs=0.9", "xml"],
+      // A wildcard can name application/xml (weight 1), so it beats an ORCID type (0.2 to 0.5)
+      // but not application/json, which it ties and which is the more specific range.
+      ["*/*, application/orcid+json", "xml"],
+      ["application/orcid+json, */*", "xml"],
+      ["application/*, application/vnd.orcid+json", "xml"],
+      ["*/xml, application/orcid+json", "xml"],
+      ["*/*, application/json", "application/json;charset=UTF-8"],
+      ["text/html;q=0.8;foo=bar , */*;q=1 , application/orcid+json", "xml"],
     ];
     for (const [accept, expected] of rows) {
       const reply = await getRecord(server, PATH, { accept });
