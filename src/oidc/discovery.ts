@@ -1,7 +1,7 @@
 // GET /.well-known/openid-configuration: ORCID's discovery document, byte for byte.
 import type { Context } from "hono";
 import type { AppEnv } from "../app";
-import { CORS_ANY_ORIGIN, OIDC_JSON } from "./headers";
+import { corsHeaders, OIDC_JSON } from "./headers";
 
 type DiscoveryValue = string | boolean | readonly string[];
 
@@ -57,6 +57,6 @@ export function discoveryEndpoint(c: Context<AppEnv>): Response {
   const { publicBaseUrl } = c.get("deps").config;
   return c.body(jacksonPretty(discoveryFields(publicBaseUrl)), 200, {
     ...OIDC_JSON,
-    ...CORS_ANY_ORIGIN,
+    ...corsHeaders(c),
   });
 }

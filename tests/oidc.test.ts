@@ -54,14 +54,13 @@ describe("GET /oauth/jwks", () => {
     expect(Buffer.from(keys[0]?.n ?? "", "base64url")).toHaveLength(256);
   });
 
-  test("carries ORCID's cache headers, a JSON content type, and CORS", async () => {
+  test("carries ORCID's cache headers and a JSON content type", async () => {
     const { response } = await fetchJwks();
     expect(response.headers.get("content-type")).toBe("application/json;charset=UTF-8");
     expect(response.headers.get("cache-control")).toBe(
       "no-cache, no-store, max-age=0, must-revalidate",
     );
     expect(response.headers.get("pragma")).toBe("no-cache");
-    expect(response.headers.get("access-control-allow-origin")).toBe("*");
   });
 
   test("the kid is stable across requests and across a reset", async () => {
@@ -90,13 +89,6 @@ describe("GET /oauth/jwks", () => {
       expect(new Set(results.map((result) => result.text)).size).toBe(1);
     } finally {
       await fresh.stop();
-    }
-  });
-
-  test("only the JWKS, discovery, and userinfo routes set Access-Control-Allow-Origin", async () => {
-    for (const path of ["/__admin/health", "/oauth/token", "/v3.0/anything", "/no/such/path"]) {
-      const response = await fetch(`${server.baseUrl}${path}`);
-      expect(response.headers.get("access-control-allow-origin")).toBeNull();
     }
   });
 });
@@ -152,11 +144,9 @@ describe("GET /.well-known/openid-configuration", () => {
     expect(await response.text()).toBe(observedDiscovery(server.publicBaseUrl));
   });
 
-  test("is JSON with ORCID's content type and CORS, and no other CORS header", async () => {
+  test("is JSON with ORCID's content type", async () => {
     const response = await fetch(`${server.baseUrl}/.well-known/openid-configuration`);
     expect(response.headers.get("content-type")).toBe("application/json;charset=UTF-8");
-    expect(response.headers.get("access-control-allow-origin")).toBe("*");
-    expect(response.headers.get("access-control-allow-credentials")).toBeNull();
   });
 
   test("its jwks_uri serves the key", async () => {
@@ -533,10 +523,12 @@ describe("no id_token", () => {
 const DENIED = '{"error":"access_denied","error-description":"access_token is invalid"}';
 
 /** GET /oauth/userinfo with an optional bearer header. */
-function getUserinfo(authorization?: string, from: TestServer = server) {
-  return fetch(`${from.baseUrl}/oauth/userinfo`, {
-    ...(authorization === undefined ? {} : { headers: { authorization } }),
-  });
+function getUserinfo(authorization?: string, from: TestServer = server, origin?: string) {
+  const headers = {
+    ...(authorization === undefined ? {} : { authorization }),
+    ...(origin === undefined ? {} : { origin }),
+  };
+  return fetch(`${from.baseUrl}/oauth/userinfo`, { headers });
 }
 
 /** POST /oauth/userinfo with an optional form body and optional extra headers. */
@@ -584,11 +576,10 @@ describe("GET /oauth/userinfo", () => {
     }
   });
 
-  test("carries ORCID's content type and CORS", async () => {
+  test("carries ORCID's content type", async () => {
     const token = await obtainToken(server, { orcid: ids.alder, scope: "openid" });
     const response = await getUserinfo(`Bearer ${token.access_token}`);
     expect(response.headers.get("content-type")).toBe("application/json;charset=UTF-8");
-    expect(response.headers.get("access-control-allow-origin")).toBe("*");
   });
 
   test("writes null for a field that does not exist, and for every field of a private name", async () => {
@@ -671,7 +662,6 @@ describe("POST /oauth/userinfo", () => {
     expect(response.status).toBe(200);
     expect(await response.text()).toBe(userinfoText(ids.alder, ALDER_NAMES));
     expect(response.headers.get("content-type")).toBe("application/json;charset=UTF-8");
-    expect(response.headers.get("access-control-allow-origin")).toBe("*");
   });
 
   test("falls back to the Authorization header, with or without a form body", async () => {
@@ -773,7 +763,6 @@ describe("userinfo refuses with ORCID's one 403", () => {
       "no-cache, no-store, max-age=0, must-revalidate",
     );
     expect(response.headers.get("www-authenticate")).toBeNull();
-    expect(response.headers.get("access-control-allow-origin")).toBe("*");
     const text = await response.text();
     expect(text).toBe('{"error":"access_denied","error-description":"access_token is invalid"}');
     expect(Object.keys(JSON.parse(text))).toEqual(["error", "error-description"]);
@@ -788,22 +777,73 @@ describe("userinfo refuses with ORCID's one 403", () => {
   });
 });
 
-describe("CORS preflight", () => {
+// ORCID's cross-domain filter runs ahead of the controllers, for the three paths only: it echoes
+// the request's Origin, sends Access-Control-Allow-Credentials: true always, and sends no
+// Access-Control-Allow-Origin when the request has no Origin (see src/oidc/headers.ts).
+describe("CORS", () => {
+  const ORIGIN = "http://localhost:3000";
   const paths = ["/.well-known/openid-configuration", "/oauth/jwks", "/oauth/userinfo"];
 
-  test("the three cross-domain routes answer an OPTIONS preflight with an empty 200", async () => {
+  /** One request per route, covering the success answer and the 403. */
+  async function answers(origin: string | undefined) {
+    const headers: Record<string, string> = origin === undefined ? {} : { origin };
+    const token = await obtainToken(server, { orcid: ids.alder, scope: "openid" });
+    return [
+      ...(await Promise.all(
+        paths
+          .slice(0, 2)
+          .map(
+            async (path) => [path, await fetch(`${server.baseUrl}${path}`, { headers })] as const,
+          ),
+      )),
+      [
+        "/oauth/userinfo (200)",
+        await getUserinfo(`Bearer ${token.access_token}`, server, origin),
+      ] as const,
+      ["/oauth/userinfo (403)", await getUserinfo(undefined, server, origin)] as const,
+      [
+        "/oauth/userinfo (POST 200)",
+        await postUserinfo({ form: { access_token: token.access_token }, headers }),
+      ] as const,
+    ];
+  }
+
+  test("a request with an Origin gets it echoed, with credentials allowed", async () => {
+    for (const [name, response] of await answers(ORIGIN)) {
+      expect({ name, origin: response.headers.get("access-control-allow-origin") }).toEqual({
+        name,
+        origin: ORIGIN,
+      });
+      expect(response.headers.get("access-control-allow-credentials")).toBe("true");
+      expect(response.headers.get("vary")).toBeNull();
+    }
+  });
+
+  test("a request with no Origin gets no Access-Control-Allow-Origin, as in ORCID's captures", async () => {
+    for (const [name, response] of await answers(undefined)) {
+      expect({ name, origin: response.headers.get("access-control-allow-origin") }).toEqual({
+        name,
+        origin: null,
+      });
+      expect(response.headers.get("access-control-allow-credentials")).toBe("true");
+      expect(response.headers.get("vary")).toBeNull();
+    }
+  });
+
+  test("an OPTIONS preflight with Access-Control-Request-Method is an empty 200 on the three routes", async () => {
     for (const path of paths) {
       const response = await fetch(`${server.baseUrl}${path}`, {
         method: "OPTIONS",
         headers: {
-          origin: "http://localhost:3000",
+          origin: ORIGIN,
           "access-control-request-method": "GET",
           "access-control-request-headers": "authorization",
         },
       });
       expect({ path, status: response.status }).toEqual({ path, status: 200 });
       expect(await response.text()).toBe("");
-      expect(response.headers.get("access-control-allow-origin")).toBe("*");
+      expect(response.headers.get("access-control-allow-origin")).toBe(ORIGIN);
+      expect(response.headers.get("access-control-allow-credentials")).toBe("true");
       expect(response.headers.get("access-control-allow-methods")).toBe("GET, POST, PUT, DELETE");
       expect(response.headers.get("access-control-allow-headers")).toBe(
         "X-Requested-With,Origin,Content-Type,Accept,Authorization,x-csrf-token,x-xsrf-token",
@@ -811,23 +851,23 @@ describe("CORS preflight", () => {
     }
   });
 
-  test("an OPTIONS request that is not a preflight is not routed", async () => {
-    for (const path of paths) {
-      const response = await fetch(`${server.baseUrl}${path}`, { method: "OPTIONS" });
-      expect({ path, status: response.status }).toEqual({ path, status: 404 });
-      expect(response.headers.get("access-control-allow-origin")).toBeNull();
-    }
-  });
-
-  test("no other route answers a preflight", async () => {
-    for (const path of ["/oauth/token", "/oauth/authorize", "/v3.0/anything", "/__admin/health"]) {
-      const response = await fetch(`${server.baseUrl}${path}`, {
-        method: "OPTIONS",
-        headers: { "access-control-request-method": "POST" },
-      });
-      // The token endpoint answers any method with its 415; the rest are 404.
-      expect({ path, answered: response.status === 200 }).toEqual({ path, answered: false });
-      expect(response.headers.get("access-control-allow-origin")).toBeNull();
+  test("no OAuth or admin route sends a CORS header, a preflight included", async () => {
+    for (const path of ["/__admin/health", "/oauth/token", "/oauth/authorize", "/no/such/path"]) {
+      for (const [method, extra] of [
+        ["GET", {}],
+        ["OPTIONS", { "access-control-request-method": "POST" }],
+      ] as const) {
+        const response = await fetch(`${server.baseUrl}${path}`, {
+          method,
+          headers: { origin: ORIGIN, ...extra },
+        });
+        expect(response.headers.get("access-control-allow-origin")).toBeNull();
+        expect(response.headers.get("access-control-allow-credentials")).toBeNull();
+        if (method === "OPTIONS") {
+          // The token endpoint answers any method with its 415; the rest are 404.
+          expect({ path, answered: response.status === 200 }).toEqual({ path, answered: false });
+        }
+      }
     }
   });
 });

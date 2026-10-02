@@ -1,7 +1,7 @@
 // GET /oauth/jwks: the public half of the signing key.
 import type { Context } from "hono";
 import type { AppEnv } from "../app";
-import { CORS_ANY_ORIGIN, NO_STORE, OIDC_JSON } from "./headers";
+import { corsHeaders, NO_STORE, OIDC_JSON } from "./headers";
 import { getSigningKey } from "./keys";
 
 /**
@@ -19,6 +19,6 @@ export async function jwksEndpoint(c: Context<AppEnv>): Promise<Response> {
     ...OIDC_JSON,
     ...NO_STORE,
     Pragma: "no-cache",
-    ...CORS_ANY_ORIGIN,
+    ...corsHeaders(c),
   });
 }

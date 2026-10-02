@@ -154,7 +154,7 @@ The rules a schema cannot express (checksums, duplicate iDs and emails, one prim
 
 ### The admin API
 
-No authentication and no CORS in MVP1, so keep the server on loopback.
+No authentication and no cross-origin resource sharing (CORS) in MVP1, so keep the server on loopback.
 A request that carries an `Origin` header other than the server's own (the origin of `PUBLIC_BASE_URL`) is refused with `403 {"error":"forbidden_origin"}`: browsers always send `Origin` on a cross-origin request, so a web page cannot reset or rewrite a local mock, while `curl` and test clients, which send none, are unaffected.
 Users are read and written in the users-file form, with the minted iD and every put-code filled in, which is how a test learns them.
 A body must be JSON with a JSON `Content-Type`; anything else is `400 {"error":"invalid_request"}`, and a body that fails validation is `400 {"error":"invalid_fixture","issues":[{"path","message"}]}`.
@@ -264,7 +264,9 @@ These are orcid-mock's own choices, each marked "orcid-mock choice" where it is 
 
 Ask for the `openid` scope and the token response carries an identity (ID) token, signed with a key the server generates the first time it needs one.
 `/.well-known/openid-configuration`, `/oauth/jwks`, and `/oauth/userinfo` are the three routes a relying party (an application that signs users in through ORCID) needs to verify it and to read the user.
-All three set `Access-Control-Allow-Origin: *` and answer a cross-origin resource sharing (CORS) preflight, so a browser app can call them; no other route does.
+All three follow ORCID's CORS filter, so a browser app can call them:
+they echo the request's `Origin` in `Access-Control-Allow-Origin` (and send none when the request has none), send `Access-Control-Allow-Credentials: true`, even on the userinfo 403, and answer a preflight.
+No OAuth or admin route does.
 
 ### Discovery
 
@@ -351,12 +353,10 @@ The key is hyphenated, unlike the underscore in every other ORCID error body, an
 ### Where ORCID is undocumented or unobserved
 
 - The 24-hour ID token lifetime, above.
-- ORCID's CORS filter echoes the request's `Origin` and adds `Access-Control-Allow-Credentials: true`; this mock sends `*` and no credentials flag.
-  The preflight answer copies ORCID's allowed methods and headers.
+- The preflight answer copies ORCID's allowed methods and headers.
+  What ORCID answers to an `OPTIONS` request that has no `Access-Control-Request-Method` was not observed, so it is a 404 here, as for any unrouted method.
 - No success response of ORCID's 2026 authorization server was captured, so the ID token's claims follow its documentation and its removed legacy implementation, and the userinfo body, with `id` and the nulls, follows ORCID's source.
-- The JWKS content type was not captured; it uses the one ORCID's other OpenID Connect routes send.
 - A userinfo token whose user was deleted answers 403, as an unknown token does.
-- The CORS header is also on the userinfo 403, so a browser app can read the error.
 
 ## Why
 

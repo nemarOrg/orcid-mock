@@ -4,7 +4,7 @@ import type { AppEnv } from "../app";
 import { checkAccessToken, readBearerHeader } from "../oauth/bearer";
 import { publicNameClaims } from "../oauth/display-name";
 import type { StoredUser, TokenRecord } from "../store/types";
-import { CORS_ANY_ORIGIN, NO_STORE, OIDC_JSON } from "./headers";
+import { corsHeaders, NO_STORE, OIDC_JSON } from "./headers";
 
 type Ctx = Context<AppEnv>;
 
@@ -12,16 +12,17 @@ type Ctx = Context<AppEnv>;
  * ORCID's single failure, for no token, an unknown or revoked or expired one, and one without a
  * scope for `/authenticate`: 403, with a hyphenated `error-description` key (the Java field is
  * annotated `@JsonProperty("error-description")`, unlike every other ORCID error body) and no
- * `WWW-Authenticate` header. Observed on orcid.org on 2026-10-01 for a missing and for a bad
- * bearer token, over GET and POST, with this content type and cache header:
+ * `WWW-Authenticate` header. Observed on sandbox.orcid.org on 2026-10-01 for a missing and for a
+ * bad bearer token, over GET and POST, with this content type and cache header:
  * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-web/src/main/java/org/orcid/frontend/web/controllers/OpenIDController.java#L151-L160
- * The CORS header on it is orcid-mock's: a browser app can then read the error.
+ * The CORS headers on it come from ORCID's cross-domain filter, which runs ahead of the
+ * controller (see `corsHeaders`).
  */
 function accessDenied(c: Ctx): Response {
   return c.json({ error: "access_denied", "error-description": "access_token is invalid" }, 403, {
     ...OIDC_JSON,
     ...NO_STORE,
-    ...CORS_ANY_ORIGIN,
+    ...corsHeaders(c),
   });
 }
 
@@ -95,6 +96,6 @@ export async function userinfoEndpoint(c: Ctx): Promise<Response> {
       given_name: names.given_name,
     },
     200,
-    { ...OIDC_JSON, ...CORS_ANY_ORIGIN },
+    { ...OIDC_JSON, ...corsHeaders(c) },
   );
 }
