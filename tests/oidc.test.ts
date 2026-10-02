@@ -831,3 +831,58 @@ describe("CORS preflight", () => {
     }
   });
 });
+
+// No OpenID Connect route reaches the generic 500 handler through a real request, so there is no
+// 500 body to assert on. These pin that malformed input is always a 4xx or an answer, never a
+// 5xx, so a change that lets one through fails here.
+describe("malformed input never reaches a 5xx", () => {
+  const WEIRD = ["%", "%E0%A4%A", "%FF%FE", "%0d%0a", "[", "\\", "a".repeat(10_000)];
+
+  test("userinfo with Authorization headers and form bodies that are not tokens", async () => {
+    for (const weird of WEIRD) {
+      for (const authorization of [weird, `Bearer ${weird}`, `Bearer a${" ".repeat(5000)}b`]) {
+        const response = await getUserinfo(authorization);
+        expect(response.status).toBe(403);
+        await response.arrayBuffer();
+      }
+      const posted = await fetch(`${server.baseUrl}/oauth/userinfo`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: `access_token=${weird}&x=${weird}`,
+      });
+      expect(posted.status).toBe(403);
+      await posted.arrayBuffer();
+    }
+    // Bytes that are not UTF-8, and a body with no content type at all.
+    for (const body of [new Uint8Array([0xff, 0xfe, 0x3d, 0x80]), "=&=&&&", "access_token"]) {
+      const response = await fetch(`${server.baseUrl}/oauth/userinfo`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new Blob([body]),
+      });
+      expect(response.status).toBe(403);
+      await response.arrayBuffer();
+    }
+  });
+
+  test("a long and a strange nonce are echoed in a token that still verifies", async () => {
+    for (const nonce of ["n".repeat(4000), 'é日本 "quoted" \\ back\u0000nul', "😀"]) {
+      const token = await openidToken({ orcid: ids.alder, nonce });
+      const { payload } = await verifyIdToken(server, token.id_token, {
+        issuer: server.publicBaseUrl,
+        audience: CLIENTS.public.client_id,
+      });
+      expect(payload.nonce).toBe(nonce);
+    }
+  });
+
+  test("discovery and the JWKS ignore query strings and bodies", async () => {
+    for (const path of ["/.well-known/openid-configuration", "/oauth/jwks"]) {
+      for (const weird of WEIRD) {
+        const response = await fetch(`${server.baseUrl}${path}?x=${weird}&%=%`);
+        expect(response.status).toBe(200);
+        await response.arrayBuffer();
+      }
+    }
+  });
+});
