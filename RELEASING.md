@@ -64,8 +64,11 @@ Each is checked against `SHA256SUMS`, asked for its version, and asked to mint a
 | `orcid-mock-windows-x64.exe`, `orcid-mock-windows-arm64.exe` | `windows-latest`, `windows-11-arm` |
 
 Only the linux x64 binary is also started as a server, asked for its health, and stopped with `SIGTERM` (the `binaries` job in [`ci.yml`](.github/workflows/ci.yml)); the other seven are not served in CI.
+A `coverage` job in the same workflow compares the names in `SHA256SUMS` with the smoke matrix and fails when a built binary has no smoke job, so a new target cannot ship without being run.
+
 `macos-15-intel` is the last x86_64 macOS image GitHub offers, and GitHub's announcement ends it in August 2027 ([actions/runner-images#13045](https://github.com/actions/runner-images/issues/13045)).
-After that, nothing executes `orcid-mock-darwin-x64` in CI, and this section, the README, and [ADR 0005](.context/decisions/0005-distribution-and-release.md) must say so.
+Before then, remove its matrix entry from `smoke-binaries.yml` and put `orcid-mock-darwin-x64` in the `UNEXECUTED` variable of the `coverage` job, or every release and every packaging change will queue on a runner label that no longer exists.
+Add the same fact to [ADR 0005](.context/decisions/0005-distribution-and-release.md), whose amendment already says that nothing can execute the darwin x64 binary in CI after that date.
 
 ## Pins that are bumped by hand
 
