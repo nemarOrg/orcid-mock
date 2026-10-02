@@ -134,6 +134,16 @@ function refusal(user: StoredUser, param: string): string | null {
   return state === null ? null : `${param} iD ${user.orcid} is ${state} and cannot sign in`;
 }
 
+/**
+ * A 400 for a sign-in the caller asked for by name (`login_as` or the consent form's `orcid`).
+ * `error_description` comes first, like the other `invalid_request` errors of this endpoint, but
+ * the content type is not ISO-8859-1 like theirs: this text echoes the iD the caller sent, which
+ * can hold any character, so it stays UTF-8 (`application/json` is UTF-8 by definition).
+ */
+function signInError(c: Ctx, description: string): Response {
+  return oauthError(c, 400, "invalid_request", description, { descriptionFirst: true });
+}
+
 /** The user a `login_as` or consent-form `orcid` names, or the 400 that says why not. */
 async function signInTarget(
   c: Ctx,
@@ -142,14 +152,12 @@ async function signInTarget(
 ): Promise<Checked<{ user: StoredUser }>> {
   const { store } = c.get("deps");
   if (orcid === null || orcid === "") {
-    return fail(oauthError(c, 400, "invalid_request", `Missing parameter: ${param}`));
+    return fail(signInError(c, `Missing parameter: ${param}`));
   }
   const user = await store.getUser(orcid);
-  if (!user) {
-    return fail(oauthError(c, 400, "invalid_request", `Unknown ${param} iD: ${orcid}`));
-  }
+  if (!user) return fail(signInError(c, `Unknown ${param} iD: ${orcid}`));
   const why = refusal(user, param);
-  if (why !== null) return fail(oauthError(c, 400, "invalid_request", why));
+  if (why !== null) return fail(signInError(c, why));
   return { ok: true, user };
 }
 

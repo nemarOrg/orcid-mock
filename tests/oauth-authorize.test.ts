@@ -55,7 +55,7 @@ async function expectJsonError(
   // The authorization server's JSON errors were observed with ISO-8859-1; orcid-mock's own
   // login_as errors, which echo what the caller sent, are plain application/json.
   expect(response.headers.get("content-type")).toBe(contentType);
-  // The raw text carries ORCID's key order.
+  // The raw text carries ORCID's key order (`error_description` first).
   expect(await response.text()).toBe(raw);
   expect(sessionCookie(response)).toBeNull();
 }
@@ -186,8 +186,25 @@ describe("the headless round trip with login_as", () => {
     await expectJsonError(
       response,
       400,
-      '{"error":"invalid_request","error_description":"Unknown login_as iD: 0000-0002-1825-0097"}',
+      '{"error_description":"Unknown login_as iD: 0000-0002-1825-0097","error":"invalid_request"}',
       "application/json",
+    );
+  });
+
+  test("a sign-in error leads with error_description, and echoes a non-Latin-1 iD in UTF-8", async () => {
+    const odd = "é日本 %41";
+    const response = await authorize({ login_as: odd });
+    expect(response.status).toBe(400);
+    // Not ISO-8859-1, which could not carry the echoed characters.
+    expect(response.headers.get("content-type")).toBe("application/json");
+    const text = await response.text();
+    expect(text).toBe(
+      `{"error_description":"Unknown login_as iD: ${odd}","error":"invalid_request"}`,
+    );
+
+    const locked = await authorize({ login_as: ids.briar });
+    expect(await locked.text()).toBe(
+      `{"error_description":"login_as iD ${ids.briar} is locked and cannot sign in","error":"invalid_request"}`,
     );
   });
 
@@ -615,7 +632,7 @@ describe("the consent page", () => {
     const unknown = await withUser("0000-0002-1825-0097");
     expect(unknown.status).toBe(400);
     expect(await unknown.text()).toBe(
-      '{"error":"invalid_request","error_description":"Unknown orcid iD: 0000-0002-1825-0097"}',
+      '{"error_description":"Unknown orcid iD: 0000-0002-1825-0097","error":"invalid_request"}',
     );
     const missing = await withUser(null);
     expect(missing.status).toBe(400);
