@@ -4,6 +4,8 @@
 import { Hono } from "hono";
 import { ORCID_API_ERRORS, orcidApiError } from "../../errors";
 import { type AffiliationKind, affiliationItem, affiliations } from "../../record/affiliations";
+import { fundingItem, fundings } from "../../record/fundings";
+import { peerReviewItem, peerReviews } from "../../record/peer-reviews";
 import {
   addresses,
   biography,
@@ -100,6 +102,14 @@ export function recordRoutes(): Hono<RecordEnv> {
     );
   }
 
+  readRoute(record, withSlash("/fundings"), (r) => r.send(fundings(r.user, r.viewer).json));
+  readRoute(record, withSlash("/funding/:pc"), (r) =>
+    itemRead(r, (putCode) => fundingItem(r.user, r.viewer, putCode)),
+  );
+  readRoute(record, withSlash("/peer-reviews"), (r) => r.send(peerReviews(r.user, r.viewer).json));
+  readRoute(record, withSlash("/peer-review/:pc"), (r) =>
+    itemRead(r, (putCode) => peerReviewItem(r.user, r.viewer, putCode)),
+  );
   readRoute(record, withSlash("/works"), (r) => r.send(works(r.user, r.viewer).json));
   readRoute(record, withSlash("/work/:pc"), (r) =>
     itemRead(r, (putCode) => workItem(r.user, r.viewer, putCode)),
