@@ -88,6 +88,20 @@ export interface OrcidApiErrorSpec {
 const MORE_INFO = "https://members.orcid.org/api/resources/troubleshooting";
 
 /**
+ * The five-key error object, which a bulk response also nests as `{ "error": ... }` for each
+ * element that failed (observed on `/works/{put-codes}`).
+ */
+export function orcidErrorBody(spec: OrcidApiErrorSpec): Json {
+  return {
+    "response-code": spec.status,
+    "developer-message": spec.developerMessage,
+    "user-message": spec.userMessage,
+    "error-code": spec.code,
+    "more-info": MORE_INFO,
+  };
+}
+
+/**
  * ORCID's v3.0 error body, keys in this fixed order, as observed on pub.orcid.org/v3.0 on
  * 2026-10-01: `response-code`, `developer-message`, `user-message`, `error-code`, `more-info`.
  * ORCID builds it in `getOrcidErrorV3`, from the `apiError.<code>.*` keys in api_en.properties:
@@ -102,13 +116,7 @@ export function orcidApiError(
   spec: OrcidApiErrorSpec,
   opts: { contentType?: string; headers?: Record<string, string>; pretty?: boolean } = {},
 ): Response {
-  const body: Json = {
-    "response-code": spec.status,
-    "developer-message": spec.developerMessage,
-    "user-message": spec.userMessage,
-    "error-code": spec.code,
-    "more-info": MORE_INFO,
-  };
+  const body = orcidErrorBody(spec);
   const headers: Record<string, string> = { ...opts.headers };
   if (opts.contentType !== undefined) headers["Content-Type"] = opts.contentType;
   return c.body(

@@ -17,6 +17,7 @@ import {
 } from "../../record/person";
 import { parseJavaLong } from "../../record/putcode";
 import type { ItemLookup } from "../../record/wire";
+import { bulkWorks, workItem, works } from "../../record/works";
 import { type ReadContext, type RecordEnv, readRoute, recordMiddleware } from "./read";
 
 /** `/:id<tail>` and the same with a trailing slash, which ORCID serves for every read path. */
@@ -98,6 +99,37 @@ export function recordRoutes(): Hono<RecordEnv> {
       itemRead(r, (putCode) => affiliationItem(r.user, r.viewer, kind, putCode)),
     );
   }
+
+  readRoute(record, withSlash("/works"), (r) => r.send(works(r.user, r.viewer).json));
+  readRoute(record, withSlash("/work/:pc"), (r) =>
+    itemRead(r, (putCode) => workItem(r.user, r.viewer, putCode)),
+  );
+  // Bulk checks only that the record exists (`existsOnly`), so a deprecated, locked, or
+  // deactivated record is read like any other (observed for a deprecated one).
+  readRoute(
+    record,
+    ["/:id/works/:codes"],
+    async (r) => {
+      // ORCID fills `${clientName}` in a 9034 message with the calling client's name.
+      const { store } = r.c.get("deps");
+      const client = r.token === null ? null : await store.getClient(r.token.client_id);
+      const result = bulkWorks(
+        r.user,
+        r.viewer,
+        r.c.req.param("codes") ?? "",
+        client?.name ?? null,
+      );
+      switch (result.kind) {
+        case "too-many":
+          return r.fail(ORCID_API_ERRORS.tooManyPutCodes);
+        case "bad-element":
+          return r.fail(ORCID_API_ERRORS.badPutCode(result.raw));
+        case "ok":
+          return r.send(result.body);
+      }
+    },
+    { existsOnly: true },
+  );
 
   // Anything else under /v3.0: `GET /v3.0/` is a 406 and every other unrouted path a 404, both
   // 9001 with no Content-Type (observed on pub.orcid.org/v3.0 on 2026-10-01). Hono's `route()`
