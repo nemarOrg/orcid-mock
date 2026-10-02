@@ -509,6 +509,10 @@ jobs:
           path: node-dist
       # No install: for the server, bun publish packs the files the package lists and runs nothing
       # from it; for the helper, it uploads the tarball as it is.
+      # The npm upload uses a token because bun has no npm trusted publishing or provenance yet
+      # (oven-sh/bun#15601 and #22423; ADR 0005 records this and the January 2027 deadline), so
+      # zizmor's use-trusted-publishing finding is accepted inline on the run line. The PyPI upload
+      # below does use trusted publishing.
       - name: Publish the server and the Node helper to npm, unless each version is already there
         env:
           # bun reads this variable. The token is checked in the preflight job.
@@ -516,7 +520,7 @@ jobs:
           VERSION: ${{ needs.verify.outputs.version }}
           DRY_RUN: ${{ needs.verify.outputs.dry-run }}
           PRERELEASE: ${{ needs.verify.outputs.prerelease }}
-        run: |
+        run: | # zizmor: ignore[use-trusted-publishing]
           set -euo pipefail
           flags=(--access public)
           # A prerelease must not become the version that gets the default dist-tag.

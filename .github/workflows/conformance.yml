@@ -117,7 +117,9 @@ jobs:
       contents: read
     services:
       orcid:
-        image: ${{ inputs.image }}
+        # Mutable on purpose: the input names the published image or a candidate tag to smoke-test by
+        # hand, and this job holds no secrets.
+        image: ${{ inputs.image }} # zizmor: ignore[unpinned-images]
         ports:
           - 9700:9700
         env:
