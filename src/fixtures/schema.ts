@@ -44,22 +44,32 @@ function isRealDate(date: string): boolean {
   return day <= new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
+// A shape used in more than one place carries an `id`, so the generated JSON Schema defines it
+// once under `$defs` and points at it, instead of inlining a copy at every use.
 export const FuzzyDate = z
   .string()
   .regex(FUZZY_DATE, "Expected YYYY, YYYY-MM, or YYYY-MM-DD with a year from 1900 to 2100")
-  .refine(isRealDate, "Not a real calendar date");
+  .refine(isRealDate, "Not a real calendar date")
+  .meta({ id: "FuzzyDate" });
 
-export const Visibility = z.enum(["public", "limited", "private"]);
+export const Visibility = z.enum(["public", "limited", "private"]).meta({ id: "Visibility" });
+export type Visibility = z.output<typeof Visibility>;
 
 const PutCode = z
   .int()
   .positive()
-  .optional()
-  .describe("Assigned at load from a counter when omitted; unique within its section");
-const DisplayIndex = z.int().nonnegative().optional();
+  .meta({
+    id: "PutCode",
+    description: "Assigned at load from a counter when omitted; unique within its section",
+  })
+  .optional();
+const DisplayIndex = z.int().nonnegative().meta({ id: "DisplayIndex" }).optional();
 const OptionalString = z.string().nullish();
 const OptionalUrl = z.url().nullish();
-const CountryCode = z.string().regex(/^[A-Z]{2}$/, "Expected an ISO 3166-1 alpha-2 country code");
+const CountryCode = z
+  .string()
+  .regex(/^[A-Z]{2}$/, "Expected an ISO 3166-1 alpha-2 country code")
+  .meta({ id: "CountryCode" });
 
 /** An item that carries a put-code, a visibility, and a display index in ORCID. */
 function item<T extends z.ZodRawShape>(shape: T) {
@@ -71,30 +81,37 @@ function item<T extends z.ZodRawShape>(shape: T) {
   });
 }
 
-export const ExternalId = z.strictObject({
+// The fields of an external identifier, shared by the identifiers on a record (which are items)
+// and by the ids on a work, funding, affiliation, or review (which are not).
+const externalIdFields = {
   external_id_type: z.string().min(1),
   external_id_value: z.string().min(1),
   external_id_url: OptionalUrl,
   external_id_relationship: z.enum(["self", "part-of", "version-of", "funded-by"]).nullish(),
-});
+};
 
-export const Organization = z.strictObject({
-  name: z.string().min(1),
-  address: z.strictObject({
-    city: z.string().min(1),
-    region: OptionalString,
-    country: CountryCode,
-  }),
-  disambiguated_organization: z
-    .strictObject({
-      disambiguated_organization_identifier: z.string().min(1),
-      disambiguation_source: z.string().min(1),
-    })
-    .nullish(),
-});
+export const ExternalId = z.strictObject(externalIdFields).meta({ id: "ExternalId" });
+
+export const Organization = z
+  .strictObject({
+    name: z.string().min(1),
+    address: z.strictObject({
+      city: z.string().min(1),
+      region: OptionalString,
+      country: CountryCode,
+    }),
+    disambiguated_organization: z
+      .strictObject({
+        disambiguated_organization_identifier: z.string().min(1),
+        disambiguation_source: z.string().min(1),
+      })
+      .nullish(),
+  })
+  .meta({ id: "Organization" });
 
 const TranslatedTitle = z
   .strictObject({ value: z.string().min(1), language_code: z.string().min(1) })
+  .meta({ id: "TranslatedTitle" })
   .nullish();
 
 export const Name = z.strictObject({
@@ -117,12 +134,7 @@ export const Email = z.strictObject({
 export const OtherName = item({ content: z.string().min(1) });
 export const Address = item({ country: CountryCode });
 export const Keyword = item({ content: z.string().min(1) });
-export const ExternalIdentifier = item({
-  external_id_type: z.string().min(1),
-  external_id_value: z.string().min(1),
-  external_id_url: OptionalUrl,
-  external_id_relationship: z.enum(["self", "part-of", "version-of", "funded-by"]).nullish(),
-});
+export const ExternalIdentifier = item(externalIdFields);
 export const ResearcherUrl = item({ url_name: OptionalString, url: z.url() });
 
 const affiliationShape = {
@@ -134,9 +146,11 @@ const affiliationShape = {
   url: OptionalUrl,
   external_ids: z.array(ExternalId).optional(),
 };
-export const Employment = item(affiliationShape);
-export const Education = item(affiliationShape);
-export const Qualification = item(affiliationShape);
+// Employments, educations, and qualifications share one shape in ORCID's model.
+export const Affiliation = item(affiliationShape).meta({ id: "Affiliation" });
+export const Employment = Affiliation;
+export const Education = Affiliation;
+export const Qualification = Affiliation;
 
 export const Contributor = z.strictObject({
   contributor_orcid: z
@@ -456,6 +470,7 @@ export type FixtureClient = z.output<typeof FixtureClient>;
 export type UsersFileInput = z.input<typeof UsersFile>;
 export type UsersFileData = z.output<typeof UsersFile>;
 
+/** Where the generated schema is published; also its `$id` and what `orcid-mock fixture` names. */
 export const USERS_SCHEMA_ID =
   "https://raw.githubusercontent.com/nemarOrg/orcid-mock/main/fixtures/users.schema.json";
 

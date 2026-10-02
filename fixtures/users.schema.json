@@ -95,12 +95,7 @@
                 ]
               },
               "visibility": {
-                "type": "string",
-                "enum": [
-                  "public",
-                  "limited",
-                  "private"
-                ]
+                "$ref": "#/$defs/Visibility"
               }
             },
             "required": [
@@ -115,27 +110,17 @@
               "type": "object",
               "properties": {
                 "put_code": {
-                  "description": "Assigned at load from a counter when omitted; unique within its section",
-                  "type": "integer",
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991
+                  "$ref": "#/$defs/PutCode"
                 },
                 "content": {
                   "type": "string",
                   "minLength": 1
                 },
                 "visibility": {
-                  "type": "string",
-                  "enum": [
-                    "public",
-                    "limited",
-                    "private"
-                  ]
+                  "$ref": "#/$defs/Visibility"
                 },
                 "display_index": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
+                  "$ref": "#/$defs/DisplayIndex"
                 }
               },
               "required": [
@@ -155,12 +140,7 @@
                     "minLength": 1
                   },
                   "visibility": {
-                    "type": "string",
-                    "enum": [
-                      "public",
-                      "limited",
-                      "private"
-                    ]
+                    "$ref": "#/$defs/Visibility"
                   }
                 },
                 "required": [
@@ -191,12 +171,7 @@
                   "type": "boolean"
                 },
                 "visibility": {
-                  "type": "string",
-                  "enum": [
-                    "public",
-                    "limited",
-                    "private"
-                  ]
+                  "$ref": "#/$defs/Visibility"
                 }
               },
               "required": [
@@ -214,27 +189,16 @@
               "type": "object",
               "properties": {
                 "put_code": {
-                  "description": "Assigned at load from a counter when omitted; unique within its section",
-                  "type": "integer",
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991
+                  "$ref": "#/$defs/PutCode"
                 },
                 "country": {
-                  "type": "string",
-                  "pattern": "^[A-Z]{2}$"
+                  "$ref": "#/$defs/CountryCode"
                 },
                 "visibility": {
-                  "type": "string",
-                  "enum": [
-                    "public",
-                    "limited",
-                    "private"
-                  ]
+                  "$ref": "#/$defs/Visibility"
                 },
                 "display_index": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
+                  "$ref": "#/$defs/DisplayIndex"
                 }
               },
               "required": [
@@ -250,27 +214,17 @@
               "type": "object",
               "properties": {
                 "put_code": {
-                  "description": "Assigned at load from a counter when omitted; unique within its section",
-                  "type": "integer",
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991
+                  "$ref": "#/$defs/PutCode"
                 },
                 "content": {
                   "type": "string",
                   "minLength": 1
                 },
                 "visibility": {
-                  "type": "string",
-                  "enum": [
-                    "public",
-                    "limited",
-                    "private"
-                  ]
+                  "$ref": "#/$defs/Visibility"
                 },
                 "display_index": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
+                  "$ref": "#/$defs/DisplayIndex"
                 }
               },
               "required": [
@@ -286,10 +240,7 @@
               "type": "object",
               "properties": {
                 "put_code": {
-                  "description": "Assigned at load from a counter when omitted; unique within its section",
-                  "type": "integer",
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991
+                  "$ref": "#/$defs/PutCode"
                 },
                 "external_id_type": {
                   "type": "string",
@@ -327,17 +278,10 @@
                   ]
                 },
                 "visibility": {
-                  "type": "string",
-                  "enum": [
-                    "public",
-                    "limited",
-                    "private"
-                  ]
+                  "$ref": "#/$defs/Visibility"
                 },
                 "display_index": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
+                  "$ref": "#/$defs/DisplayIndex"
                 }
               },
               "required": [
@@ -354,10 +298,7 @@
               "type": "object",
               "properties": {
                 "put_code": {
-                  "description": "Assigned at load from a counter when omitted; unique within its section",
-                  "type": "integer",
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991
+                  "$ref": "#/$defs/PutCode"
                 },
                 "url_name": {
                   "type": [
@@ -370,17 +311,10 @@
                   "format": "uri"
                 },
                 "visibility": {
-                  "type": "string",
-                  "enum": [
-                    "public",
-                    "limited",
-                    "private"
-                  ]
+                  "$ref": "#/$defs/Visibility"
                 },
                 "display_index": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
+                  "$ref": "#/$defs/DisplayIndex"
                 }
               },
               "required": [
@@ -393,565 +327,19 @@
           "employments": {
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "put_code": {
-                  "description": "Assigned at load from a counter when omitted; unique within its section",
-                  "type": "integer",
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991
-                },
-                "department_name": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "role_title": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "start_date": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "pattern": "^(?:19\\d{2}|20\\d{2}|2100)(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\\d|3[01]))?)?$"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "end_date": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "pattern": "^(?:19\\d{2}|20\\d{2}|2100)(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\\d|3[01]))?)?$"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "organization": {
-                  "type": "object",
-                  "properties": {
-                    "name": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "address": {
-                      "type": "object",
-                      "properties": {
-                        "city": {
-                          "type": "string",
-                          "minLength": 1
-                        },
-                        "region": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "country": {
-                          "type": "string",
-                          "pattern": "^[A-Z]{2}$"
-                        }
-                      },
-                      "required": [
-                        "city",
-                        "country"
-                      ],
-                      "additionalProperties": false
-                    },
-                    "disambiguated_organization": {
-                      "anyOf": [
-                        {
-                          "type": "object",
-                          "properties": {
-                            "disambiguated_organization_identifier": {
-                              "type": "string",
-                              "minLength": 1
-                            },
-                            "disambiguation_source": {
-                              "type": "string",
-                              "minLength": 1
-                            }
-                          },
-                          "required": [
-                            "disambiguated_organization_identifier",
-                            "disambiguation_source"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "name",
-                    "address"
-                  ],
-                  "additionalProperties": false
-                },
-                "url": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "format": "uri"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "external_ids": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "external_id_type": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "external_id_value": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "external_id_url": {
-                        "anyOf": [
-                          {
-                            "type": "string",
-                            "format": "uri"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "external_id_relationship": {
-                        "anyOf": [
-                          {
-                            "type": "string",
-                            "enum": [
-                              "self",
-                              "part-of",
-                              "version-of",
-                              "funded-by"
-                            ]
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      }
-                    },
-                    "required": [
-                      "external_id_type",
-                      "external_id_value"
-                    ],
-                    "additionalProperties": false
-                  }
-                },
-                "visibility": {
-                  "type": "string",
-                  "enum": [
-                    "public",
-                    "limited",
-                    "private"
-                  ]
-                },
-                "display_index": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
-                }
-              },
-              "required": [
-                "organization",
-                "visibility"
-              ],
-              "additionalProperties": false
+              "$ref": "#/$defs/Affiliation"
             }
           },
           "educations": {
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "put_code": {
-                  "description": "Assigned at load from a counter when omitted; unique within its section",
-                  "type": "integer",
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991
-                },
-                "department_name": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "role_title": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "start_date": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "pattern": "^(?:19\\d{2}|20\\d{2}|2100)(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\\d|3[01]))?)?$"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "end_date": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "pattern": "^(?:19\\d{2}|20\\d{2}|2100)(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\\d|3[01]))?)?$"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "organization": {
-                  "type": "object",
-                  "properties": {
-                    "name": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "address": {
-                      "type": "object",
-                      "properties": {
-                        "city": {
-                          "type": "string",
-                          "minLength": 1
-                        },
-                        "region": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "country": {
-                          "type": "string",
-                          "pattern": "^[A-Z]{2}$"
-                        }
-                      },
-                      "required": [
-                        "city",
-                        "country"
-                      ],
-                      "additionalProperties": false
-                    },
-                    "disambiguated_organization": {
-                      "anyOf": [
-                        {
-                          "type": "object",
-                          "properties": {
-                            "disambiguated_organization_identifier": {
-                              "type": "string",
-                              "minLength": 1
-                            },
-                            "disambiguation_source": {
-                              "type": "string",
-                              "minLength": 1
-                            }
-                          },
-                          "required": [
-                            "disambiguated_organization_identifier",
-                            "disambiguation_source"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "name",
-                    "address"
-                  ],
-                  "additionalProperties": false
-                },
-                "url": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "format": "uri"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "external_ids": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "external_id_type": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "external_id_value": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "external_id_url": {
-                        "anyOf": [
-                          {
-                            "type": "string",
-                            "format": "uri"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "external_id_relationship": {
-                        "anyOf": [
-                          {
-                            "type": "string",
-                            "enum": [
-                              "self",
-                              "part-of",
-                              "version-of",
-                              "funded-by"
-                            ]
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      }
-                    },
-                    "required": [
-                      "external_id_type",
-                      "external_id_value"
-                    ],
-                    "additionalProperties": false
-                  }
-                },
-                "visibility": {
-                  "type": "string",
-                  "enum": [
-                    "public",
-                    "limited",
-                    "private"
-                  ]
-                },
-                "display_index": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
-                }
-              },
-              "required": [
-                "organization",
-                "visibility"
-              ],
-              "additionalProperties": false
+              "$ref": "#/$defs/Affiliation"
             }
           },
           "qualifications": {
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "put_code": {
-                  "description": "Assigned at load from a counter when omitted; unique within its section",
-                  "type": "integer",
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991
-                },
-                "department_name": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "role_title": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "start_date": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "pattern": "^(?:19\\d{2}|20\\d{2}|2100)(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\\d|3[01]))?)?$"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "end_date": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "pattern": "^(?:19\\d{2}|20\\d{2}|2100)(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\\d|3[01]))?)?$"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "organization": {
-                  "type": "object",
-                  "properties": {
-                    "name": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "address": {
-                      "type": "object",
-                      "properties": {
-                        "city": {
-                          "type": "string",
-                          "minLength": 1
-                        },
-                        "region": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "country": {
-                          "type": "string",
-                          "pattern": "^[A-Z]{2}$"
-                        }
-                      },
-                      "required": [
-                        "city",
-                        "country"
-                      ],
-                      "additionalProperties": false
-                    },
-                    "disambiguated_organization": {
-                      "anyOf": [
-                        {
-                          "type": "object",
-                          "properties": {
-                            "disambiguated_organization_identifier": {
-                              "type": "string",
-                              "minLength": 1
-                            },
-                            "disambiguation_source": {
-                              "type": "string",
-                              "minLength": 1
-                            }
-                          },
-                          "required": [
-                            "disambiguated_organization_identifier",
-                            "disambiguation_source"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "name",
-                    "address"
-                  ],
-                  "additionalProperties": false
-                },
-                "url": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "format": "uri"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "external_ids": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "external_id_type": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "external_id_value": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "external_id_url": {
-                        "anyOf": [
-                          {
-                            "type": "string",
-                            "format": "uri"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "external_id_relationship": {
-                        "anyOf": [
-                          {
-                            "type": "string",
-                            "enum": [
-                              "self",
-                              "part-of",
-                              "version-of",
-                              "funded-by"
-                            ]
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      }
-                    },
-                    "required": [
-                      "external_id_type",
-                      "external_id_value"
-                    ],
-                    "additionalProperties": false
-                  }
-                },
-                "visibility": {
-                  "type": "string",
-                  "enum": [
-                    "public",
-                    "limited",
-                    "private"
-                  ]
-                },
-                "display_index": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
-                }
-              },
-              "required": [
-                "organization",
-                "visibility"
-              ],
-              "additionalProperties": false
+              "$ref": "#/$defs/Affiliation"
             }
           },
           "works": {
@@ -960,10 +348,7 @@
               "type": "object",
               "properties": {
                 "put_code": {
-                  "description": "Assigned at load from a counter when omitted; unique within its section",
-                  "type": "integer",
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991
+                  "$ref": "#/$defs/PutCode"
                 },
                 "title": {
                   "type": "string",
@@ -978,22 +363,7 @@
                 "translated_title": {
                   "anyOf": [
                     {
-                      "type": "object",
-                      "properties": {
-                        "value": {
-                          "type": "string",
-                          "minLength": 1
-                        },
-                        "language_code": {
-                          "type": "string",
-                          "minLength": 1
-                        }
-                      },
-                      "required": [
-                        "value",
-                        "language_code"
-                      ],
-                      "additionalProperties": false
+                      "$ref": "#/$defs/TranslatedTitle"
                     },
                     {
                       "type": "null"
@@ -1044,8 +414,7 @@
                 "publication_date": {
                   "anyOf": [
                     {
-                      "type": "string",
-                      "pattern": "^(?:19\\d{2}|20\\d{2}|2100)(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\\d|3[01]))?)?$"
+                      "$ref": "#/$defs/FuzzyDate"
                     },
                     {
                       "type": "null"
@@ -1055,49 +424,7 @@
                 "external_ids": {
                   "type": "array",
                   "items": {
-                    "type": "object",
-                    "properties": {
-                      "external_id_type": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "external_id_value": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "external_id_url": {
-                        "anyOf": [
-                          {
-                            "type": "string",
-                            "format": "uri"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "external_id_relationship": {
-                        "anyOf": [
-                          {
-                            "type": "string",
-                            "enum": [
-                              "self",
-                              "part-of",
-                              "version-of",
-                              "funded-by"
-                            ]
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      }
-                    },
-                    "required": [
-                      "external_id_type",
-                      "external_id_value"
-                    ],
-                    "additionalProperties": false
+                    "$ref": "#/$defs/ExternalId"
                   }
                 },
                 "url": {
@@ -1167,8 +494,7 @@
                 "country": {
                   "anyOf": [
                     {
-                      "type": "string",
-                      "pattern": "^[A-Z]{2}$"
+                      "$ref": "#/$defs/CountryCode"
                     },
                     {
                       "type": "null"
@@ -1176,17 +502,10 @@
                   ]
                 },
                 "visibility": {
-                  "type": "string",
-                  "enum": [
-                    "public",
-                    "limited",
-                    "private"
-                  ]
+                  "$ref": "#/$defs/Visibility"
                 },
                 "display_index": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
+                  "$ref": "#/$defs/DisplayIndex"
                 }
               },
               "required": [
@@ -1203,10 +522,7 @@
               "type": "object",
               "properties": {
                 "put_code": {
-                  "description": "Assigned at load from a counter when omitted; unique within its section",
-                  "type": "integer",
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991
+                  "$ref": "#/$defs/PutCode"
                 },
                 "title": {
                   "type": "string",
@@ -1215,22 +531,7 @@
                 "translated_title": {
                   "anyOf": [
                     {
-                      "type": "object",
-                      "properties": {
-                        "value": {
-                          "type": "string",
-                          "minLength": 1
-                        },
-                        "language_code": {
-                          "type": "string",
-                          "minLength": 1
-                        }
-                      },
-                      "required": [
-                        "value",
-                        "language_code"
-                      ],
-                      "additionalProperties": false
+                      "$ref": "#/$defs/TranslatedTitle"
                     },
                     {
                       "type": "null"
@@ -1249,8 +550,7 @@
                 "start_date": {
                   "anyOf": [
                     {
-                      "type": "string",
-                      "pattern": "^(?:19\\d{2}|20\\d{2}|2100)(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\\d|3[01]))?)?$"
+                      "$ref": "#/$defs/FuzzyDate"
                     },
                     {
                       "type": "null"
@@ -1260,8 +560,7 @@
                 "end_date": {
                   "anyOf": [
                     {
-                      "type": "string",
-                      "pattern": "^(?:19\\d{2}|20\\d{2}|2100)(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\\d|3[01]))?)?$"
+                      "$ref": "#/$defs/FuzzyDate"
                     },
                     {
                       "type": "null"
@@ -1269,114 +568,12 @@
                   ]
                 },
                 "organization": {
-                  "type": "object",
-                  "properties": {
-                    "name": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "address": {
-                      "type": "object",
-                      "properties": {
-                        "city": {
-                          "type": "string",
-                          "minLength": 1
-                        },
-                        "region": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "country": {
-                          "type": "string",
-                          "pattern": "^[A-Z]{2}$"
-                        }
-                      },
-                      "required": [
-                        "city",
-                        "country"
-                      ],
-                      "additionalProperties": false
-                    },
-                    "disambiguated_organization": {
-                      "anyOf": [
-                        {
-                          "type": "object",
-                          "properties": {
-                            "disambiguated_organization_identifier": {
-                              "type": "string",
-                              "minLength": 1
-                            },
-                            "disambiguation_source": {
-                              "type": "string",
-                              "minLength": 1
-                            }
-                          },
-                          "required": [
-                            "disambiguated_organization_identifier",
-                            "disambiguation_source"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "name",
-                    "address"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/$defs/Organization"
                 },
                 "external_ids": {
                   "type": "array",
                   "items": {
-                    "type": "object",
-                    "properties": {
-                      "external_id_type": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "external_id_value": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "external_id_url": {
-                        "anyOf": [
-                          {
-                            "type": "string",
-                            "format": "uri"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "external_id_relationship": {
-                        "anyOf": [
-                          {
-                            "type": "string",
-                            "enum": [
-                              "self",
-                              "part-of",
-                              "version-of",
-                              "funded-by"
-                            ]
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      }
-                    },
-                    "required": [
-                      "external_id_type",
-                      "external_id_value"
-                    ],
-                    "additionalProperties": false
+                    "$ref": "#/$defs/ExternalId"
                   }
                 },
                 "url": {
@@ -1391,17 +588,10 @@
                   ]
                 },
                 "visibility": {
-                  "type": "string",
-                  "enum": [
-                    "public",
-                    "limited",
-                    "private"
-                  ]
+                  "$ref": "#/$defs/Visibility"
                 },
                 "display_index": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
+                  "$ref": "#/$defs/DisplayIndex"
                 }
               },
               "required": [
@@ -1419,10 +609,7 @@
               "type": "object",
               "properties": {
                 "put_code": {
-                  "description": "Assigned at load from a counter when omitted; unique within its section",
-                  "type": "integer",
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991
+                  "$ref": "#/$defs/PutCode"
                 },
                 "reviewer_role": {
                   "type": "string",
@@ -1459,8 +646,7 @@
                 "completion_date": {
                   "anyOf": [
                     {
-                      "type": "string",
-                      "pattern": "^(?:19\\d{2}|20\\d{2}|2100)(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\\d|3[01]))?)?$"
+                      "$ref": "#/$defs/FuzzyDate"
                     },
                     {
                       "type": "null"
@@ -1468,128 +654,19 @@
                   ]
                 },
                 "convening_organization": {
-                  "type": "object",
-                  "properties": {
-                    "name": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "address": {
-                      "type": "object",
-                      "properties": {
-                        "city": {
-                          "type": "string",
-                          "minLength": 1
-                        },
-                        "region": {
-                          "type": [
-                            "string",
-                            "null"
-                          ]
-                        },
-                        "country": {
-                          "type": "string",
-                          "pattern": "^[A-Z]{2}$"
-                        }
-                      },
-                      "required": [
-                        "city",
-                        "country"
-                      ],
-                      "additionalProperties": false
-                    },
-                    "disambiguated_organization": {
-                      "anyOf": [
-                        {
-                          "type": "object",
-                          "properties": {
-                            "disambiguated_organization_identifier": {
-                              "type": "string",
-                              "minLength": 1
-                            },
-                            "disambiguation_source": {
-                              "type": "string",
-                              "minLength": 1
-                            }
-                          },
-                          "required": [
-                            "disambiguated_organization_identifier",
-                            "disambiguation_source"
-                          ],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    }
-                  },
-                  "required": [
-                    "name",
-                    "address"
-                  ],
-                  "additionalProperties": false
+                  "$ref": "#/$defs/Organization"
                 },
                 "external_ids": {
                   "type": "array",
                   "items": {
-                    "type": "object",
-                    "properties": {
-                      "external_id_type": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "external_id_value": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "external_id_url": {
-                        "anyOf": [
-                          {
-                            "type": "string",
-                            "format": "uri"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "external_id_relationship": {
-                        "anyOf": [
-                          {
-                            "type": "string",
-                            "enum": [
-                              "self",
-                              "part-of",
-                              "version-of",
-                              "funded-by"
-                            ]
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      }
-                    },
-                    "required": [
-                      "external_id_type",
-                      "external_id_value"
-                    ],
-                    "additionalProperties": false
+                    "$ref": "#/$defs/ExternalId"
                   }
                 },
                 "visibility": {
-                  "type": "string",
-                  "enum": [
-                    "public",
-                    "limited",
-                    "private"
-                  ]
+                  "$ref": "#/$defs/Visibility"
                 },
                 "display_index": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
+                  "$ref": "#/$defs/DisplayIndex"
                 }
               },
               "required": [
@@ -1614,5 +691,230 @@
     "clients",
     "users"
   ],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "Visibility": {
+      "type": "string",
+      "enum": [
+        "public",
+        "limited",
+        "private"
+      ]
+    },
+    "PutCode": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "description": "Assigned at load from a counter when omitted; unique within its section"
+    },
+    "DisplayIndex": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "CountryCode": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}$"
+    },
+    "Affiliation": {
+      "type": "object",
+      "properties": {
+        "put_code": {
+          "$ref": "#/$defs/PutCode"
+        },
+        "department_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "role_title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "start_date": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FuzzyDate"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "end_date": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FuzzyDate"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "organization": {
+          "$ref": "#/$defs/Organization"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uri"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "external_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ExternalId"
+          }
+        },
+        "visibility": {
+          "$ref": "#/$defs/Visibility"
+        },
+        "display_index": {
+          "$ref": "#/$defs/DisplayIndex"
+        }
+      },
+      "required": [
+        "organization",
+        "visibility"
+      ],
+      "additionalProperties": false
+    },
+    "FuzzyDate": {
+      "type": "string",
+      "pattern": "^(?:19\\d{2}|20\\d{2}|2100)(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\\d|3[01]))?)?$"
+    },
+    "Organization": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "address": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string",
+              "minLength": 1
+            },
+            "region": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "country": {
+              "$ref": "#/$defs/CountryCode"
+            }
+          },
+          "required": [
+            "city",
+            "country"
+          ],
+          "additionalProperties": false
+        },
+        "disambiguated_organization": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "disambiguated_organization_identifier": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "disambiguation_source": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "disambiguated_organization_identifier",
+                "disambiguation_source"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "address"
+      ],
+      "additionalProperties": false
+    },
+    "ExternalId": {
+      "type": "object",
+      "properties": {
+        "external_id_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "external_id_value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "external_id_url": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uri"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "external_id_relationship": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "self",
+                "part-of",
+                "version-of",
+                "funded-by"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "external_id_type",
+        "external_id_value"
+      ],
+      "additionalProperties": false
+    },
+    "TranslatedTitle": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "language_code": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value",
+        "language_code"
+      ],
+      "additionalProperties": false
+    }
+  }
 }

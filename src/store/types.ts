@@ -23,7 +23,7 @@ import type {
   PutCodeSection,
 } from "../fixtures/schema";
 
-export type Visibility = "public" | "limited" | "private";
+export type { Visibility } from "../fixtures/schema";
 export type ScopeName = "/authenticate" | "openid" | "/read-limited" | "/read-public";
 
 /** The `created-date` and `last-modified-date` that ORCID stamps on an item. */
