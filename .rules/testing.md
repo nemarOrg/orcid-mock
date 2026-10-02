@@ -1,6 +1,6 @@
 # Testing Standards - NO MOCKS Policy
 
-This project is itself a test double for ORCID.
+This project is itself a test double for the Open Researcher and Contributor ID (ORCID) service.
 The rule still holds for its own tests: they start the real server and drive it over HTTP, and never import a handler to skip the wire.
 The only thing faked here is ORCID, deliberately and faithfully.
 
