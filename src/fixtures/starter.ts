@@ -32,7 +32,6 @@ export const STARTER_USERS_FILE: UsersFileInput = {
   users: [
     {
       orcid: "",
-      password: "test",
       name: {
         given_names: "Alder",
         family_name: "Fennimore",
@@ -220,7 +219,6 @@ export const STARTER_USERS_FILE: UsersFileInput = {
     },
     {
       orcid: "",
-      password: "test",
       name: { given_names: "Sennet", family_name: null, credit_name: null, visibility: "public" },
       emails: [
         { email: "sennet@example.test", primary: true, verified: false, visibility: "private" },
@@ -228,7 +226,6 @@ export const STARTER_USERS_FILE: UsersFileInput = {
     },
     {
       orcid: "",
-      password: "test",
       locked: true,
       name: {
         given_names: "Briar",

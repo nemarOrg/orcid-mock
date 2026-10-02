@@ -56,10 +56,6 @@
             "type": "string",
             "pattern": "^(?:\\d{4}-\\d{4}-\\d{4}-\\d{3}[\\dX])?$"
           },
-          "password": {
-            "description": "For the consent page's optional password prompt",
-            "type": "string"
-          },
           "claimed": {
             "description": "Absent means claimed",
             "type": "boolean"

@@ -34,7 +34,7 @@ An invalid value, an unreadable users file, or a users file that fails validatio
 |---|---|---|---|
 | `PUBLIC_BASE_URL` | `--base-url` | `http://{host}:{port}` | Absolute `http` or `https` URL, with no query, fragment, or credentials; trailing slashes are stripped and a path prefix is kept. Every absolute URL the mock emits derives from it, never from the `Host` header. |
 | `PORT` | `--port` | `9700` | `0` picks a free port; the readiness line reports the one it bound. |
-| `HOST` | `--host` | `127.0.0.1` | Interface to bind. The admin API is unauthenticated, so the default is loopback; `0.0.0.0` exposes it, passwords included, to the network, and the container image will set it only because the container's network is the boundary. |
+| `HOST` | `--host` | `127.0.0.1` | Interface to bind. The admin API is unauthenticated, so the default is loopback; `0.0.0.0` exposes it to the network, and the container image will set it only because the container's network is the boundary. |
 | `USERS_FILE` | `--users` | the bundled starter | Path to a users file. |
 | `LOG_LEVEL` | `--log-level` | `info` | `debug`, `info`, `warn`, or `error`. |
 
@@ -57,7 +57,7 @@ The rules a schema cannot express (checksums, duplicate iDs and emails, one prim
 
 ### The admin API
 
-No authentication and no CORS in MVP1, and `GET /__admin/users` returns the fixture passwords, so keep the server on loopback.
+No authentication and no CORS in MVP1, so keep the server on loopback.
 A request that carries an `Origin` header other than the server's own (the origin of `PUBLIC_BASE_URL`) is refused with `403 {"error":"forbidden_origin"}`: browsers always send `Origin` on a cross-origin request, so a web page cannot reset or rewrite a local mock, while `curl` and test clients, which send none, are unaffected.
 Users are read and written in the users-file form, with the minted iD and every put-code filled in, which is how a test learns them.
 A body must be JSON with a JSON `Content-Type`; anything else is `400 {"error":"invalid_request"}`, and a body that fails validation is `400 {"error":"invalid_fixture","issues":[{"path","message"}]}`.

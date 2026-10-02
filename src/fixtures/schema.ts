@@ -237,7 +237,6 @@ const UserShape = z.strictObject({
   orcid: OrcidField.optional().describe(
     "Any block is accepted if the checksum is right; empty or absent mints an iD from the mint block",
   ),
-  password: z.string().optional().describe("For the consent page's optional password prompt"),
   claimed: z.boolean().optional().describe("Absent means claimed"),
   locked: z.boolean().optional(),
   deactivated: z.boolean().optional(),
