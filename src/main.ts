@@ -62,15 +62,16 @@ async function serve(flags: ConfigFlags): Promise<void> {
     publicBaseUrl: core.publicBaseUrl,
     logLevel: core.logLevel,
   });
-  // The readiness line is the only thing on stdout; logs go to stderr.
-  console.log(JSON.stringify({ event: "listening", url: server.url, port: server.port }));
-
+  // The handlers go in before the readiness line: a supervisor may signal the moment it reads
+  // the line, and a signal that arrives first kills the process with 143 instead of 0.
   const shutdown = async (): Promise<void> => {
     await server.stop();
     process.exit(0);
   };
   process.once("SIGTERM", shutdown);
   process.once("SIGINT", shutdown);
+  // The readiness line is the only thing on stdout; logs go to stderr.
+  console.log(JSON.stringify({ event: "listening", url: server.url, port: server.port }));
 }
 
 function printIds(count: number): void {
