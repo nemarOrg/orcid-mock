@@ -1,0 +1,137 @@
+name: orcid-mock
+description: >-
+  Start an ephemeral mock of the ORCID service in a container for the rest of the job, wait until
+  it is healthy, and export ORCID_API_BASE, ORCID_PUB_API_BASE, and ORCID_MOCK_URL.
+author: nemarOrg
+branding:
+  icon: server
+  color: green
+
+# Linux runners only (the image is a Linux container and the steps use Docker and bash).
+# A composite action has no post step, so the container is not stopped here: it lives until the
+# job ends, when the runner is torn down; stop it earlier with `docker rm -f <container-id>`.
+
+inputs:
+  version:
+    description: Image tag to run, for example 1, 1.2, 1.2.3, or latest.
+    default: latest
+  image:
+    description: >-
+      Image repository, without a tag; the container runs "<image>:<version>". Override it to run
+      a locally built image.
+    default: ghcr.io/nemarorg/orcid-mock
+  users-file:
+    description: >-
+      Path, in the caller's workspace, to a users file (see fixtures/users.schema.json). It is
+      mounted read-only and must be readable by every user. Empty serves the bundled starter users.
+    default: ""
+  port:
+    description: Port to publish on the runner's loopback interface.
+    default: "9700"
+  public-base-url:
+    description: >-
+      The URL your application uses to reach the mock; it becomes the issuer and the base of every
+      absolute URL the mock emits. Empty means http://localhost:<port>.
+    default: ""
+
+outputs:
+  orcid-mock-url:
+    description: The mock's public base URL (also exported as ORCID_MOCK_URL).
+    value: ${{ steps.start.outputs.orcid-mock-url }}
+  orcid-api-base:
+    description: Same value, for code that reads the ORCID member API base (ORCID_API_BASE).
+    value: ${{ steps.start.outputs.orcid-api-base }}
+  orcid-pub-api-base:
+    description: Same value, for code that reads the public API base (ORCID_PUB_API_BASE).
+    value: ${{ steps.start.outputs.orcid-pub-api-base }}
+  container-id:
+    description: The id of the running container.
+    value: ${{ steps.start.outputs.container-id }}
+
+runs:
+  using: composite
+  steps:
+    - id: start
+      shell: bash
+      # Inputs reach the script as environment variables, never as inline expressions, so a value
+      # cannot be interpreted as shell code.
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_IMAGE: ${{ inputs.image }}
+        INPUT_USERS_FILE: ${{ inputs.users-file }}
+        INPUT_PORT: ${{ inputs.port }}
+        INPUT_PUBLIC_BASE_URL: ${{ inputs.public-base-url }}
+      run: |
+        set -euo pipefail
+
+        if [ "${RUNNER_OS}" != "Linux" ]; then
+          echo "::error title=orcid-mock::This action runs on Linux runners only (RUNNER_OS is ${RUNNER_OS})."
+          exit 1
+        fi
+        if ! [[ "${INPUT_PORT}" =~ ^[0-9]+$ ]] || [ "${INPUT_PORT}" -lt 1 ] || [ "${INPUT_PORT}" -gt 65535 ]; then
+          echo "::error title=orcid-mock::port must be an integer from 1 to 65535, got '${INPUT_PORT}'."
+          exit 1
+        fi
+        base_url="${INPUT_PUBLIC_BASE_URL:-http://localhost:${INPUT_PORT}}"
+        image="${INPUT_IMAGE}:${INPUT_VERSION}"
+        name="orcid-mock-${INPUT_PORT}"
+
+        docker_args=(
+          run --detach --name "${name}"
+          # Loopback only: the admin API is unauthenticated and serves fixture passwords.
+          --publish "127.0.0.1:${INPUT_PORT}:9700"
+          --env "PUBLIC_BASE_URL=${base_url}"
+        )
+        if [ -n "${INPUT_USERS_FILE}" ]; then
+          case "${INPUT_USERS_FILE}" in
+            /*) users_path="${INPUT_USERS_FILE}" ;;
+            *) users_path="${GITHUB_WORKSPACE}/${INPUT_USERS_FILE}" ;;
+          esac
+          if [ ! -f "${users_path}" ]; then
+            echo "::error title=orcid-mock::users-file '${INPUT_USERS_FILE}' does not exist in the workspace (looked for ${users_path})."
+            exit 1
+          fi
+          docker_args+=(
+            --volume "${users_path}:/fixtures/users.json:ro"
+            --env "USERS_FILE=/fixtures/users.json"
+          )
+        fi
+
+        container="$(docker "${docker_args[@]}" "${image}")"
+
+        # Bounded wait: the container's own health command (the image has no shell or curl), then
+        # the published port from the runner, which is the way the caller will reach it.
+        healthy=0
+        failure="did not become healthy within 60 seconds"
+        for _ in $(seq 1 60); do
+          if [ "$(docker inspect --format '{{.State.Running}}' "${container}")" != "true" ]; then
+            failure="exited before it became healthy"
+            break
+          fi
+          if docker exec "${container}" /orcid-mock health >/dev/null 2>&1 \
+            && curl --silent --fail --max-time 2 "http://127.0.0.1:${INPUT_PORT}/__admin/health" >/dev/null; then
+            healthy=1
+            break
+          fi
+          sleep 1
+        done
+        if [ "${healthy}" != "1" ]; then
+          echo "::group::orcid-mock container logs"
+          docker logs "${container}" 2>&1 || true
+          echo "::endgroup::"
+          echo "::error title=orcid-mock::${image} ${failure}."
+          exit 1
+        fi
+
+        {
+          echo "ORCID_API_BASE=${base_url}"
+          echo "ORCID_PUB_API_BASE=${base_url}"
+          echo "ORCID_MOCK_URL=${base_url}"
+        } >> "${GITHUB_ENV}"
+        {
+          echo "orcid-api-base=${base_url}"
+          echo "orcid-pub-api-base=${base_url}"
+          echo "orcid-mock-url=${base_url}"
+          echo "container-id=${container}"
+        } >> "${GITHUB_OUTPUT}"
+        echo "orcid-mock ${image} is healthy at ${base_url} (container ${container:0:12})"
