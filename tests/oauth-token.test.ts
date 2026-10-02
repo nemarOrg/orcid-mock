@@ -404,6 +404,14 @@ describe("authorization_code", () => {
     expect((await exchangeCode(server, { code })).status).toBe(200);
   });
 
+  test("reset puts the clock back, so a code issued after it has its full ten minutes", async () => {
+    await advance(10_000);
+    await server.reset();
+    const { code } = await signIn();
+    await advance(599);
+    expect((await exchangeCode(server, { code })).status).toBe(200);
+  });
+
   test("reset forgets codes", async () => {
     const { code } = await signIn();
     await server.reset();
