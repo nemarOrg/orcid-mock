@@ -9,7 +9,7 @@
 //
 // Cases (the letter groups the describe blocks, so `-t "A:"` runs one group):
 //
-//   T  Token endpoint (needs ORCID_CLIENT_ID and ORCID_CLIENT_SECRET to be valid)
+//   T  Token endpoint (needs a registered client; skipped when CONFORMANCE_ANONYMOUS_ONLY=1)
 //      T1  client credentials with /read-public: 200, JSON, the keys access_token, token_type,
 //          refresh_token, expires_in, scope, orcid in that order; token_type "bearer", scope
 //          "/read-public", orcid null, no name, and expires_in above ten years.
@@ -19,10 +19,12 @@
 //             container keys in order, every path value, and the keys and value types of every
 //             item present; the name is public, so name.given-names.value is a string.
 //
-//   B  The same six reads with the client-credentials bearer token (needs T1 to pass)
+//   B  The same six reads with the client-credentials bearer token (needs T1 to pass; skipped
+//      when CONFORMANCE_ANONYMOUS_ONLY=1)
 //      B1-B6  200 and the same structure as A1-A6.
 //
-//   E  Error shapes (need nothing valid; E1 sends a wrong secret, E2 no credentials at all)
+//   E  Error shapes (need no registered client: E1 sends a wrong secret, and an anonymous-only
+//      run names an unregistered client for it; E2 sends no credentials at all)
 //      E1  token request with a wrong client secret: 401, invalid_client.
 //      E2  token request with JSON instead of a form: 415, an HTML page, and an Accept header
 //          that names the form type.
@@ -143,7 +145,17 @@ const READS: ReadonlyArray<{
   { section: "email", shape: shapes.email },
 ];
 
-describe("T: token endpoint", () => {
+// The cases that need a registered client are skipped, visibly, in an anonymous-only run.
+const NEEDS_CLIENT = target.anonymousOnly
+  ? " (skipped: CONFORMANCE_ANONYMOUS_ONLY=1, no registered client)"
+  : "";
+if (target.anonymousOnly) {
+  console.warn(
+    "CONFORMANCE_ANONYMOUS_ONLY=1: T1 and B1-B6 need a registered client and are skipped.",
+  );
+}
+
+describe.skipIf(target.anonymousOnly)(`T: token endpoint${NEEDS_CLIENT}`, () => {
   test("T1 client credentials with /read-public", async () => {
     const reply = await client.clientCredentials();
     expect(reply.status).toBe(200);
@@ -166,7 +178,7 @@ describe("A: anonymous public reads", () => {
   }
 });
 
-describe("B: public reads with a bearer token", () => {
+describe.skipIf(target.anonymousOnly)(`B: public reads with a bearer token${NEEDS_CLIENT}`, () => {
   for (const [index, { section, shape, also }] of READS.entries()) {
     test(`B${index + 1} ${section}`, async () => {
       const token = await client.clientCredentialsToken();
