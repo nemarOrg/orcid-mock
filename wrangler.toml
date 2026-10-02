@@ -2,6 +2,11 @@
 # Worker build. This is the smoke-test entry, not the hosted mode: it serves the bundled starter
 # users from memory, one store per isolate, with no persistence (see the header of src/worker.ts).
 #
+# WARNING: a deployed Worker is reachable from the internet and exposes the unauthenticated admin
+# API (reset, and the fixture users with their passwords). Deploy it only where that is acceptable,
+# and put Cloudflare Access or another gate in front of it. `workers_dev = false` below keeps it off
+# the public *.workers.dev address until you route it deliberately.
+#
 #   bun x wrangler deploy --dry-run --outdir dist/worker   bundle it without deploying
 #   bun x wrangler dev                                     run it locally in workerd
 #
@@ -9,8 +14,11 @@
 # `wrangler deploy --var PUBLIC_BASE_URL:https://...`; without it every request answers 500.
 name = "orcid-mock"
 main = "src/worker.ts"
-compatibility_date = "2026-09-01"
+# Must not be later than the date of the workerd that runs it (the test uses this same value).
+compatibility_date = "2026-07-01"
 # nodejs_compat is off on purpose: the portable layer uses Web APIs only (ADR 0002).
+
+workers_dev = false
 
 # [vars]
 # PUBLIC_BASE_URL = "https://orcid-mock.example.workers.dev"
