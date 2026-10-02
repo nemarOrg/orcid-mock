@@ -2,7 +2,15 @@ import { Hono } from "hono";
 import type { AppEnv } from "../app";
 import { discoveryEndpoint } from "../oidc/discovery";
 import { jwksEndpoint } from "../oidc/jwks";
+import { corsPreflight } from "../oidc/preflight";
 import { userinfoEndpoint } from "../oidc/userinfo";
+
+// The three paths ORCID enables cross-domain reads for; see ../oidc/headers.ts.
+const CROSS_DOMAIN_PATHS = [
+  "/.well-known/openid-configuration",
+  "/oauth/jwks",
+  "/oauth/userinfo",
+] as const;
 
 // ORCID's OpenID Connect routes: /.well-known/openid-configuration, /oauth/jwks, and
 // /oauth/userinfo. The router is mounted at the root, so it declares full paths and nothing else.
@@ -15,5 +23,6 @@ export function oidcRoutes(): Hono<AppEnv> {
   oidc.get("/oauth/jwks", jwksEndpoint);
   oidc.get("/oauth/userinfo", userinfoEndpoint);
   oidc.post("/oauth/userinfo", userinfoEndpoint);
+  for (const path of CROSS_DOMAIN_PATHS) oidc.options(path, corsPreflight);
   return oidc;
 }

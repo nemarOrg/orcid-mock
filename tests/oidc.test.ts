@@ -787,3 +787,47 @@ describe("userinfo refuses with ORCID's one 403", () => {
     expect(await (await getUserinfo(`Bearer ${token.access_token}`)).text()).toBe(DENIED);
   });
 });
+
+describe("CORS preflight", () => {
+  const paths = ["/.well-known/openid-configuration", "/oauth/jwks", "/oauth/userinfo"];
+
+  test("the three cross-domain routes answer an OPTIONS preflight with an empty 200", async () => {
+    for (const path of paths) {
+      const response = await fetch(`${server.baseUrl}${path}`, {
+        method: "OPTIONS",
+        headers: {
+          origin: "http://localhost:3000",
+          "access-control-request-method": "GET",
+          "access-control-request-headers": "authorization",
+        },
+      });
+      expect({ path, status: response.status }).toEqual({ path, status: 200 });
+      expect(await response.text()).toBe("");
+      expect(response.headers.get("access-control-allow-origin")).toBe("*");
+      expect(response.headers.get("access-control-allow-methods")).toBe("GET, POST, PUT, DELETE");
+      expect(response.headers.get("access-control-allow-headers")).toBe(
+        "X-Requested-With,Origin,Content-Type,Accept,Authorization,x-csrf-token,x-xsrf-token",
+      );
+    }
+  });
+
+  test("an OPTIONS request that is not a preflight is not routed", async () => {
+    for (const path of paths) {
+      const response = await fetch(`${server.baseUrl}${path}`, { method: "OPTIONS" });
+      expect({ path, status: response.status }).toEqual({ path, status: 404 });
+      expect(response.headers.get("access-control-allow-origin")).toBeNull();
+    }
+  });
+
+  test("no other route answers a preflight", async () => {
+    for (const path of ["/oauth/token", "/oauth/authorize", "/v3.0/anything", "/__admin/health"]) {
+      const response = await fetch(`${server.baseUrl}${path}`, {
+        method: "OPTIONS",
+        headers: { "access-control-request-method": "POST" },
+      });
+      // The token endpoint answers any method with its 415; the rest are 404.
+      expect({ path, answered: response.status === 200 }).toEqual({ path, answered: false });
+      expect(response.headers.get("access-control-allow-origin")).toBeNull();
+    }
+  });
+});
