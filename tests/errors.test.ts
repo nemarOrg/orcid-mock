@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { Hono } from "hono";
+import { oauthError } from "../src/errors";
 import { startTestServer, type TestServer } from "./harness";
 
 let server: TestServer;
@@ -17,6 +19,9 @@ async function get(path: string, init?: RequestInit) {
   return { response, text, json: JSON.parse(text) as Record<string, unknown> };
 }
 
+// Left to phase 4's record router, which owns /v3.0: real ORCID answers GET /v3.0/ with 406 / 9001
+// and a wrong method on a read path (POST) with 405 / 9001, both with no Content-Type. Until then
+// every /v3.0 path, whatever the method, is the 404 / 9001 below.
 describe("an unrouted /v3.0 path answers in ORCID's record-API shape", () => {
   for (const path of ["/v3.0/x", "/v3.0", "/v3.0/", "/v3.0/0000-0002-1825-0097/record"]) {
     test(`GET ${path}`, async () => {
@@ -69,6 +74,34 @@ describe("an unrouted OAuth or discovery path answers in OAuth's shape", () => {
       expect(json).toEqual({ error: "invalid_request", error_description: "Not found" });
     });
   }
+});
+
+describe("the OAuth error helper's key order", () => {
+  test("error comes first by default, over HTTP on an unrouted /oauth path", async () => {
+    const { text } = await get("/oauth/x");
+    expect(text).toBe('{"error":"invalid_request","error_description":"Not found"}');
+  });
+
+  test("descriptionFirst puts error_description first, as ORCID's token endpoint does", async () => {
+    const app = new Hono()
+      .get("/default", (c) => oauthError(c, 401, "invalid_client", "Client authentication failed"))
+      .get("/orcid", (c) =>
+        oauthError(c, 401, "invalid_client", "Client authentication failed", {
+          descriptionFirst: true,
+        }),
+      );
+    const first = await app.request("/default");
+    expect(first.status).toBe(401);
+    expect(await first.text()).toBe(
+      '{"error":"invalid_client","error_description":"Client authentication failed"}',
+    );
+    const second = await app.request("/orcid");
+    expect(second.status).toBe(401);
+    expect(second.headers.get("content-type")).toContain("application/json");
+    expect(await second.text()).toBe(
+      '{"error_description":"Client authentication failed","error":"invalid_client"}',
+    );
+  });
 });
 
 describe("everything else answers in the admin shape", () => {

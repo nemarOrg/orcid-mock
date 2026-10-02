@@ -7,14 +7,25 @@ import type { Issue } from "./fixtures/schema";
 
 export type ErrorStatus = ContentfulStatusCode;
 
-/** OAuth 2.0 error body, RFC 6749 section 5.2: `{ error, error_description }`. */
+/**
+ * OAuth 2.0 error body, RFC 6749 section 5.2: `{ error, error_description }`.
+ * ORCID's token endpoint (`invalid_client`) and its authorize errors (`invalid_request`) write
+ * `error_description` first, observed on orcid.org on 2026-10-01; pass `descriptionFirst` there.
+ * JSON key order carries no meaning for a client, but a byte-for-byte comparison would see it.
+ */
 export function oauthError(
   c: Context,
   status: ErrorStatus,
   error: string,
   description: string,
+  opts: { descriptionFirst?: boolean } = {},
 ): Response {
-  return c.json({ error, error_description: description }, status);
+  return c.json(
+    opts.descriptionFirst
+      ? { error_description: description, error }
+      : { error, error_description: description },
+    status,
+  );
 }
 
 /** The admin API's error body: `{ error }`, plus `issues` for an invalid fixture. */
