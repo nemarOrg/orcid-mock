@@ -1,0 +1,11 @@
+# zizmor configuration (uvx zizmor .github/workflows action.yml).
+#
+# self-repository asks for the `uses: $/...` form of an in-repository action or reusable workflow.
+# GitHub added it in July 2026, but actionlint (the other workflow linter these files must pass,
+# v1.7.12 at the time of writing) rejects it: rhysd/actionlint issues 711 and 732 are open. Until
+# actionlint accepts it, the `./` form stays, and this one low-severity help finding is muted.
+rules:
+  self-repository:
+    ignore:
+      - ci.yml
+      - release.yml

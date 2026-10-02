@@ -1,0 +1,21 @@
+# Run orcid-mock with your own users file:
+#
+#   docker compose up --wait
+#   curl http://localhost:9700/__admin/health
+#
+# Copy fixtures/users.example.json (or `orcid-mock fixture --out users.json`), edit it, and
+# change the left side of the volume. PUBLIC_BASE_URL is what a caller outside the container
+# uses to reach the mock; it must be set, because the default (http://127.0.0.1:9700) is only
+# right inside the container.
+# ORCID_MOCK_IMAGE overrides the image, for example to try a local build.
+services:
+  orcid-mock:
+    image: ${ORCID_MOCK_IMAGE:-ghcr.io/nemarorg/orcid-mock:latest}
+    ports:
+      # Loopback only: the admin API is unauthenticated and serves the fixture passwords.
+      - "127.0.0.1:9700:9700"
+    environment:
+      PUBLIC_BASE_URL: http://localhost:9700
+      USERS_FILE: /fixtures/users.json
+    volumes:
+      - ./fixtures/users.example.json:/fixtures/users.json:ro

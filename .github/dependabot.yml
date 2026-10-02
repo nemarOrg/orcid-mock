@@ -1,0 +1,42 @@
+# Version updates for the three kinds of pinned dependency here: GitHub Actions (pinned by commit
+# SHA), the Dockerfile's base images (pinned by digest), and Bun packages (exact versions in
+# package.json and bun.lock).
+#
+# Every update waits seven days after its release before Dependabot proposes it, so a compromised
+# release has a week to be caught first. The cooldown applies to version updates only: security
+# updates are not delayed. bunfig.toml holds the same seven-day rule for `bun install`.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
+
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
+    ignore:
+      # wrangler 4.117 and later pin Miniflare 5, which is still an alpha with a different options
+      # API (see tests/worker.test.ts). Lift both when Miniflare 5 is stable and the test moves.
+      - dependency-name: wrangler
+        versions: [">=4.117.0"]
+      - dependency-name: miniflare
+        versions: [">=5.0.0"]

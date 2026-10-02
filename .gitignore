@@ -5,3 +5,5 @@ dist/
 .claude/*.local.md
 .DS_Store
 coverage/
+*.bun-build
+.wrangler/

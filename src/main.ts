@@ -3,7 +3,7 @@
 // argv parsing lives here and nowhere else; resolveConfig only ever sees parsed flags.
 import { parseArgs } from "node:util";
 import pkg from "../package.json";
-import { ConfigError, type ConfigFlags, resolveConfig } from "./config";
+import { ConfigError, type ConfigFlags, DEFAULT_PORT, parsePort, resolveConfig } from "./config";
 import { FixtureError } from "./fixtures/load";
 import { USERS_SCHEMA_ID, usersFileJsonSchemaText } from "./fixtures/schema";
 import { starterFixtureJson } from "./fixtures/starter";
@@ -17,6 +17,7 @@ Usage: orcid-mock [serve] [options]      start the server (the default command)
        orcid-mock fixture [--out FILE]   write the starter users file
        orcid-mock schema [--out FILE]    write the users-file JSON Schema
        orcid-mock health [--url URL]     exit 0 when the server at URL is healthy
+                                         (default http://127.0.0.1:$PORT, port 9700 when PORT is unset)
 
 serve options (each overrides its environment variable):
   --base-url URL    PUBLIC_BASE_URL  absolute http(s) URL the mock puts in every URL it emits
@@ -85,6 +86,20 @@ function printIds(count: number): void {
 async function writeOrPrint(text: string, out: string | undefined): Promise<void> {
   if (out === undefined) process.stdout.write(text);
   else await Bun.write(out, text);
+}
+
+/**
+ * Where `health` looks without --url: this machine on the PORT the server would bind, so a health
+ * check in a container follows the container's own PORT. HOST is not consulted: a wildcard address
+ * is not one to connect to, and a specific one is what --url is for.
+ */
+function defaultHealthUrl(env: Record<string, string | undefined>): string {
+  const raw = env.PORT;
+  const port = raw === undefined || raw === "" ? DEFAULT_PORT : parsePort(raw, "PORT");
+  if (port === 0) {
+    fail("health: PORT=0 picks a free port, so there is no address to check; pass --url", 2);
+  }
+  return `http://127.0.0.1:${port}`;
 }
 
 async function health(url: string): Promise<void> {
@@ -156,7 +171,7 @@ async function main(): Promise<void> {
     case "schema":
       return writeOrPrint(usersFileJsonSchemaText(), values.out);
     case "health":
-      return health(values.url ?? "http://127.0.0.1:9700");
+      return health(values.url ?? defaultHealthUrl(process.env));
   }
 }
 

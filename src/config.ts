@@ -77,7 +77,7 @@ export function parsePublicBaseUrl(raw: string, source = "PUBLIC_BASE_URL"): str
   return `${url.origin}${path}`;
 }
 
-function parsePort(raw: string, source: string): number {
+export function parsePort(raw: string, source: string): number {
   if (!/^\d+$/.test(raw) || Number(raw) > 65535) {
     throw new ConfigError(
       `${source}: must be an integer from 0 to 65535, got ${JSON.stringify(raw)}`,
