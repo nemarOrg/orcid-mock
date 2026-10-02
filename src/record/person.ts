@@ -167,7 +167,7 @@ function personItem<T extends PersonItem>(
 }
 
 /** The container: visible items in display order, `{ last-modified-date, <key>, path }`. */
-function personContainer<T extends PersonItem & { created_ms: number }>(
+function personContainer<T extends PersonItem>(
   section: PersonSection<T>,
   user: StoredUser,
   viewer: Viewer,

@@ -193,7 +193,8 @@ function badRequest(detail: string): OrcidApiErrorSpec {
 }
 
 // The literal placeholder ORCID leaves in a message when it has no value for it (observed).
-const CLIENT_NAME_PLACEHOLDER = ["$", "{clientName}"].join("");
+// biome-ignore lint/suspicious/noTemplateCurlyInString: this is ORCID's own text, not a template.
+const CLIENT_NAME_PLACEHOLDER = "${clientName}";
 
 /**
  * The canonical record-API errors phase 4 serves. Each message is the `apiError.<code>` entry in

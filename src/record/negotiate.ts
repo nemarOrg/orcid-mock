@@ -212,8 +212,8 @@ export function negotiate(accept: string | null | undefined): Negotiation {
   const params = [...range.params].map(([name, value]) => paramText(name, value));
   if (!range.params.has("charset")) params.push("charset=UTF-8");
   // A wildcard type has no spelling of its own to echo, so the type it matched is written, with
-  // the default charset whatever parameters the client sent (observed: a wildcard type with `json` and `charset=utf-8`
-  // got `application/json;charset=UTF-8`).
+  // the default charset whatever parameters the client sent (observed: a wildcard type with
+  // `json` and `charset=utf-8` got `application/json;charset=UTF-8`).
   const contentType =
     range.type === "*"
       ? `${server.mediaType};charset=UTF-8`
