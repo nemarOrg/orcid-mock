@@ -1,0 +1,16 @@
+# A private orcid-mock on your own Cloudflare account, for a portability check and for trying the
+# Worker build. This is the smoke-test entry, not the hosted mode: it serves the bundled starter
+# users from memory, one store per isolate, with no persistence (see the header of src/worker.ts).
+#
+#   bun x wrangler deploy --dry-run --outdir dist/worker   bundle it without deploying
+#   bun x wrangler dev                                     run it locally in workerd
+#
+# Set PUBLIC_BASE_URL to the URL callers reach the Worker at, either below or with
+# `wrangler deploy --var PUBLIC_BASE_URL:https://...`; without it every request answers 500.
+name = "orcid-mock"
+main = "src/worker.ts"
+compatibility_date = "2026-09-01"
+# nodejs_compat is off on purpose: the portable layer uses Web APIs only (ADR 0002).
+
+# [vars]
+# PUBLIC_BASE_URL = "https://orcid-mock.example.workers.dev"
