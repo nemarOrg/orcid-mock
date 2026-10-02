@@ -31,6 +31,7 @@
     "format": "biome check --write .",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.portable.json",
     "test": "bun test --coverage",
+    "conformance": "bun test ./conformance",
     "schema": "bun run src/main.ts schema --out fixtures/users.schema.json",
     "example": "bun scripts/write-example.ts",
     "build:binaries": "bun scripts/build-binaries.ts"
