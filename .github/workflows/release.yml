@@ -154,7 +154,8 @@ jobs:
       - run: bun run typecheck
       - run: bun run test
       # The helpers' own gates (lint, types, tests against a container) run in CI's clients job on
-      # every push; here the lockfile, and below the builds, before anything is public.
+      # every pull request and every push to main; here the lockfile, and below the builds, before
+      # anything is public.
       # Bumping clients/python/pyproject.toml without `uv lock` leaves uv.lock stale, and the
       # published files and the lockfile would then disagree about the version.
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0

@@ -716,7 +716,7 @@ kill $!                                                # stop the server
 The starter users' iDs are minted, so the iD is read from the admin API rather than written down.
 The round trip (below) calls `POST /__admin/reset`, which resets the whole mock, so run the suite against a mock you own and not one that holds data you want to keep.
 A container works the same way: start it with [the Action](#as-a-github-action) or `docker run`, and point the two bases at its `PUBLIC_BASE_URL`.
-Every push and pull request does exactly that in the `e2e` job of [`ci.yml`](.github/workflows/ci.yml):
+Every pull request, and every push to `main`, does exactly that in the `e2e` job of [`ci.yml`](.github/workflows/ci.yml):
 it builds the image from the `Dockerfile`, starts it with this repository's Action, and runs the suite against it with `CONFORMANCE_REQUIRE_ITEMS=1`, using the public client and a user chosen by what it holds (a public name and at least one public work, employment, and email) rather than by position.
 
 `bun run conformance` runs `bun test ./conformance`.
