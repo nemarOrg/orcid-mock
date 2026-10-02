@@ -12,7 +12,8 @@ services:
   orcid-mock:
     image: ${ORCID_MOCK_IMAGE:-ghcr.io/nemarorg/orcid-mock:latest}
     ports:
-      - "9700:9700"
+      # Loopback only: the admin API is unauthenticated and serves the fixture passwords.
+      - "127.0.0.1:9700:9700"
     environment:
       PUBLIC_BASE_URL: http://localhost:9700
       USERS_FILE: /fixtures/users.json
