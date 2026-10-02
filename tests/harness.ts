@@ -160,7 +160,7 @@ export async function spawnServerProcess(
   child.exited.then(() => liveChildren.delete(child));
 
   let stderr = "";
-  (async () => {
+  const drainErr = (async () => {
     const decoder = new TextDecoder();
     for await (const chunk of child.stderr) stderr += decoder.decode(chunk);
   })();
@@ -188,7 +188,7 @@ export async function spawnServerProcess(
       if (line.event !== "listening") throw new Error(`unexpected first stdout line: ${buffer}`);
       reader.releaseLock();
       // Keep draining stdout so a full pipe never blocks the child.
-      void (async () => {
+      const drainOut = (async () => {
         for await (const _ of child.stdout) {
           // discarded
         }
@@ -198,7 +198,8 @@ export async function spawnServerProcess(
         port: line.port,
         stderr: () => stderr,
         kill: (signal = "SIGTERM") => child.kill(signal),
-        exited: child.exited,
+        // Resolves once both pipes are drained, so stderr() is complete when it does.
+        exited: Promise.all([child.exited, drainOut, drainErr]).then(([code]) => code),
       };
     }
   } catch (error) {
