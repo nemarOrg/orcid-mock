@@ -8,7 +8,8 @@ name: Release
 #   verify            tag, version, the helpers' versions, and Action default agree; lint, typecheck, tests
 #   preflight         the NPM_TOKEN secret exists and npm accepts it (real runs only)
 #   binaries, smoke   build every binary once, run it on each kind of runner (gating)
-#   pypi-dist         build the Python helper's wheel and sdist (gating; holds no credentials)
+#   node-dist,        build the two helpers' packages (the Node tarball, the Python wheel and sdist),
+#   pypi-dist         gating, in jobs that hold no credentials
 #   image             build and smoke-test the image BEFORE pushing; then push only the exact tag,
 #                     smoke-test what was pushed, and attest it. The first public effect.
 #   npm               publish the server and the Node helper, each unless its version is already there
@@ -149,10 +150,7 @@ jobs:
       - run: bun run typecheck
       - run: bun run test
       # The helpers' own gates (lint, types, tests against a container) run in CI's clients job on
-      # every push; here only that the Node helper packs, before anything is public.
-      - name: The Node helper packs
-        working-directory: clients/node
-        run: bun pm pack --dry-run
+      # every push; here the lockfile, and below the builds, before anything is public.
       # Bumping clients/python/pyproject.toml without `uv lock` leaves uv.lock stale, and the
       # published files and the lockfile would then disagree about the version.
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
@@ -239,6 +237,45 @@ jobs:
     with:
       version: ${{ needs.verify.outputs.version }}
 
+  # The Node helper's tarball: compiled JavaScript and declarations, built before anything is public
+  # and without credentials. The npm job, which holds the token, only publishes this file.
+  node-dist:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+          no-cache: true
+      - name: Build the Node helper
+        working-directory: clients/node
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+      - name: Pack it, and check the tarball carries the version being released
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        working-directory: clients/node
+        run: |
+          set -euo pipefail
+          mkdir -p ../../node-dist
+          bun pm pack --destination ../../node-dist
+          ls -l ../../node-dist
+          test -f "../../node-dist/nemarorg-orcid-mock-testing-${VERSION}.tgz"
+          test "$(find ../../node-dist -type f | wc -l)" -eq 1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: node-dist
+          path: node-dist/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+
   # The Python helper's wheel and sdist, built before anything is public and without credentials:
   # the job that holds the PyPI identity only downloads these files, so no build backend runs next
   # to it.
@@ -288,7 +325,7 @@ jobs:
           retention-days: 7
 
   image:
-    needs: [verify, preflight, smoke-binaries, pypi-dist]
+    needs: [verify, preflight, smoke-binaries, node-dist, pypi-dist]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -446,7 +483,7 @@ jobs:
           push-to-registry: true
 
   npm:
-    needs: [verify, image]
+    needs: [verify, image, node-dist]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: ${{ needs.verify.outputs.dry-run != 'true' && 'release' || '' }}
@@ -460,7 +497,13 @@ jobs:
         with:
           bun-version-file: package.json
           no-cache: true
-      # No install: bun publish packs the files the package lists, and runs nothing from it.
+      # The Node helper's tarball was built, with its compiled files, by the node-dist job.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: node-dist
+          path: node-dist
+      # No install: for the server, bun publish packs the files the package lists and runs nothing
+      # from it; for the helper, it uploads the tarball as it is.
       - name: Publish the server and the Node helper to npm, unless each version is already there
         env:
           # bun reads this variable. The token is checked in the preflight job.
@@ -476,11 +519,12 @@ jobs:
 
           # Each package is published, or skipped, on its own, so a re-run after a failure between
           # the two finishes the job. The Node helper's default image tag is its own version, and
-          # the image job has already pushed that tag.
+          # the image job has already pushed that tag. The optional argument is a tarball.
           publish() {
-            local dir="$1" name="$2"
+            local name="$1"
+            shift
             if [ "${DRY_RUN}" = true ]; then
-              (cd "${dir}" && bun publish "${flags[@]}" --dry-run)
+              bun publish "$@" "${flags[@]}" --dry-run
               return
             fi
             # npm never lets a version be published twice, so a re-run after a later job failed
@@ -489,10 +533,10 @@ jobs:
               echo "::notice title=npm::${name}@${VERSION} is already published; nothing to do."
               return
             fi
-            (cd "${dir}" && bun publish "${flags[@]}")
+            bun publish "$@" "${flags[@]}"
           }
-          publish . "@nemarorg/orcid-mock"
-          publish clients/node "@nemarorg/orcid-mock-testing"
+          publish "@nemarorg/orcid-mock"
+          publish "@nemarorg/orcid-mock-testing" "node-dist/nemarorg-orcid-mock-testing-${VERSION}.tgz"
 
   # The Python helper, through PyPI trusted publishing: no stored token, the job's OpenID Connect
   # identity is the credential. The PyPI project must name this repository, this workflow, and the

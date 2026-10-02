@@ -90,6 +90,11 @@ jobs:
       - name: Type-check the Node helper
         working-directory: clients/node
         run: bun run typecheck
+      # Compiled JavaScript and declarations are what the package publishes; the package test
+      # below builds, packs, installs, and loads them under Node again.
+      - name: Build the Node helper
+        working-directory: clients/node
+        run: bun run build
       - name: Install the Playwright browser
         working-directory: clients/node
         run: bun x playwright install --with-deps chromium
