@@ -155,3 +155,23 @@ describe("a Host that cannot be made into a URL does not change routing", () => 
     });
   }
 });
+
+describe("HTTP/1.0 with no Host header at all", () => {
+  test("the admin API is refused, failing closed", async () => {
+    const reply = await rawRequest(server, "GET", "/__admin/health", {}, null);
+    expect([reply.status, reply.json]).toEqual([403, { error: "forbidden_host" }]);
+  });
+
+  test("a record read is served as normal", async () => {
+    const path = `/v3.0/${IDS.rich}/email`;
+    const normal = await rawRequest(server, "GET", path, { Accept: "application/json" });
+    const reply = await rawRequest(server, "GET", path, { Accept: "application/json" }, null);
+    expect(reply.status).toBe(200);
+    expect(reply.text).toBe(normal.text);
+  });
+
+  test("authorize is served as normal", async () => {
+    const reply = await rawRequest(server, "GET", AUTHORIZE, {}, null);
+    expect(reply.status).toBe(302);
+  });
+});
