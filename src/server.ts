@@ -90,7 +90,10 @@ function boundUrl(host: string, port: number): string {
  */
 function withStableUrl(request: Request, publicBaseUrl: string): Request {
   if (!request.url.startsWith("/")) return request;
-  return new Request(`${new URL(publicBaseUrl).origin}${request.url}`, request);
+  // `new URL(request.url, origin)` would read a target such as `//evil/x` as protocol-relative, so
+  // the target is appended to the origin as text. Parsing it as a whole URL then normalizes dot
+  // segments and backslashes exactly as Bun does for a request with a usable `Host`.
+  return new Request(new URL(`${new URL(publicBaseUrl).origin}${request.url}`).href, request);
 }
 
 export async function startServer(opts: StartOptions = {}): Promise<RunningServer> {

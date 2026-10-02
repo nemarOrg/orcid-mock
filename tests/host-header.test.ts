@@ -148,6 +148,29 @@ describe("a Host that cannot be made into a URL does not change routing", () => 
         expect((reply.json as { scope: string }).scope).toBe("/read-public");
       });
 
+      test("dot segments and a leading double slash resolve as they do for a normal Host", async () => {
+        // `//evil/x` must stay a path under PUBLIC_BASE_URL, never read as protocol-relative.
+        for (const target of [
+          "/oauth/../.well-known/openid-configuration",
+          "/v3.0/./nope/../nope",
+          "//evil/x",
+          "/oauth/a\\b",
+        ]) {
+          const normal = await rawRequest(server, "GET", target);
+          const reply = await rawRequest(server, "GET", target, {}, host);
+          expect([target, reply.status, reply.text]).toEqual([target, normal.status, normal.text]);
+        }
+        const discovery = await rawRequest(
+          server,
+          "GET",
+          "/oauth/../.well-known/openid-configuration",
+          {},
+          host,
+        );
+        expect(discovery.status).toBe(200);
+        expect(discovery.text).toContain(`"issuer" : "${server.publicBaseUrl}"`);
+      });
+
       test("the admin API is refused as a foreign host, not misrouted to a 404", async () => {
         const reply = await rawRequest(server, "GET", "/__admin/health", {}, host);
         expect([reply.status, reply.json]).toEqual([403, { error: "forbidden_host" }]);
