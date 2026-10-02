@@ -1,35 +1,35 @@
 # Plan
 
 Charter written 2026-09-08 after the nemar-cli v0.10.0 release,
-which made browser sign-in through Open Researcher and Contributor ID (ORCID) the only way into the NEMAR command-line tool
-and left one flow untestable end to end: a brand-new ORCID sign-up.
+which made browser sign-in through Open Researcher and Contributor ID (ORCID) the only way into the Neuroelectromagnetic Data Archive and Tools Resource (NEMAR) command-line tool and left one flow untestable end to end:
+a brand-new ORCID sign-up.
 
 ## Goal
 
-A single small program that stands in for ORCID in tests and CI, and later as a hosted service anyone can point a staging system at,
+A single small program that stands in for ORCID in tests and continuous integration (CI), and later as a hosted service anyone can point a staging system at,
 so that an integration written against it also works against the real ORCID.
 
 ## Decisions
 
 1. Build, do not adopt: no existing project covers ORCID's identity layer and record API together (see research.md).
-2. Bun and TypeScript with Hono on the standard `fetch` interface, so one codebase runs as a CLI process, a container image, and a Cloudflare Worker.
-3. JWTs through a `jose`-family library on Web Crypto (RS256 only, one static key pair per run); everything else written here.
+2. Bun and TypeScript with Hono on the standard `fetch` interface, so one codebase runs as a command-line process, a container image, and a Cloudflare Worker.
+3. JSON Web Tokens (JWTs) through a `jose`-family library on Web Crypto (RS256 only, one static key pair per run); everything else written here.
 4. All state in memory behind a `Store` interface; the hosted mode swaps in Durable Objects with a time-to-live per tenant.
 5. Users come from a JSON file (`USERS_FILE`) validated by a published JSON Schema, and can be added at run time through the admin API.
 6. A fixed `PUBLIC_BASE_URL` decides the issuer and every absolute URL; nothing is derived from the `Host` header.
 7. Fidelity first: ORCID's real response shapes, status codes, error bodies, visibility rules, and put-code semantics, each with a citation.
 8. MIT license; published to npm as `@nemarorg/orcid-mock` and as a container image on GitHub's registry.
 
-## MVP1: everything easy, all read-only
+## First minimum viable product (MVP1): everything easy, all read-only
 
-The first minimum viable product (MVP1) is tracked in epic #1, re-sequenced on 2026-10-01 into seven phases so fixtures land before identity.
+MVP1 is tracked in epic #1, re-sequenced on 2026-10-01 into seven phases so fixtures land before identity.
 Phase 1 runs alone; phases 2 and 5 run in parallel after it; then 3, 4, and 7; then 6.
 Wire details below were corrected on 2026-10-01 against live ORCID responses and ORCID's source (see research.md).
 
 Status, 2026-10-02: complete on the epic branch.
 Each phase was built by an implementer agent, reviewed by a separate reviewer agent, fixed until every finding was addressed, and squash-merged:
 phase 1 in #11, phase 2 in #12, phase 3 in #14, phase 4 in #15, phase 5 in #13, phase 6 in #18, phase 7 in #16.
-Every decision with real alternatives taken during the epic is an Architecture Decision Record (ADR 0002 to 0008), after the charter's ADR 0001.
+Every decision with real alternatives taken during the epic is an Architecture Decision Record (ADR), numbered 0002 to 0008 after the charter's ADR 0001.
 Adoption in nemar-cli follows the first release, in #17.
 
 ### Phase 1: foundation (#4)
@@ -54,7 +54,7 @@ Adoption in nemar-cli follows the first release, in #17.
 
 - `record`, `person`, `personal-details`, `email`, `address`, `other-names`, `keywords`, `external-identifiers`, `researcher-urls`, `biography`, `employments`, `educations`, `qualifications`, `works`, `work/{put-code}`, `works/{put-codes}`, `fundings`, `peer-reviews`, `activities`.
 - Every section is a container of `last-modified-date`, the item array, and `path`; non-public items are removed, not redacted; a non-public name or biography is `null`; a `/read-limited` token from a member client also sees `limited`.
-- `Accept`: `application/json`, `application/orcid+json`, `application/vnd.orcid+json`; a missing or wildcard `Accept` gets XML from real ORCID, so the mock answers 406 with a message saying so (documented deviation until XML exists); anything else answers 406 (error 9001).
+- `Accept`: `application/json`, `application/orcid+json`, `application/vnd.orcid+json`; a missing or wildcard `Accept` gets Extensible Markup Language (XML) from real ORCID, so the mock answers 406 with a message saying so (documented deviation until XML exists); anything else answers 406 (error 9001).
 - More than 100 put-codes answers 400 (error 9042); an unknown or malformed iD answers 404 (error 9016); deprecated answers 301 with `Location`; locked, deactivated, and unclaimed answer 409; a bad bearer answers 401 `invalid_token`.
 
 ### Phase 5: packaging and distribution (#8)
@@ -72,11 +72,11 @@ Adoption in nemar-cli follows the first release, in #17.
 
 - Testcontainers modules for Node and Python, a Playwright fixture, and a pytest plugin.
 
-## MVP2
+## Second minimum viable product (MVP2)
 
 - Member-API writes: `POST` and `PUT` for works and employments with put-code assignment, `DELETE`, 409 on duplicates.
 - Hosted service: multi-tenant, a tenant per token with an isolated user set and a time-to-live, deployed as a Cloudflare Worker with Durable Objects (or on nemar infrastructure), with a small page to create a tenant and upload a fixture, so anyone can point a staging system at it without running anything.
-- XML representation, webhooks, rate-limit and 503 emulation, JWKS rotation.
+- XML representation, webhooks, rate-limit and 503 emulation, rotation of the JSON Web Key Set (JWKS).
 
 ## Distribution: how people get one
 
@@ -98,7 +98,7 @@ MVP1, nearly free once the image and the `bun build --compile` binary exist:
 
 - Container image on GitHub's registry (`ghcr.io/nemarorg/orcid-mock`), multi-arch (amd64 and arm64), tagged by version and `latest`, with a `docker-compose.yml` example.
 - Static binaries per platform attached to each GitHub Release (Linux, macOS, Windows, both architectures), so no runtime install at all.
-- A GitHub Action (`nemarOrg/orcid-mock-action` or `uses: nemarOrg/orcid-mock@v1`) that pulls the image, waits for health, and exports `ORCID_API_BASE`; one line in a workflow instead of a `services:` block.
+- A GitHub Action (`uses: nemarOrg/orcid-mock@v1`) that pulls the image, waits for health, and exports `ORCID_API_BASE`; one line in a workflow instead of a `services:` block.
 - A Testcontainers module for Node and for Python, so integration tests start and stop it themselves.
 - A Playwright fixture (`signInAs(iD)`) and a pytest plugin (`orcid_mock` fixture) built on the admin API.
 
@@ -121,6 +121,6 @@ MVP2:
 
 ## Not doing
 
-- Emulating ORCID's registration and email verification UI.
+- Emulating ORCID's registration and email verification user interface.
 - Dynamic client registration, hybrid flows, key rotation in MVP1.
 - Reproducing the public versus member hostname split (one origin serves both).
