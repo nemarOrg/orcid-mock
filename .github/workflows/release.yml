@@ -536,7 +536,9 @@ jobs:
             local name="$1"
             shift
             if [ "${DRY_RUN}" = true ]; then
-              bun publish "$@" "${flags[@]}" --dry-run
+              # bun publish refuses even a dry run without a token, and a dry run has none on purpose;
+              # a placeholder lets it pack and report without contacting the registry.
+              NPM_CONFIG_TOKEN="${NPM_CONFIG_TOKEN:-dry-run-placeholder}" bun publish "$@" "${flags[@]}" --dry-run
               return
             fi
             # npm never lets a version be published twice, so a re-run after a later job failed
