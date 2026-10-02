@@ -420,3 +420,66 @@ jobs:
           for container in $(docker ps --all --quiet --filter name=orcid-mock); do
             docker logs "${container}" 2>&1 || true
           done
+
+  # The epic's definition of done on a runner: the image built from this commit, started by this
+  # commit's Action, and the conformance suite driven against it with no browser. It includes a
+  # brand-new sign-up (conformance/round-trip.test.ts) from creating the user to resetting it away.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      # The suite needs the runtime dependencies only (jose, for the ID token check).
+      - run: bun install --frozen-lockfile --production
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: image=${{ env.BUILDKIT_IMAGE }}
+      - name: Build the image for linux/amd64 (no push)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          load: true
+          provenance: false
+          tags: orcid-mock:e2e
+          build-args: |
+            VERSION=e2e
+            REVISION=${{ github.sha }}
+      - name: Start the mock with this repository's Action
+        uses: ./
+        with:
+          # The Action runs "<image>:<version>", which is the tag built above.
+          image: orcid-mock
+          version: e2e
+      - name: Run the conformance suite against the mock
+        env:
+          CONFORMANCE_TARGET: mock
+          # The starter fixture's public client; its secret is published in the README.
+          ORCID_CLIENT_ID: APP-ORCIDMOCK000001
+          ORCID_CLIENT_SECRET: orcid-mock-secret
+        run: |
+          set -euo pipefail
+          # ORCID_API_BASE and ORCID_PUB_API_BASE were exported by the Action.
+          echo "ORCID_API_BASE=${ORCID_API_BASE}"
+          echo "ORCID_PUB_API_BASE=${ORCID_PUB_API_BASE}"
+          # The starter users' iDs are minted, so ask the mock for a user with a public name.
+          ORCID_PUBLIC_ID="$(curl --fail --silent "${ORCID_API_BASE}/__admin/users" \
+            | jq -er '[.[] | select(.name.visibility == "public")][0].orcid')"
+          export ORCID_PUBLIC_ID
+          echo "ORCID_PUBLIC_ID=${ORCID_PUBLIC_ID}"
+          bun run conformance
+      - name: Container logs
+        if: failure()
+        run: |
+          docker ps --all
+          for container in $(docker ps --all --quiet --filter name=orcid-mock); do
+            docker logs "${container}" 2>&1 || true
+          done
