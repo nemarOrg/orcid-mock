@@ -360,6 +360,103 @@ The key is hyphenated, unlike the underscore in every other ORCID error body, an
 - No success response of ORCID's 2026 authorization server was captured, so the ID token's claims follow its documentation and its removed legacy implementation, and the userinfo body, with `id` and the nulls, follows ORCID's source.
 - A userinfo token whose user was deleted answers 403, as an unknown token does.
 
+## Record API
+
+`GET /v3.0/...` serves the public read endpoints of ORCID's v3.0 record API, in JSON, from the users in the file.
+The shapes, key order, `null` versus `[]`, error bodies, and headers are ORCID's, from its source and from live reads of `pub.orcid.org/v3.0` on 2026-10-01, so a client written against ORCID works unchanged except for the host in a URI.
+[ADR 0007](.context/decisions/0007-record-api-fidelity-and-deviations.md) records the decisions below; every behavior has a permalink in the source, and every choice is marked "orcid-mock choice".
+
+### Endpoints
+
+All are `GET`, and `HEAD` and a trailing slash work on each; `{pc}` is a put-code.
+
+| Path under `/v3.0/{iD}` | Answer |
+|---|---|
+| (the iD alone), `/record` | The whole record: `orcid-identifier`, `preferences`, `history`, `person`, `activities-summary`, `path`. |
+| `/person`, `/personal-details`, `/activities` | A composition of the sections below; each section is byte for byte what its own endpoint serves. |
+| `/email`, `/address`, `/other-names`, `/keywords`, `/external-identifiers`, `/researcher-urls`, `/biography` | Person-level sections. `/email` is `email` and `/address` is `address`, but `person` nests them as `emails` and `addresses`. |
+| `/employments`, `/educations`, `/qualifications`, `/fundings`, `/peer-reviews`, `/works` | Activity sections, grouped. |
+| `/distinctions`, `/invited-positions`, `/memberships`, `/services`, `/research-resources` | Always empty: a fixture has no such sections; their item paths (`/distinction/{pc}` and so on) answer 404 / 9016, or 400 / 9006 for the put-code of an employment, education, or qualification. |
+| `/work/{pc}`, `/employment/{pc}`, `/education/{pc}`, `/qualification/{pc}`, `/funding/{pc}`, `/peer-review/{pc}` | One full item. |
+| `/other-names/{pc}`, `/keywords/{pc}`, `/researcher-urls/{pc}`, `/external-identifiers/{pc}`, `/address/{pc}` | One person-level item. |
+| `/works/{pc,pc,...}` | Up to 100 full works: `{"bulk": [{"work": ...}, {"error": ...}]}`. |
+
+Every section is a container, `{"last-modified-date", <items>, "path"}`, with `[]` and a null date when empty.
+Item paths are singular for activities and plural for person-level items, `display-index` is a number on person-level items and a string on activity summaries, and put-codes are numbers.
+Not served: search, the unversioned redirects, the member API host, XML, the `summary` and `citation` variants of single items, and ORCID's two other representations (`application/ld+json` for the record, a citation style for a work), which are a 406 here.
+
+### `Accept`
+
+`application/json` is compact, and `application/orcid+json` and `application/vnd.orcid+json` are pretty-printed in Jackson's layout (`"key" : value`, `[ ]` for an empty array).
+The `Content-Type` echoes the type as the client wrote it, with `;charset=UTF-8` added only when it gave no charset (and without any `q` or `qs`); errors follow the same style.
+Ranges are tried by the client's q-value, then ORCID's own weight (`qs`) for each type, then specificity, then the order written, as ORCID does:
+`application/json, text/plain, */*` is JSON, and `application/json, application/vnd.orcid+xml` is JSON in either order.
+A header that does not parse (`application/json;q=abc`, a leading comma) is ORCID's 400 with an HTML page, which orcid-mock sends in a minimal form.
+
+**Deviation, until XML exists:** real ORCID answers XML to a missing `Accept`, to `*/*` and `application/*`, to an XML type, and to a list that prefers XML.
+orcid-mock answers 406 / 9001 with no `Content-Type` and a developer message that says it serves JSON only, that real ORCID would answer XML, and which header to send.
+Any other type (`text/csv`, `text/html`, `application/ld+json`) is ORCID's own 406 / 9001.
+Send `Accept: application/json` explicitly: Bun's and Node's `fetch` default to `*/*`.
+
+### Who sees what
+
+An item's `visibility` is `public`, `limited`, or `private`.
+
+- **Anonymous, or any token that does not qualify below:** only `public` items.
+  Non-public items are removed, not redacted, and a group left empty is removed; a non-public `name` or `biography` is `null`; every container, group, and `person` or `personal-details` date is recomputed from what survives, so none leaks the date of a hidden item (`history.last-modified-date` is the record's own and counts everything).
+- **A member client's token with `/read-limited`, for the record's own iD:** also `limited` items.
+- **`private`:** never served, to anyone.
+- **A bad token:** `401 {"error":"invalid_token","error_description":"Invalid access token: <token>"}` on every `/v3.0` path, with no `WWW-Authenticate`.
+  The token is read from `Authorization: Bearer` first, then from an `access_token` query parameter; a blank value is no token.
+- A single item that exists but is hidden is 403 / 9039, not 404; `/biography` is 403 / 9039 for a hidden biography and 404 / 9041 for none.
+
+### Record states and errors
+
+Every record-scoped read checks, in this order: unknown iD (404 / 9016, with no checksum check), deprecated (301 with `Location` at the same path on the primary record, built from `PUBLIC_BASE_URL`, and a 9007 body), unclaimed (409 / 9036), locked (409 / 9018), deactivated (409 / 9044).
+Bulk works checks only that the record exists.
+In a bulk read, more than 100 put-codes is 400 / 9042 (checked first), an element that is not a number is 400 / 9006, and a put-code that is not the record's is a 9034 element after the works, with HTTP 200.
+A put-code in a single-item path is read before the record's state is checked: a non-number is 404 / 9001 for a work, funding, education, employment, or peer review (ORCID declares those as numbers in the path), and 400 / 9006 for every other kind.
+An affiliation put-code that belongs to another kind is 400 / 9006 (`Given affiliation <pc> doesn't match the desired type <kind>`), because ORCID keeps affiliations in one table.
+A wrong method on a read path is 405 / 9001, `GET /v3.0/` is 406 / 9001 (`OPTIONS` is 200 and other methods 405), `/v3.0` with no slash is a 302 to `/v3.0/v3.0` for any method (ORCID's unversioned-path rule applied to the iD `v3.0`), and any other unrouted path is 404 / 9001.
+ORCID's own root-level resources (`search`, `csv-search`, `expanded-search`, `group-id-record`, `client`, `identifiers`, `statistics`, `status`, `pubStatus`) are not served and are never read as an iD: they answer 404 / 9001, not 404 / 9016.
+Error bodies have ORCID's five keys in order, `response-code`, `developer-message`, `user-message`, `error-code`, `more-info`.
+Every response, errors included, carries `access-control-allow-origin: *`, `cache-control: no-cache, no-store, max-age=0, must-revalidate`, `pragma: no-cache`, `expires: 0`, `x-content-type-options: nosniff`, and `x-frame-options: DENY`.
+
+### Where ORCID is undocumented, unobserved, or cannot be copied
+
+- Every URI is built from `PUBLIC_BASE_URL`: `orcid-identifier.uri` is `PUBLIC_BASE_URL/{iD}`, and `host` is that URL's host, port included, where ORCID writes `https://orcid.org/{iD}` and `orcid.org`.
+- Every item is self-asserted: `source-orcid` is the user, `source-client-id` and the three `assertion-origin-*` keys are null, and `source-name` is the user's public display name, or null when the name is not public.
+- A valid token for another iD, a public client's token, and a client-credentials token get the public view, not an error; ORCID serves `limited` reads from its member host, which was not observed.
+- `history` is orcid-mock's: `WEBSITE`, no `completion-date`, `submission-date` from the name, `last-modified-date` the latest edit of anything, `claimed` from the fixture, and `verified-email` and `verified-primary-email` computed from every email whatever its visibility, as ORCID does; `preferences` is `{"locale": "en"}`.
+- An unclaimed record is always 409 / 9036; ORCID blocks it only while younger than a ten-day claim wait period.
+- Normalization: work, affiliation, and peer-review ids carry `{"value", "transient": true}`; only a DOI is changed (lowercased and reduced to its `10.<registrant>/<suffix>` part, with ORCID's 8001 error when that fails); funding ids carry null, as observed.
+- Groups merge transitively on external ids that are not `part-of` or `funded-by`, among visible items only, and a merged group stays where its earliest member's group was formed.
+  Works are ordered by publication date, title, then type; affiliations by ORCID's start and end date strings; fundings and person-level lists by display index, then creation date; peer reviews by completion date, newest first, with a missing part first because ORCID's database is PostgreSQL (source only).
+- Bulk works returns found works in put-code order, which is what pub.orcid.org returned for a request in another order; the source leaves it to the database.
+  In a 9034 message, `${clientName}` is filled with the reader's client name when the token has one (source only) and left as is for an anonymous reader (observed).
+- Emails keep the fixture's order, since ORCID's has no `order by`.
+- Source only, because no such record or item could be found to observe: 403 / 9039 for a single hidden item, 404 / 9041 for a record with no biography, 409 / 9018 for a locked record, and 409 / 9036 for an unclaimed one.
+- The parameters of an echoed `Content-Type` keep the order the client wrote, where ORCID's follow a hash map's, and the 400 page for a malformed `Accept` is shorter than Tomcat's.
+- `OPTIONS` answers 200 with `Allow: HEAD,GET,OPTIONS`, and the CORS lists only when the request is a preflight.
+
+### Example
+
+```bash
+BASE=http://127.0.0.1:9700
+ORCID=$(curl -s $BASE/__admin/users | grep -o '"orcid":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+# What NEMAR reads: the public name.
+curl -s -H 'Accept: application/json' $BASE/v3.0/$ORCID/personal-details | grep -o '"given-names":{[^}]*}'
+# "given-names":{"value":"Alder"}
+
+# Pretty-printed, as application/vnd.orcid+json asks for it.
+curl -s -H 'Accept: application/vnd.orcid+json' $BASE/v3.0/$ORCID/keywords
+
+# No Accept means XML at ORCID, which orcid-mock answers with a 406 that says so.
+curl -s -H 'Accept:' $BASE/v3.0/$ORCID/email
+# {"response-code":406,"developer-message":"406 Not Acceptable: orcid-mock serves JSON only, ...","error-code":9001,...}
+```
+
 ## Why
 
 ORCID's sandbox is shared, cannot be reset from an API, delivers mail only to one throwaway provider, and needs real accounts,
