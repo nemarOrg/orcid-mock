@@ -3,6 +3,7 @@
 // root).
 import { Hono } from "hono";
 import { ORCID_API_ERRORS, orcidApiError } from "../../errors";
+import { activities, researchResources } from "../../record/activities";
 import { type AffiliationKind, affiliationItem, affiliations } from "../../record/affiliations";
 import { fundingItem, fundings } from "../../record/fundings";
 import { peerReviewItem, peerReviews } from "../../record/peer-reviews";
@@ -18,6 +19,7 @@ import {
   researcherUrls,
 } from "../../record/person";
 import { parseJavaLong } from "../../record/putcode";
+import { record as recordBody } from "../../record/record";
 import type { ItemLookup } from "../../record/wire";
 import { bulkWorks, workItem, works } from "../../record/works";
 import { type ReadContext, type RecordEnv, readRoute, recordMiddleware } from "./read";
@@ -51,6 +53,14 @@ export function recordRoutes(): Hono<RecordEnv> {
   const record = new Hono<RecordEnv>();
   record.use("*", recordMiddleware);
 
+  // The whole record: `/{iD}`, `/{iD}/`, `/{iD}/record`, and `/{iD}/record/` are one body.
+  readRoute(record, ["/:id", "/:id/", ...withSlash("/record")], (r) =>
+    r.send(recordBody(r.user, r.viewer)),
+  );
+  readRoute(record, withSlash("/activities"), (r) => r.send(activities(r.user, r.viewer).json));
+  readRoute(record, withSlash("/research-resources"), (r) =>
+    r.send(researchResources(r.user).json),
+  );
   readRoute(record, withSlash("/person"), (r) => r.send(person(r.user, r.viewer).json));
   readRoute(record, withSlash("/personal-details"), (r) =>
     r.send(personalDetails(r.user, r.viewer).json),

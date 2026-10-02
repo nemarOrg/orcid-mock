@@ -708,6 +708,8 @@ const grouping: FixtureUser = {
 const nullFamily: FixtureUser = {
   orcid: IDS.nullFamily,
   name: { given_names: "Ondine", family_name: null, credit_name: null, visibility: "public" },
+  // A private, unverified email: no verified email exists, so `history` says false for both.
+  emails: [{ email: "ondine@example.test", primary: true, verified: false, visibility: "private" }],
 };
 
 const privateName: FixtureUser = {
@@ -726,6 +728,12 @@ const bioPrivate: FixtureUser = {
   orcid: IDS.bioPrivate,
   name: { given_names: "Lucan", family_name: "Ferreira", credit_name: null, visibility: "public" },
   biography: { content: "A biography nobody may read.", visibility: "private" },
+  // A verified email that is not the primary one, and an unverified primary: `verified-email` is
+  // true and `verified-primary-email` is false.
+  emails: [
+    { email: "lucan.primary@example.test", primary: true, verified: false, visibility: "private" },
+    { email: "lucan.second@example.test", primary: false, verified: true, visibility: "private" },
+  ],
 };
 
 const primary: FixtureUser = {

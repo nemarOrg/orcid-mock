@@ -131,8 +131,10 @@ describe("the bundled Worker in workerd", () => {
     });
   });
 
-  test("an unknown /v3.0 path answers 404 in ORCID's error shape", async () => {
-    const response = await get("/v3.0/x");
+  test("an unrouted /v3.0 path answers 404 in ORCID's error shape", async () => {
+    // `/v3.0/x` is a read path since the record API: an unknown iD, and 406 for this request's
+    // default `Accept`. A path no read route matches is the 9001.
+    const response = await get("/v3.0/x/nope");
     expect(response.status).toBe(404);
     expect(await response.json()).toMatchObject({
       "response-code": 404,

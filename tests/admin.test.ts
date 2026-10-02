@@ -732,7 +732,7 @@ describe("cross-origin protection", () => {
   });
 
   test("the rule only guards /__admin", async () => {
-    const response = await fetch(`${server.baseUrl}/v3.0/nope`, {
+    const response = await fetch(`${server.baseUrl}/v3.0/nope/bogus`, {
       headers: { origin: "https://evil.example.test" },
     });
     expect(response.status).toBe(404);
