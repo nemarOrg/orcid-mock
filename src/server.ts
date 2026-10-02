@@ -14,6 +14,14 @@ import { STARTER_USERS_FILE } from "./fixtures/starter";
 import type { LogLevel } from "./log";
 import { createLogger, silentLogger } from "./log";
 
+/**
+ * The largest request body the socket accepts: 8 MiB, which is far above any fixture or form this
+ * server takes (a users file of thousands of users is well under 1 MiB). Bun's default is 128
+ * MiB, which an unauthenticated client could make the process buffer, and parse as JSON, once per
+ * request. Bun answers a larger body 413 and closes the connection.
+ */
+export const MAX_REQUEST_BODY_BYTES = 8 * 1024 * 1024;
+
 export interface StartOptions {
   /** 0 picks a free port. Default 9700. */
   port?: number;
@@ -89,7 +97,12 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
     source: opts.usersFile ? `users file ${opts.usersFile}` : "users file",
   });
 
-  const server = Bun.serve({ port: opts.port ?? DEFAULT_PORT, hostname: host, fetch: app.fetch });
+  const server = Bun.serve({
+    port: opts.port ?? DEFAULT_PORT,
+    hostname: host,
+    maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
+    fetch: app.fetch,
+  });
   const port = server.port ?? 0;
   config.publicBaseUrl = explicitUrl ?? boundUrl(host, port);
 
