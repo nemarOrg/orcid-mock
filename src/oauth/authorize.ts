@@ -11,7 +11,7 @@ import { renderConsentPage } from "./consent-page";
 import { readForm } from "./form";
 import { redirectUriMatches, withFragment, withQuery } from "./redirect-uri";
 import { parseScopes } from "./scopes";
-import { startSession } from "./session";
+import { currentSession, startSession } from "./session";
 
 type Ctx = Context<AppEnv>;
 
@@ -139,12 +139,14 @@ async function signInTarget(
   return { ok: true, user };
 }
 
-/** Signs the user in (session cookie) and redirects to the client with a fresh code. */
-async function completeSignIn(c: Ctx, request: AuthorizeRequest, user: StoredUser) {
-  const { store } = c.get("deps");
-  const authTimeMs = Date.now();
-  await startSession(c, user.orcid, authTimeMs);
-  const code = await issueCode(store, {
+/** Redirects to the client with a fresh code for `user`, signed in at `authTimeMs`. */
+async function redirectWithCode(
+  c: Ctx,
+  request: AuthorizeRequest,
+  user: StoredUser,
+  authTimeMs: number,
+): Promise<Response> {
+  const code = await issueCode(c.get("deps").store, {
     client: request.client,
     orcid: user.orcid,
     scopes: request.scopes,
@@ -153,6 +155,34 @@ async function completeSignIn(c: Ctx, request: AuthorizeRequest, user: StoredUse
     authTimeMs,
   });
   return c.redirect(codeRedirect(request, code), 302);
+}
+
+/** Signs the user in (session cookie) and redirects to the client with a fresh code. */
+async function completeSignIn(c: Ctx, request: AuthorizeRequest, user: StoredUser) {
+  const authTimeMs = Date.now();
+  await startSession(c, user.orcid, authTimeMs);
+  return redirectWithCode(c, request, user, authTimeMs);
+}
+
+/**
+ * `prompt=none`: no page and no sign-in form. With a live session the user gets a code at once
+ * (ORCID-Source orcid-angular src/app/core/auth-decision/auth-decision.service.ts: `prompt=none`
+ * with a logged-in user and `openid` navigates straight to the redirect URL); without one the
+ * browser goes back to the client with `login_required`.
+ * Two forms exist and the source wins over the docs: the current front end redirects to
+ * `${redirect_uri}#login_required` (orcid-angular src/app/guards/authorize.guard.ts), a
+ * fragment with no `error=` key and no state, while ORCID's older OpenID Connect guide says
+ * `?error=login_required` (ORCID-Source orcid-web/ORCID_AUTH_WITH_OPENID_CONNECT.md).
+ * A session whose user was deleted, locked, or deactivated since counts as no session.
+ */
+async function silentSignIn(c: Ctx, request: AuthorizeRequest): Promise<Response> {
+  const session = await currentSession(c);
+  const user = session ? await c.get("deps").store.getUser(session.orcid) : null;
+  if (session && user && refusal(user, "session") === null) {
+    // The code carries the time of the sign-in the session records, not the time of this request.
+    return redirectWithCode(c, request, user, session.auth_time_ms);
+  }
+  return c.redirect(withFragment(request.redirectUri, "login_required"), 302);
 }
 
 /** The redirect URI with `code` and the `state` exactly as received, each encoded once. */
@@ -167,6 +197,14 @@ export async function authorizeGet(c: Ctx): Promise<Response> {
   const checked = await checkRequest(c, new URL(c.req.url).searchParams);
   if (!checked.ok) return checked.response;
   const { request } = checked;
+
+  // research 1.5 (ORCID-Source orcid-web/ORCID_AUTH_WITH_OPENID_CONNECT.md, "Query parameters"):
+  // `prompt` is honored only on requests that include the `openid` scope. `prompt=login` needs
+  // no code of its own: a session never signs anyone in except under `prompt=none`, so the page
+  // below is what a forced re-login looks like. `login_as` is ignored under `prompt=none`.
+  if (request.scopes.includes("openid") && request.params.get("prompt") === "none") {
+    return silentSignIn(c, request);
+  }
 
   // orcid-mock extension for headless drivers: sign in as the named user without the page.
   const loginAs = request.params.get("login_as");

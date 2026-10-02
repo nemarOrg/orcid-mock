@@ -611,3 +611,149 @@ describe("the consent page", () => {
     expect(await response.json()).toMatchObject({ error: "invalid_request" });
   });
 });
+
+describe("prompt", () => {
+  const OPENID = "openid /authenticate";
+
+  /** Signs Alder in with login_as and returns the session cookie the response set. */
+  async function signedIn(orcid = ids.alder as string): Promise<string> {
+    const { cookie } = await authorizeAs(server, { orcid, scope: OPENID });
+    if (cookie === null) throw new Error("no session cookie");
+    return cookie;
+  }
+
+  const none = (cookie?: string, over: Record<string, string | undefined> = {}) =>
+    authorize(
+      { scope: OPENID, prompt: "none", state: "silent", ...over },
+      cookie ? { headers: { cookie } } : {},
+    );
+
+  test("prompt=none with a session issues a code silently for the session's user", async () => {
+    const cookie = await signedIn();
+    const response = await none(cookie);
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toMatch(
+      new RegExp(`^${REDIRECT_URI}\\?code=[0-9a-zA-Z]{6}&state=silent$`),
+    );
+    // The existing session keeps going: no new cookie.
+    expect(sessionCookie(response)).toBeNull();
+    // And the cookie still works a second time.
+    expect((await none(cookie)).headers.get("location")).toContain("?code=");
+  });
+
+  test("prompt=none without a session redirects with the login_required fragment", async () => {
+    expectErrorFragmentLoginRequired(await none(), REDIRECT_URI);
+    // State is not carried, as in the current front end.
+    expectErrorFragmentLoginRequired(await none(undefined, { state: "ignored" }), REDIRECT_URI);
+  });
+
+  test("prompt=none keeps the redirect URI's query and replaces its fragment", async () => {
+    expectErrorFragmentLoginRequired(
+      await none(undefined, { redirect_uri: `${REDIRECT_URI}/sub?x=1#old` }),
+      `${REDIRECT_URI}/sub?x=1`,
+    );
+  });
+
+  test("an unknown, expired, deleted, locked, or deactivated session is no session", async () => {
+    expectErrorFragmentLoginRequired(
+      await none("orcid_mock_session=00000000-0000-4000-8000-000000000000"),
+      REDIRECT_URI,
+    );
+    expectErrorFragmentLoginRequired(await none("orcid_mock_session="), REDIRECT_URI);
+    expectErrorFragmentLoginRequired(await none("other_cookie=1"), REDIRECT_URI);
+
+    // Sessions last 24 hours of server time.
+    const fresh = await signedIn();
+    await server.admin("POST", "/clock", { advance_seconds: 24 * 3600 - 60 });
+    expect((await none(fresh)).headers.get("location")).toContain("?code=");
+    await server.admin("POST", "/clock", { advance_seconds: 120 });
+    expectErrorFragmentLoginRequired(await none(fresh), REDIRECT_URI);
+    await server.reset();
+
+    const doomed = await signedIn();
+    await server.admin("DELETE", `/users/${ids.alder}`);
+    expectErrorFragmentLoginRequired(await none(doomed), REDIRECT_URI);
+    await server.reset();
+
+    for (const flag of ["locked", "deactivated"]) {
+      const cookie = await signedIn();
+      const { body: user } = await server.admin<Record<string, unknown>>(
+        "GET",
+        `/users/${ids.alder}`,
+      );
+      await server.admin("PUT", `/users/${ids.alder}`, { ...user, [flag]: true });
+      expectErrorFragmentLoginRequired(await none(cookie), REDIRECT_URI);
+      await server.reset();
+    }
+  });
+
+  test("a new sign-in replaces the session the request carried", async () => {
+    const first = await signedIn();
+    const { cookie: second } = await authorizeAs(server, {
+      orcid: ids.sennet as string,
+      scope: OPENID,
+      cookie: first,
+    });
+    expect(second).not.toBe(first);
+    expectErrorFragmentLoginRequired(await none(first), REDIRECT_URI);
+    expect((await none(second ?? "")).headers.get("location")).toContain("?code=");
+  });
+
+  test("prompt=none is honored only with the openid scope", async () => {
+    const cookie = await signedIn();
+    // Without openid the request is an ordinary one: the page, with or without a session.
+    for (const headers of [undefined, { cookie }]) {
+      const response = await authorize(
+        { scope: "/authenticate", prompt: "none" },
+        headers ? { headers } : {},
+      );
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    }
+  });
+
+  test("prompt=none still gets the up-front checks first", async () => {
+    expectErrorFragment(
+      await none(undefined, { scope: "openid /read-public" }),
+      REDIRECT_URI,
+      "error=invalid_scope",
+    );
+    expect((await none(undefined, { redirect_uri: "http://evil.test/" })).status).toBe(400);
+  });
+
+  test("login_as does not override prompt=none", async () => {
+    expectErrorFragmentLoginRequired(await none(undefined, { login_as: ids.alder }), REDIRECT_URI);
+  });
+
+  test("prompt=login with openid ignores the session and shows the page", async () => {
+    const cookie = await signedIn();
+    const response = await authorize({ scope: OPENID, prompt: "login" }, { headers: { cookie } });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+    expect(await response.text()).toContain("<title>orcid-mock sign in</title>");
+  });
+
+  test("prompt=login with login_as still signs in, as a forced re-login", async () => {
+    const cookie = await signedIn();
+    const again = await authorizeAs(server, {
+      orcid: ids.sennet as string,
+      scope: OPENID,
+      prompt: "login",
+      cookie,
+    });
+    expect(again.code).toMatch(/^[0-9a-zA-Z]{6}$/);
+    expect(again.cookie).not.toBe(cookie);
+  });
+
+  test("an unknown prompt value is ignored", async () => {
+    const cookie = await signedIn();
+    const response = await authorize({ scope: OPENID, prompt: "consent" }, { headers: { cookie } });
+    expect(response.status).toBe(200);
+  });
+});
+
+function expectErrorFragmentLoginRequired(response: Response, redirectUri: string) {
+  expect(response.status).toBe(302);
+  expect(response.headers.get("location")).toBe(`${redirectUri}#login_required`);
+  expect(sessionCookie(response)).toBeNull();
+}
