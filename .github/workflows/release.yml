@@ -245,8 +245,13 @@ jobs:
         run: |
           set -euo pipefail
           ref="${IMAGE}:${VERSION}"
+          # A package that has never been pushed answers a registry client with 403 or 404 in
+          # several wordings (tried locally against this very name); those mean "absent", and if
+          # the registry really refuses us, the push below fails loudly. Any other failure (a
+          # network error, say) stops the release instead of guessing.
           if out="$(docker buildx imagetools inspect "${ref}" 2>&1)"; then
-            docker pull --quiet --platform linux/amd64 "${ref}" > /dev/null
+            # The runner's own platform: every platform of one build carries the same label.
+            docker pull --quiet "${ref}" > /dev/null
             revision="$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${ref}")"
             if [ "${revision}" != "${GITHUB_SHA}" ]; then
               echo "::error title=Release::${ref} already exists and was built from commit '${revision}', not ${GITHUB_SHA}. A released tag is never overwritten; bump the version."
@@ -254,7 +259,7 @@ jobs:
             fi
             echo "${ref} already exists, built from this commit: this is a re-run, so it is not pushed again."
             echo "published=true" >> "${GITHUB_OUTPUT}"
-          elif grep -Eqi 'not found|manifest unknown|name unknown|denied|unauthorized' <<< "${out}"; then
+          elif grep -Eqi 'not found|manifest unknown|name unknown|denied|unauthorized|forbidden|failed to authorize|404' <<< "${out}"; then
             echo "${ref} does not exist yet."
             echo "published=false" >> "${GITHUB_OUTPUT}"
           else
