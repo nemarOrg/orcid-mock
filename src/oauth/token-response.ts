@@ -6,9 +6,13 @@ import { publicDisplayName } from "./display-name";
 import { formatScopes } from "./scopes";
 
 /**
- * Access tokens last about twenty years: ORCID's `read_validity_seconds` is 631138519 and the
- * response reports it minus the second that has passed, 631138518 (ORCID-Source orcid-api-web
- * tutorial examples and the legacy `org.orcid.core.token.read_validity_seconds`, research 2.2).
+ * Access tokens last about twenty years ("Access tokens are long lived by default and expire 20
+ * years after issue",
+ * https://info.orcid.org/documentation/api-tutorials/api-tutorial-get-and-authenticated-orcid-id/).
+ * The legacy implementation (removed upstream) configured 631138519 seconds, and ORCID's
+ * examples report one second less, 631138518:
+ * https://github.com/ORCID/ORCID-Source/blob/7eeb1e7709760f328f5d3f72ebf2629f0a5d54c9/orcid-core/src/main/java/org/orcid/core/oauth/service/OrcidRandomValueTokenServicesImpl.java#L67
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-api-web/tutorial/get_id.md#L64
  */
 export const TOKEN_TTL_SECONDS = 631138519;
 export const EXPIRES_IN_SECONDS = 631138518;
@@ -45,11 +49,16 @@ export interface TokenResponseBody {
 }
 
 /**
- * Keys in ORCID's documented order (ORCID-Source orcid-api-web/README.md and tutorial/get_id.md):
- * `access_token`, `token_type` ("bearer"), `refresh_token`, `expires_in`, `scope`, then `name`
- * (the public display name, "" when the name is not public) and `orcid`.
+ * Keys in ORCID's documented order: `access_token`, `token_type` ("bearer"), `refresh_token`,
+ * `expires_in`, `scope`, then `name` (the public display name, "" when the name is not public)
+ * and `orcid`:
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-api-web/README.md#L97-L99
+ * ORCID's own tutorial writes `orcid` before `name` in one example
+ * (https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-api-web/tutorial/get_id.md#L65-L66),
+ * so the order of those two keys is not settled upstream; orcid-mock follows the README.
  * A client-credentials token has no user: `orcid` is an explicit `null` and there is no `name`
- * key (ORCID-Source orcid-api-web/tutorial/read_public.md).
+ * key:
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-api-web/tutorial/read_public.md#L29
  *
  * This is the one place an `id_token` is added: after `orcid`, when `openid` is among the
  * token's scopes and `grant` is "authorization_code"; the refresh path and client credentials

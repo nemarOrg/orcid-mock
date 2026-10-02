@@ -6,15 +6,16 @@ import { authenticateClient } from "./client-auth";
 import { readForm } from "./form";
 
 /**
- * Form-encoded only (ORCID-Source orcid-web/.../oauth2/RevokeController.java: `consumes =
- * APPLICATION_FORM_URLENCODED`), with the token endpoint's client authentication; the token may
- * be an access token or a refresh token, and revoking either removes both (ORCID-Source
- * orcid-api-web/tutorial/revoke.md). Success is a 200 with an empty body (revoke.md shows only
- * the status line).
+ * Form-encoded only (`consumes = APPLICATION_FORM_URLENCODED` on ORCID's `RevokeController`,
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-web/src/main/java/org/orcid/frontend/oauth2/RevokeController.java#L25
+ * ), with the token endpoint's client authentication; the token may be an access token or a
+ * refresh token, and revoking either removes both:
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-api-web/tutorial/revoke.md#L3
+ * Success is a 200 with an empty body (revoke.md shows only the status line).
  * The rest is ORCID behavior nobody has observed, so each case is an orcid-mock choice:
- * - a missing `token` is 400 `invalid_request`; RevokeController throws "Please provide the
- *   token to be param" before it forwards anything, so this is checked before the client, and
- *   its status and body are unobserved;
+ * - a missing `token` is 400 `invalid_request`; `RevokeController` throws "Please provide the
+ *   token to be param" before it forwards anything (L37-L39 of the file above), so this is
+ *   checked before the client, and its status and body are unobserved;
  * - an unknown token is a 200, as RFC 7009 section 2.2 requires;
  * - a token issued to another client is 400 `unauthorized_client`, as RFC 7009 section 2.1
  *   describes, and is left alone.

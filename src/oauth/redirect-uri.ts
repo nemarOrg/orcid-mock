@@ -49,14 +49,15 @@ const SAFE_URI = /^[\x21-\x7e]+$/;
 
 /**
  * Whether `requested` is allowed by one of the client's registered redirect URIs.
- * ORCID's rule (ORCID-Source orcid-core/src/main/java/org/orcid/core/oauth/security/
- * OrcidOauthRedirectResolver.java, and https://info.orcid.org/ufaqs/how-do-redirect-uris-work/):
+ * ORCID's rule is documented at https://info.orcid.org/ufaqs/how-do-redirect-uris-work/ and was
+ * implemented by `OrcidOauthRedirectResolver` (legacy implementation, removed upstream):
+ * https://github.com/ORCID/ORCID-Source/blob/7eeb1e7709760f328f5d3f72ebf2629f0a5d54c9/orcid-core/src/main/java/org/orcid/core/oauth/security/OrcidOauthRedirectResolver.java#L79-L83
  * scheme, userinfo, host (exact, case-sensitive), and port are equal, and the cleaned requested
  * path starts with the cleaned registered path, so a host-only registration allows any path and
  * `/callback` allows `/callback/sub` (and, because ORCID's test is a plain `startsWith`,
  * `/callbackx`). The query and fragment of the requested URI take no part in matching.
  * A port is compared as written, so `https://host` does not match `https://host:443` (the
- * Spring `UriComponents` the resolver builds on reports an absent port as -1).
+ * resolver compares `getPort()` of Spring's `UriComponents`, which is -1 when absent).
  * orcid-mock choice: a requested URI with a space, a control character, or a non-ASCII character
  * never matches, because it could not be sent back in a header; clients percent-encode those.
  */

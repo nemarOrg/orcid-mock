@@ -28,12 +28,14 @@ function parseBasic(header: string): { id: string; secret: string } | null {
 /**
  * Authenticates the client of a token or revoke request.
  * ORCID's registry proxy forwards any non-blank `Authorization` header to its authorization
- * server verbatim, so the header wins over the form fields when present (ORCID-Source
- * orcid-web/.../OauthGenericCallsController.java `handleBasicAuthentication`, research 2.1);
- * one that is not valid Basic credentials fails as a bad client, as a bogus Basic header was
+ * server verbatim, so the header wins over the form fields when present:
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-web/src/main/java/org/orcid/frontend/web/controllers/OauthGenericCallsController.java#L55-L59
+ * One that is not valid Basic credentials fails as a bad client, as a bogus Basic header was
  * observed to on sandbox.orcid.org on 2026-10-01. Otherwise `client_id` and `client_secret` come
- * from the form, and a missing one is a 401 `invalid_request` naming it (SOURCE
- * AuthorizationServerUtil `addToMapOrThrow`, caught by the controller's generic 401).
+ * from the form, and a missing one is a 401 `invalid_request` naming it: the registry's
+ * `addToMapOrThrow` raises "<name> is required", which its controller answers as a 401 (observed
+ * for `client_id` on 2026-10-01):
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/oauth/authorizationServer/AuthorizationServerUtil.java#L307-L313
  */
 export async function authenticateClient(
   c: Context<AppEnv>,

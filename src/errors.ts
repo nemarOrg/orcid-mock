@@ -53,7 +53,7 @@ export function tokenEndpointError(
  * ORCID's answer to a token or revoke request that is not form-encoded or not a POST: 415 with
  * `text/html;charset=utf-8`, an `Accept: application/x-www-form-urlencoded` header, and a message
  * of the form `Content-Type 'application/json' is not supported.` (`'null'` when there is no
- * Content-Type, as for a GET), observed on sandbox.orcid.org on 2026-10-01 (research 2.1).
+ * Content-Type, as for a GET), observed on sandbox.orcid.org on 2026-10-01.
  * ORCID's body is a Tomcat error page around that sentence; orcid-mock sends the sentence alone.
  */
 export function unsupportedMediaType(c: Context, contentType: string | undefined): Response {

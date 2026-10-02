@@ -1,6 +1,6 @@
-// Bearer-token resolution, shared by userinfo (phase 3) and the record API's `/read-limited`
-// reads (phase 4). Phase 3 maps `none` and `invalid` to userinfo's own 403 shape; phase 4 answers
-// `invalid` with `invalidTokenResponse`.
+// Bearer-token resolution, shared by the OpenID Connect userinfo endpoint and the record API's
+// `/read-limited` reads. Userinfo maps `none` and `invalid` to its own 403 shape; the record API
+// answers `invalid` with `invalidTokenResponse`.
 import type { Context } from "hono";
 import type { AppEnv } from "../app";
 import { serverNowMs } from "../clock";
@@ -37,8 +37,9 @@ export async function checkAccessToken(
 /**
  * The token in `Authorization: Bearer <token>`, or null when there is none. The scheme is
  * case-insensitive and the token is trimmed, as ORCID's userinfo controller strips the "Bearer"
- * or "bearer" prefix and trims (ORCID-Source
- * orcid-web/src/main/java/org/orcid/frontend/web/controllers/OpenIDController.java). A header
+ * or "bearer" prefix and trims:
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-web/src/main/java/org/orcid/frontend/web/controllers/OpenIDController.java#L82
+ * A header
  * with another scheme, or a scheme with nothing after it, presents no bearer token.
  */
 export function readBearerHeader(c: Context<AppEnv>): string | null {
@@ -56,8 +57,11 @@ export async function resolveBearer(c: Context<AppEnv>, store: Store): Promise<B
 /**
  * The record API's answer to a bad bearer token: 401 `invalid_token` with the presented token
  * echoed in the description and no `WWW-Authenticate` header, observed on
- * pub.sandbox.orcid.org/v3.0 on 2026-10-01 (research 6; ORCID-Source orcid-api-common/.../
- * APIAuthenticationEntryPoint.java and OAuthErrorResponseHelper.java).
+ * pub.sandbox.orcid.org/v3.0 on 2026-10-01. ORCID builds it in its authentication entry point,
+ * with `application/json;charset=UTF-8`, an `error` then an `error_description` key, and the
+ * presented token appended to "Invalid access token":
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-api-common/src/main/java/org/orcid/api/common/security/oauth/APIAuthenticationEntryPoint.java#L38-L47
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-api-common/src/main/java/org/orcid/api/common/security/oauth/OAuthErrorResponseHelper.java#L14-L16
  */
 export function invalidTokenResponse(c: Context<AppEnv>, presented: string): Response {
   return oauthError(c, 401, "invalid_token", `Invalid access token: ${presented}`, {

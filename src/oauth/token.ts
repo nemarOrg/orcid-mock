@@ -1,7 +1,10 @@
 // POST /oauth/token: the authorization_code, refresh_token, and client_credentials grants.
 // Since April 2026 ORCID's registry proxies this endpoint to a new authorization server
-// (research 0 and 2); the order of its checks is: form-encoded body, `grant_type` present, client
-// authentication, then the grant itself.
+// (ORCID's release notes, https://info.orcid.org/registry-release-notes/, and the proxy,
+// https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-web/src/main/java/org/orcid/frontend/web/controllers/OauthGenericCallsController.java#L42-L50).
+// The order of its checks is: form-encoded body, `grant_type` present, client authentication,
+// then the grant itself (a `grant_type=password` request with an unknown client was observed to
+// get `invalid_client` on sandbox.orcid.org on 2026-10-01).
 import type { Context } from "hono";
 import type { AppEnv } from "../app";
 import { serverNowMs } from "../clock";
@@ -30,7 +33,8 @@ async function newTokenRecord(
   },
 ): Promise<TokenRecord> {
   return {
-    // Lowercase UUID v4 strings, as ORCID's legacy server issued (research 2.2).
+    // Lowercase UUID v4 strings, as ORCID's legacy implementation (removed upstream) issued:
+    // https://github.com/ORCID/ORCID-Source/blob/7eeb1e7709760f328f5d3f72ebf2629f0a5d54c9/orcid-core/src/main/java/org/orcid/core/oauth/service/OrcidRandomValueTokenServicesImpl.java#L165
     access_token: crypto.randomUUID(),
     refresh_token: crypto.randomUUID(),
     client_id: init.client.client_id,
@@ -61,7 +65,9 @@ export async function tokenEndpoint(c: Ctx): Promise<Response> {
   if (!form.ok) return form.response;
   const { params } = form;
 
-  // research 3, observed on sandbox.orcid.org on 2026-10-01: 400, `error` first.
+  // Observed on sandbox.orcid.org on 2026-10-01: 400, `error` before `error_description`; the
+  // registry builds it for a null `grant_type`:
+  // https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-web/src/main/java/org/orcid/frontend/web/controllers/OauthGenericCallsController.java#L44-L50
   const grantType = params.get("grant_type");
   if (grantType === null || grantType === "") {
     return tokenEndpointError(c, 400, "unsupported_grant_type", "grant_type is missing");
@@ -79,7 +85,8 @@ export async function tokenEndpoint(c: Ctx): Promise<Response> {
     case "client_credentials":
       return clientCredentialsGrant(c, client, params);
     default:
-      // research 3: unobserved for a valid client; INFERRED from the missing-grant body.
+      // orcid-mock choice: ORCID's answer to an unsupported grant from a valid client was not
+      // observed, so this follows the shape of the missing-grant body above.
       return tokenEndpointError(
         c,
         400,
@@ -96,22 +103,30 @@ async function authorizationCodeGrant(
 ): Promise<Response> {
   const { store } = c.get("deps");
   const code = params.get("code");
-  if (code === null || code === "")
+  // orcid-mock choice: the registry forwards a blank code to the authorization server unchanged
+  // (the `code` parameter becomes ""), so ORCID's own answer comes from the new server and was
+  // not observed; a missing code is a 400 here, in the shape of the other missing parameters:
+  // https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/oauth/authorizationServer/AuthorizationServerUtil.java#L55-L68
+  if (code === null || code === "") {
     return tokenEndpointError(c, 400, "invalid_request", "code is required");
+  }
 
   // The code is consumed whatever happens next, so a wrong client or redirect_uri cannot be
   // retried and a reused code is the unknown-code case (RFC 6749 section 4.1.2).
   const record = await store.consumeCode(code);
   const user = record ? await store.getUser(record.orcid) : null;
   if (!record || !user || (await serverNowMs(store)) >= record.expires_at_ms) {
-    // research 3, ORCID-Source orcid-api-web/tutorial/api_errors.md (April 2026): 400 "Invalid
-    // authorization code: [code]"; the `invalid_grant` code is INFERRED. A code that expired, was
-    // already used, or never existed all land here; a code whose user was deleted does too.
+    // ORCID's error documentation lists a 400 "Invalid authorization code: [code]"
+    // (https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-api-web/tutorial/api_errors.md#L37); the `invalid_grant` error code is
+    // orcid-mock's inference. A code that expired, was already used, or never existed all land
+    // here, and so does a code whose user was deleted.
     return tokenEndpointError(c, 400, "invalid_grant", `Invalid authorization code: ${code}`);
   }
   if (record.client_id !== client.client_id || params.get("redirect_uri") !== record.redirect_uri) {
-    // research 3, api_errors.md: "One of the provided parameters is invalid, or, the provided
-    // token/code is invalid or expired", for a wrong client id, secret, or redirect uri.
+    // ORCID's error documentation lists this 400 text "when you provide invalid parameters
+    // (client id, secret or redirect uri) on authorization code exchange"
+    // (https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-api-web/tutorial/api_errors.md#L36); the `invalid_grant` error code is
+    // orcid-mock's inference.
     return tokenEndpointError(
       c,
       400,
@@ -146,6 +161,9 @@ async function refreshTokenGrant(
   const { store } = c.get("deps");
   const refreshToken = params.get("refresh_token");
   if (refreshToken === null || refreshToken === "") {
+    // The registry's `addToMapOrThrow` raises "refresh_token is required", which its controller
+    // answers as a 401 (the same path was observed for `client_id` on 2026-10-01):
+    // https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/oauth/authorizationServer/AuthorizationServerUtil.java#L307-L313
     return tokenEndpointError(c, 401, "invalid_request", "refresh_token is required");
   }
 
@@ -158,12 +176,17 @@ async function refreshTokenGrant(
     (old.orcid !== null && user === null) ||
     (await serverNowMs(store)) >= old.expires_at_ms
   ) {
+    // orcid-mock choice: ORCID's body for a bad refresh token was not observed; this follows
+    // the "Invalid authorization code: [code]" wording of its documented code-exchange error.
     return tokenEndpointError(c, 400, "invalid_grant", `Invalid refresh token: ${refreshToken}`);
   }
 
-  // An empty or omitted `scope` copies the parent's; otherwise it must be a subset (ORCID-Source
-  // orcid-api-web/tutorial/refresh_tokens.md). The status is 400 as api_errors.md says, where the
-  // legacy server answered 401 (research 3).
+  // An empty or omitted `scope` copies the parent's; otherwise it must be a subset
+  // (https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-api-web/tutorial/refresh_tokens.md#L28).
+  // orcid-mock choice: a scope outside the original is a 400 `invalid_scope`, as RFC 6749 section
+  // 5.2 says. The only 400 "Invalid scope" row in ORCID's error documentation is the `/webhook`
+  // case (https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-api-web/tutorial/api_errors.md#L43), and ORCID's registry code maps
+  // an invalid scope to a 401 (https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/oauth/OAuthErrorUtils.java#L23-L25).
   let scopes = old.scopes;
   const requested = params.get("scope");
   if (requested !== null && requested.trim() !== "") {
@@ -175,10 +198,12 @@ async function refreshTokenGrant(
     scopes = parseScopes(requested).scopes;
   }
 
-  // Legacy `OrcidRandomValueTokenServicesImpl.refreshAccessToken` (ORCID-Source): `revoke_old`
-  // defaults to true when absent, and a present value is `Boolean.valueOf`, which is true only
-  // for "true" in any case. Whether the new authorization server still honors it is unknown
-  // (research 2.3: the registry proxy does not forward it).
+  // The legacy implementation (removed upstream) defaulted `revoke_old` to true when absent and
+  // read a present value with `Boolean.valueOf`, which is true only for "true" in any case:
+  // https://github.com/ORCID/ORCID-Source/blob/7eeb1e7709760f328f5d3f72ebf2629f0a5d54c9/orcid-core/src/main/java/org/orcid/core/oauth/service/OrcidRandomValueTokenServicesImpl.java#L439
+  // Whether the new authorization server still honors it is unknown: the registry's refresh
+  // proxy does not forward `revoke_old`:
+  // https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/oauth/authorizationServer/AuthorizationServerUtil.java#L94-L112
   const revokeParam = params.get("revoke_old");
   const revokeOld = revokeParam === null ? true : revokeParam.toLowerCase() === "true";
 
@@ -209,8 +234,9 @@ async function clientCredentialsGrant(
   params: URLSearchParams,
 ): Promise<Response> {
   const { store } = c.get("deps");
-  // ORCID-Source orcid-api-web/tutorial/read_public.md: the only client-credentials scope the
-  // mock serves is `/read-public`, and asking for nothing gets it.
+  // The only client-credentials scope the mock serves is `/read-public`, and asking for nothing
+  // gets it (https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-api-web/tutorial/read_public.md). Any other scope is a 400
+  // `invalid_scope`, an orcid-mock choice (see the refresh grant above).
   const requested = params.get("scope");
   if (requested !== null && requested.trim() !== "") {
     const outside = scopeTokens(requested).filter((t) => t !== "/read-public");
