@@ -1,13 +1,72 @@
 # orcid-mock
 
-An ephemeral mock of the Open Researcher and Contributor ID (ORCID) service for tests and continuous integration:
+An ephemeral mock of the Open Researcher and Contributor ID (ORCID) service for tests and continuous integration (CI):
 the OAuth 2.0 authorization-code flow, OpenID Connect, and the public record API,
 with users defined in a JSON file and all state kept in memory.
 
-Status: the first minimum viable product (MVP1) is complete (epic #1, read-only):
-the admin API, OAuth, OpenID Connect, and the public record API are built, and [a conformance suite](#conformance) holds the mock to ORCID's sandbox and drives a brand-new sign-up end to end in CI.
-1.0.0 will be the first release, published once the one-time owner setup under [Releasing](#releasing) is done.
+Status: the first minimum viable product (MVP1) is complete ([epic #1](https://github.com/nemarOrg/orcid-mock/issues/1)); releases are listed on the [GitHub Releases](https://github.com/nemarOrg/orcid-mock/releases) page.
 See [`.context/plan.md`](.context/plan.md) for the roadmap and [`.context/research.md`](.context/research.md) for the findings behind it.
+
+## Contents
+
+- [Quick start](#quick-start)
+- [What it does](#what-it-does) and [Why](#why)
+- [Install and run](#install-and-run): `bunx`, a container, a binary, a GitHub Action, a `services:` container, and the Cloudflare Worker entry
+- [Run it from a checkout](#run-it-from-a-checkout): the settings, the users file, and the admin API
+- [Test helpers](#test-helpers) for Node and Python
+- [OAuth](#oauth), [OpenID Connect](#openid-connect), and the [Record API](#record-api)
+- [Conformance](#conformance): one suite against the mock and ORCID's sandbox
+- [What comes after MVP1](#what-comes-after-mvp1), [Contributing](#contributing), and [License](#license)
+
+## Quick start
+
+Run the mock with its starter users, from the npm package or from a checkout of this repository (both need Bun 1.4 or later):
+
+```bash
+bunx @nemarorg/orcid-mock                  # from the package
+bun install && bun run src/main.ts         # or from a checkout
+```
+
+It listens on `http://127.0.0.1:9700` and prints one line on stdout when it is ready.
+From another terminal, check that it is up:
+
+```bash
+curl -s http://127.0.0.1:9700/__admin/health
+# {"status":"ok","users":3,"clients":2}
+```
+
+Then sign in as a user with no browser, in three commands.
+`login_as` skips the sign-in page, so the redirect's `Location` header carries the code, and the code is exchanged for tokens ([the same round trip, explained](#a-headless-round-trip)):
+
+```bash
+BASE=http://127.0.0.1:9700
+ORCID=$(curl -s $BASE/__admin/users | grep -o '"orcid":"[^"]*"' | head -1 | cut -d'"' -f4)
+CODE=$(curl -si "$BASE/oauth/authorize?client_id=APP-ORCIDMOCK000001&response_type=code&scope=/authenticate&redirect_uri=http://localhost:3000/callback&login_as=$ORCID" | sed -n 's/^[Ll]ocation:.*[?&]code=\([0-9A-Za-z]*\).*/\1/p')
+curl -s -X POST $BASE/oauth/token -d grant_type=authorization_code -d code=$CODE -d client_id=APP-ORCIDMOCK000001 -d client_secret=orcid-mock-secret --data-urlencode redirect_uri=http://localhost:3000/callback
+# {"access_token":"82b915f4-...","token_type":"bearer","refresh_token":"d6e12d69-...","expires_in":631138518,"scope":"/authenticate","name":"A. Fennimore","orcid":"0009-9814-3544-3504"}
+```
+
+A test does the same with one call, `signIn`, from the [Node and Python helpers](#test-helpers).
+A container, a binary, and a GitHub Action run the same server: see [Install and run](#install-and-run).
+
+## What it does
+
+- The authorization-code flow with a sign-in page that lists the fixture users, a `login_as` shortcut for headless drivers, ORCID's redirect matching, and an unmodified `state` round trip ([OAuth](#oauth)).
+- The token endpoint with ORCID's non-standard response (`orcid` and `name` alongside the access token), refresh and client-credentials grants, revocation, and ORCID's error bodies, status codes, and key order.
+- OpenID Connect: a discovery document byte-identical to ORCID's apart from the base URL, the JSON Web Key Set (JWKS), an RS256 (RSA with SHA-256) identity (ID) token whose `sub` is the iD, and userinfo ([OpenID Connect](#openid-connect)).
+- The public v3.0 record reads, projected from the users file with ORCID's wire shapes, per-item visibility, grouping and ordering, `Accept` negotiation, record states, and error codes ([Record API](#record-api)).
+  Search, Extensible Markup Language (XML), and the summary and citation variants are not served.
+- Checksum-valid iDs (ISO/IEC 7064 MOD 11-2) minted for fixtures, and an admin API to reset the server, add, replace, and remove users, register clients, and move the clock.
+- Five ways to run it (`bunx`, a container, a binary, a GitHub Action, a `services:` container) and client helpers for Node (Testcontainers, Playwright) and Python (Testcontainers, pytest) ([Install and run](#install-and-run), [Test helpers](#test-helpers)).
+- A [conformance suite](#conformance) that holds the mock to ORCID's sandbox and drives a brand-new sign-up end to end in CI, with no browser.
+
+## Why
+
+ORCID's sandbox is shared, cannot be reset from an API, delivers mail only to one throwaway provider, and needs real accounts,
+so nobody can drive a brand-new ORCID sign-up from an automated test.
+No open-source project mocks ORCID's identity layer and its record API together:
+ORCID retired its own mock in 2012, and the generic OAuth and OpenID Connect mocks would still need the whole ORCID surface built on top.
+It was built first for the Neuroelectromagnetic Data Archive and Tools Resource (NEMAR), whose command-line sign-in goes through ORCID, and it is meant for anyone with the same problem.
 
 ## Install and run
 
@@ -98,11 +157,9 @@ Then it exports `ORCID_API_BASE`, `ORCID_PUB_API_BASE`, and `ORCID_MOCK_URL` (al
 Linux runners only, because the image is a Linux container.
 A composite action has no post step, so the container is not stopped by the action: it lives until the job ends, and `docker rm -f "${{ steps.<id>.outputs.container-id }}"` stops it sooner.
 Reset between tests with `curl -X POST "$ORCID_MOCK_URL/__admin/reset"`.
-The Action needs a published image, so `uses: nemarOrg/orcid-mock@v1` works after the first release, which will be `1.0.0`.
+The Action runs the published image, so the runner must be able to reach `ghcr.io`.
 
 ### As a `services:` container
-
-This also needs the published image, so it works after the first release.
 
 ```yaml
 services:
@@ -129,11 +186,77 @@ Point your application at it with the same variables you use for the sandbox
 A deployed Worker is reachable from the internet and exposes the unauthenticated admin API (every fixture user and client secret, and a reset or rewrite of all state), so `wrangler.toml` sets `workers_dev = false` and says to put an access gate in front of it before you route it anywhere.
 The hosted mode will run the same app inside a Durable Object per tenant.
 
+## Run it from a checkout
+
+Bun only; there is nothing to build.
+
+```bash
+bun install
+bun run src/main.ts                           # serve the bundled starter users
+bun run src/main.ts id -n 3                   # three freshly minted ORCID iDs
+bun run src/main.ts fixture --out users.json  # write the starter users file to edit
+bun run src/main.ts --users users.json        # serve your own file
+```
+
+The server prints exactly one line on stdout once it is listening, and sends its logs (one JSON object per line) to stderr:
+
+```json
+{"event":"listening","url":"http://127.0.0.1:9700","port":9700}
+```
+
+Each setting comes from an environment variable or a flag; a flag wins, and an empty value counts as unset (`USERS_FILE=` serves the starter).
+An invalid value, an unreadable users file, or a users file that fails validation prints the problem on stderr and exits with code 2.
+
+| Variable | Flag | Default | Meaning |
+|---|---|---|---|
+| `PUBLIC_BASE_URL` | `--base-url` | `http://{host}:{port}` | Absolute `http` or `https` URL, with no query, fragment, or credentials; trailing slashes are stripped and a path prefix is kept. Every absolute URL the mock emits derives from it, never from the `Host` header. |
+| `PORT` | `--port` | `9700` | `0` picks a free port; the readiness line reports the one it bound. |
+| `HOST` | `--host` | `127.0.0.1` | Interface to bind. The admin API is unauthenticated, so the default is loopback; `0.0.0.0` exposes it to the network, and the container image sets it only because the container's network is the boundary. |
+| `USERS_FILE` | `--users` | the bundled starter | Path to a users file. |
+| `LOG_LEVEL` | `--log-level` | `info` | `debug`, `info`, `warn`, or `error`. |
+
+When `PUBLIC_BASE_URL` is unset, the base URL is built from the bound address: `http://127.0.0.1:{port}` for the default host, and also for a wildcard host (`0.0.0.0` or `::`).
+Inside a container the bound address means nothing to a caller, so set `PUBLIC_BASE_URL` explicitly there.
+A path prefix in `PUBLIC_BASE_URL` (`https://example.test/orcid`) is only used to build URLs: the server still routes at the root, so a reverse proxy must strip the prefix before forwarding.
+
+The other commands are `orcid-mock schema [--out FILE]` (the JSON Schema for the users file), `orcid-mock health [--url URL]` (exit code 0 when `{URL}/__admin/health` answers 200 and 1 otherwise, printing nothing on success, for health checks in images without `curl`; without `--url` it checks `http://127.0.0.1:$PORT`, port 9700 when `PORT` is unset), `--version`, and `--help`.
+
+### The users file
+
+[`fixtures/users.example.json`](fixtures/users.example.json) is the bundled starter (regenerate it with `bun run example`), and [`fixtures/users.schema.json`](fixtures/users.schema.json) is the JSON Schema it names in its `$schema` line, so an editor validates and completes as you type.
+`orcid-mock fixture` writes the same users with `$schema` pointing at the published schema URL, so the file works wherever you put it.
+Field names are ORCID's own in snake_case, and a typo fails with its path.
+Leave `orcid` empty and the mock mints a checksum-valid iD in the `0009-9...` block, the same one on every load, and one that does not change when you add other users.
+An iD from any block is accepted if its checksum is right, for example `0000-0002-1825-0097`, ORCID's own fictional demo record.
+Put-codes you leave out are assigned above the largest one in the file.
+The rules a schema cannot express (checksums, duplicate iDs and emails, one primary email, a public or limited email being verified) are checked when the file loads.
+The Architecture Decision Record (ADR) [0003](.context/decisions/0003-fixture-schema-and-id-minting.md) records the reasoning, including the small risk that a minted iD belongs to someone.
+
+### The admin API
+
+No authentication and no cross-origin resource sharing (CORS) in MVP1, so keep the server on loopback:
+anyone who can reach it can read every user and client secret and reset or rewrite all state.
+A request that carries an `Origin` header other than the server's own (the origin of `PUBLIC_BASE_URL`) is refused with `403 {"error":"forbidden_origin"}`: browsers always send `Origin` on a cross-origin request, so a web page cannot reset or rewrite a local mock, while `curl` and test clients, which send none, are unaffected.
+Users are read and written in the users-file form, with the minted iD and every put-code filled in, which is how a test learns them.
+A body must be JSON with a JSON `Content-Type`; anything else is `400 {"error":"invalid_request"}`, and a body that fails validation is `400 {"error":"invalid_fixture","issues":[{"path","message"}]}`.
+
+| Request | Answer |
+|---|---|
+| `GET /__admin/health` | `200 {"status":"ok","users":n,"clients":n}` |
+| `POST /__admin/reset` | `200`, same body as health; users, clients, and counters return to the loaded file, codes, tokens, and sessions are cleared |
+| `GET /__admin/users` | `200`, an array of users |
+| `GET /__admin/users/{iD}` | `200` the user, or `404` |
+| `POST /__admin/users` | create only; an omitted or empty `orcid` mints one; `201` with the user, or `409 {"error":"conflict"}` if the iD exists |
+| `PUT /__admin/users/{iD}` | upsert; the path iD wins and a body `orcid` that differs is `400`; `201` or `200` |
+| `DELETE /__admin/users/{iD}` | `204`, or `404` |
+| `GET /__admin/clients`, `GET /__admin/clients/{client_id}` | `200` the clients (secret included) in users-file form, or `404` |
+| `PUT /__admin/clients/{client_id}` | upsert a client, so an app under test on a random port can register its `redirect_uri`; `201` or `200` |
+| `POST /__admin/clock` | body `{"advance_seconds": n}` with a finite, non-negative `n`; moves the server's clock forward, so codes, tokens, and sessions expire without sleeping; `200 {"offset_ms": n}` is the new total offset; `reset` zeroes it |
+
 ## Test helpers
 
 Helpers for tests that need a mock ORCID: a typed client for the admin API and the headless sign-in, a Testcontainers module that starts the image on a port it picks, Playwright fixtures, and a pytest plugin.
 They are separate packages in this repository, [`clients/node`](clients/node) (`@nemarorg/orcid-mock-testing` on npm) and [`clients/python`](clients/python) (`orcid-mock-testing` on the Python Package Index (PyPI), imported as `orcid_mock`), and carry the server's version, so the default image of a helper is the image of its own version ([ADR 0008](.context/decisions/0008-client-helpers.md)).
-Nothing is published until the first release, `1.0.0`.
 
 ### The rules every helper follows
 
@@ -258,73 +381,6 @@ with OrcidMockContainer(users="fixtures/users.json") as mock:
     token = mock.client.sign_in(mock.client.users()[0]["orcid"])
 ```
 
-## Run it from a checkout
-
-Bun only; there is nothing to build.
-
-```bash
-bun install
-bun run src/main.ts                           # serve the bundled starter users
-bun run src/main.ts id -n 3                   # three freshly minted ORCID iDs
-bun run src/main.ts fixture --out users.json  # write the starter users file to edit
-bun run src/main.ts --users users.json        # serve your own file
-```
-
-The server prints exactly one line on stdout once it is listening, and sends its logs (one JSON object per line) to stderr:
-
-```json
-{"event":"listening","url":"http://127.0.0.1:9700","port":9700}
-```
-
-Each setting comes from an environment variable or a flag; a flag wins, and an empty value counts as unset (`USERS_FILE=` serves the starter).
-An invalid value, an unreadable users file, or a users file that fails validation prints the problem on stderr and exits with code 2.
-
-| Variable | Flag | Default | Meaning |
-|---|---|---|---|
-| `PUBLIC_BASE_URL` | `--base-url` | `http://{host}:{port}` | Absolute `http` or `https` URL, with no query, fragment, or credentials; trailing slashes are stripped and a path prefix is kept. Every absolute URL the mock emits derives from it, never from the `Host` header. |
-| `PORT` | `--port` | `9700` | `0` picks a free port; the readiness line reports the one it bound. |
-| `HOST` | `--host` | `127.0.0.1` | Interface to bind. The admin API is unauthenticated, so the default is loopback; `0.0.0.0` exposes it to the network, and the container image sets it only because the container's network is the boundary. |
-| `USERS_FILE` | `--users` | the bundled starter | Path to a users file. |
-| `LOG_LEVEL` | `--log-level` | `info` | `debug`, `info`, `warn`, or `error`. |
-
-When `PUBLIC_BASE_URL` is unset, the base URL is built from the bound address: `http://127.0.0.1:{port}` for the default host, and also for a wildcard host (`0.0.0.0` or `::`).
-Inside a container the bound address means nothing to a caller, so set `PUBLIC_BASE_URL` explicitly there.
-A path prefix in `PUBLIC_BASE_URL` (`https://example.test/orcid`) is only used to build URLs: the server still routes at the root, so a reverse proxy must strip the prefix before forwarding.
-
-The other commands are `orcid-mock schema [--out FILE]` (the JSON Schema for the users file), `orcid-mock health [--url URL]` (exit code 0 when `{URL}/__admin/health` answers 200 and 1 otherwise, printing nothing on success, for health checks in images without `curl`; without `--url` it checks `http://127.0.0.1:$PORT`, port 9700 when `PORT` is unset), `--version`, and `--help`.
-
-### The users file
-
-[`fixtures/users.example.json`](fixtures/users.example.json) is the bundled starter (regenerate it with `bun run example`), and [`fixtures/users.schema.json`](fixtures/users.schema.json) is the JSON Schema it names in its `$schema` line, so an editor validates and completes as you type.
-`orcid-mock fixture` writes the same users with `$schema` pointing at the published schema URL, so the file works wherever you put it.
-Field names are ORCID's own in snake_case, and a typo fails with its path.
-Leave `orcid` empty and the mock mints a checksum-valid iD in the `0009-9...` block, the same one on every load, and one that does not change when you add other users.
-An iD from any block is accepted if its checksum is right, for example `0000-0002-1825-0097`, ORCID's own fictional demo record.
-Put-codes you leave out are assigned above the largest one in the file.
-The rules a schema cannot express (checksums, duplicate iDs and emails, one primary email, a public or limited email being verified) are checked when the file loads.
-[ADR 0003](.context/decisions/0003-fixture-schema-and-id-minting.md) records the reasoning, including the small risk that a minted iD belongs to someone.
-
-### The admin API
-
-No authentication and no cross-origin resource sharing (CORS) in MVP1, so keep the server on loopback:
-anyone who can reach it can read every user and client secret and reset or rewrite all state.
-A request that carries an `Origin` header other than the server's own (the origin of `PUBLIC_BASE_URL`) is refused with `403 {"error":"forbidden_origin"}`: browsers always send `Origin` on a cross-origin request, so a web page cannot reset or rewrite a local mock, while `curl` and test clients, which send none, are unaffected.
-Users are read and written in the users-file form, with the minted iD and every put-code filled in, which is how a test learns them.
-A body must be JSON with a JSON `Content-Type`; anything else is `400 {"error":"invalid_request"}`, and a body that fails validation is `400 {"error":"invalid_fixture","issues":[{"path","message"}]}`.
-
-| Request | Answer |
-|---|---|
-| `GET /__admin/health` | `200 {"status":"ok","users":n,"clients":n}` |
-| `POST /__admin/reset` | `200`, same body as health; users, clients, and counters return to the loaded file, codes, tokens, and sessions are cleared |
-| `GET /__admin/users` | `200`, an array of users |
-| `GET /__admin/users/{iD}` | `200` the user, or `404` |
-| `POST /__admin/users` | create only; an omitted or empty `orcid` mints one; `201` with the user, or `409 {"error":"conflict"}` if the iD exists |
-| `PUT /__admin/users/{iD}` | upsert; the path iD wins and a body `orcid` that differs is `400`; `201` or `200` |
-| `DELETE /__admin/users/{iD}` | `204`, or `404` |
-| `GET /__admin/clients`, `GET /__admin/clients/{client_id}` | `200` the clients (secret included) in users-file form, or `404` |
-| `PUT /__admin/clients/{client_id}` | upsert a client, so an app under test on a random port can register its `redirect_uri`; `201` or `200` |
-| `POST /__admin/clock` | body `{"advance_seconds": n}` with a finite, non-negative `n`; moves the server's clock forward, so codes, tokens, and sessions expire without sleeping; `200 {"offset_ms": n}` is the new total offset; `reset` zeroes it |
-
 ## OAuth
 
 `/oauth/authorize`, `/oauth/token`, and `/oauth/revoke` follow ORCID's OAuth 2.0 authorization-code flow; [OpenID Connect](#openid-connect) builds on it.
@@ -414,7 +470,7 @@ These are orcid-mock's own choices, each marked "orcid-mock choice" where it is 
 
 ## OpenID Connect
 
-Ask for the `openid` scope and the token response carries an identity (ID) token, signed with a key the server generates the first time it needs one.
+Ask for the `openid` scope and the token response carries an ID token, signed with a key the server generates the first time it needs one.
 `/.well-known/openid-configuration`, `/oauth/jwks`, and `/oauth/userinfo` are the three routes a relying party (an application that signs users in through ORCID) needs to verify it and to read the user.
 All three follow ORCID's CORS filter, so a browser app can call them:
 they echo the request's `Origin` in `Access-Control-Allow-Origin` (and send none when the request has none), send `Access-Control-Allow-Credentials: true`, even on the userinfo 403, and answer a preflight.
@@ -432,7 +488,7 @@ Keeping the document identical to ORCID's, rather than consistent with what the 
 
 ### JWKS
 
-`GET /oauth/jwks` returns the JSON Web Key Set (JWKS) with one RS256 key (RSA with SHA-256, 2048 bits, exponent `AQAB`) in ORCID's compact shape and key order, `{"keys":[{"kty":"RSA","e":"AQAB","use":"sig","kid":"...","n":"..."}]}`, with no `alg` member.
+`GET /oauth/jwks` returns the JWKS with one RS256 key (2048-bit RSA, exponent `AQAB`) in ORCID's compact shape and key order, `{"keys":[{"kty":"RSA","e":"AQAB","use":"sig","kid":"...","n":"..."}]}`, with no `alg` member.
 It is sent with `cache-control: no-cache, no-store, max-age=0, must-revalidate` and `pragma: no-cache`.
 The `kid` reads `orcid-mock-` and 32 lowercase letters and digits, in the pattern of ORCID's `<env>-orcid-org-<32>`.
 The key is generated on the first request that needs it, once per server, and survives `POST /__admin/reset`, so a client that cached the JWKS stays valid; a new process has a new key.
@@ -714,27 +770,11 @@ It registers a client and creates a user through the admin API, signs in with `l
 The `services-smoke` job in [`conformance.yml`](.github/workflows/conformance.yml) runs the published image as a `services:` container with no `--health-cmd`.
 Its first step asserts that Docker reports the service container `healthy`, and the next reaches `/__admin/health` once, with no retry.
 What that proves is that the image carries a `HEALTHCHECK` which a real runner accepts and reports healthy; it does not prove that the runner would wait for a slow start.
-It runs only on a manual dispatch (input `job` set to `services-smoke` or `both`, and input `image`, default `ghcr.io/nemarorg/orcid-mock:1`) and can pass only after the first release has published the image and made its package public, so run it once then.
+It runs only on a manual dispatch (input `job` set to `services-smoke` or `both`, and input `image`, default `ghcr.io/nemarorg/orcid-mock:1`) and can pass only against a published image whose package is public.
 
-## Why
+## What comes after MVP1
 
-ORCID's sandbox is shared, cannot be reset from an API, delivers mail only to one throwaway provider, and needs real accounts,
-so nobody can drive a brand-new ORCID sign-up from an automated test.
-No open-source project mocks ORCID's identity layer and its record API together:
-ORCID retired its own mock in 2012, and the generic OAuth and OpenID Connect mocks would still need the whole ORCID surface built on top.
-
-## What it does
-
-- The authorization-code flow with a sign-in page that lists the fixture users, a `login_as` shortcut for headless drivers, ORCID's redirect matching, and an unmodified `state` round trip ([OAuth](#oauth)).
-- The token endpoint with ORCID's non-standard response (`orcid` and `name` alongside the access token), refresh and client-credentials grants, revocation, and ORCID's error bodies, status codes, and key order.
-- OpenID Connect: a discovery document byte-identical to ORCID's apart from the base URL, JWKS, an RS256 ID token whose `sub` is the iD, and userinfo ([OpenID Connect](#openid-connect)).
-- The public v3.0 record reads (search, XML, and the summary and citation variants are not served), projected from the users file with ORCID's wire shapes, per-item visibility, grouping and ordering, `Accept` negotiation, record states, and error codes ([Record API](#record-api)).
-- Checksum-valid iDs (ISO/IEC 7064 MOD 11-2) minted for fixtures, and an admin API to reset the server, add, replace, and remove users, register clients, and move the clock.
-- Four ways to run it (`bunx`, a container, a binary, a GitHub Action) and client helpers for Node (Testcontainers, Playwright) and Python (Testcontainers, pytest).
-
-## What comes after (MVP2)
-
-Member-API writes for works and employments, the hosted multi-tenant service, XML and other representations, webhooks, rate-limit emulation.
+The second minimum viable product (MVP2) is planned to add member-API writes for works and employments, the hosted multi-tenant service, XML and other representations, webhooks, and rate-limit emulation.
 
 ## Releasing
 
