@@ -64,10 +64,10 @@ function summary(user: StoredUser, viewer: Viewer, work: StoredWork): JsonObject
  * first), and the groups ordered by their preferred summary: publication date newest first, then
  * title, then type. `processGroupedWorks`:
  * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/manager/v3/read_only/impl/WorkManagerReadOnlyImpl.java#L563-L593
- * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/utils/v3/activities/WorkComparators.java#L55-L65
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/utils/v3/activities/WorkComparators.java#L55-L63
  * The public delegator groups the public works only (`groupWorks(works, true)`), then filters,
  * then recomputes every date from what is left:
- * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-pub-web/src/main/java/org/orcid/api/publicV3/server/delegator/impl/PublicV3ApiServiceDelegatorImpl.java#L255-L280
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-pub-web/src/main/java/org/orcid/api/publicV3/server/delegator/impl/PublicV3ApiServiceDelegatorImpl.java#L256-L280
  * Each group is `{ last-modified-date, external-ids, work-summary }`, the summary array holding
  * summaries directly (an affiliation's holds one-key wrappers). The works arrive in the fixture's
  * order, which ORCID leaves to its database.
@@ -205,7 +205,7 @@ export type BulkResult =
  * fills the `${clientName}` placeholder in 9034 for a reader who has a client, and stays literal
  * for an anonymous one (observed):
  * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/manager/v3/read_only/impl/WorkManagerReadOnlyImpl.java#L383-L408
- * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-api-common/src/main/java/org/orcid/api/publicV3/server/security/impl/PublicAPISecurityManagerV3Impl.java#L253-L275
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-api-common/src/main/java/org/orcid/api/publicV3/server/security/impl/PublicAPISecurityManagerV3Impl.java#L253-L271
  */
 export function bulkWorks(
   user: StoredUser,

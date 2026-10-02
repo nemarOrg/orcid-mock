@@ -20,12 +20,12 @@ interface Draft<T> {
 
 /**
  * ORCID's `ActivitiesGroupGenerator`, applied to `items` in the order given:
- * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/utils/v3/activities/ActivitiesGroupGenerator.java#L14-L45
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/utils/v3/activities/ActivitiesGroupGenerator.java#L17-L42
  * An item joins every group that shares a group key with it, and when it matches several they
  * are merged, so groups are the transitive closure of "shares a key". An item with no groupable
  * id forms a group of its own with no keys. Only groupable ids are keys (a `part-of` or
  * `funded-by` id is not, see `isGroupable`), and each group id counts once:
- * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/utils/v3/activities/ActivitiesGroup.java#L12-L55
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/utils/v3/activities/ActivitiesGroup.java#L42-L59
  * Callers pass only the items the viewer may see, so a hidden item never joins a group or adds a
  * key: ORCID groups the public items only (`groupWorks(works, true)`).
  *

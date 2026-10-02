@@ -18,7 +18,7 @@ export function compactJson(value: Json): string {
  * (an empty object is `{ }`). Lines end in `\n` and the text has no trailing newline.
  * Arrays do not add an indentation level, because Jackson's array indenter is the inline
  * `FixedSpaceIndenter`:
- * https://github.com/FasterXML/jackson-core/blob/13b67c80342b3292fb5dc5cd340b6fafa2b37db0/src/main/java/com/fasterxml/jackson/core/util/DefaultPrettyPrinter.java#L390-L500
+ * https://github.com/FasterXML/jackson-core/blob/13b67c80342b3292fb5dc5cd340b6fafa2b37db0/src/main/java/com/fasterxml/jackson/core/util/DefaultPrettyPrinter.java#L390-L491
  * The layout was checked against a populated container, `other-names` of a record with three
  * names, `Accept: application/vnd.orcid+json`, observed on pub.orcid.org on 2026-10-01.
  */

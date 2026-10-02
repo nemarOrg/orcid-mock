@@ -121,7 +121,7 @@ interface Sortable {
  * sort strings above, reversed), then title ascending, then type in enum order; groups that tie
  * on all three keep the order they were formed in (`WorkComparators.GROUP`, then
  * `ALL_EXCEPT_DISPLAY_INDEX`):
- * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/utils/v3/activities/WorkComparators.java#L25-L59
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/utils/v3/activities/WorkComparators.java#L25-L63
  * A type the enum does not list sorts after every type it does, by name.
  */
 export function compareWorks(a: Sortable, b: Sortable): number {

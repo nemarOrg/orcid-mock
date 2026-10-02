@@ -45,7 +45,7 @@ export function normalizeId(type: string, value: string): Normalization {
  * ORCID's group id for an id: the normalized value when there is one, else the raw value, then
  * the type, so two DOIs that differ only in case are one key
  * (`ExternalID.getGroupId`, in orcid-model):
- * https://github.com/ORCID/orcid-model/blob/9592e2d3bde21a1edf703f26f8bc304448f886fb/src/main/java/org/orcid/jaxb/model/v3/release/record/ExternalID.java#L123-L134
+ * https://github.com/ORCID/orcid-model/blob/9592e2d3bde21a1edf703f26f8bc304448f886fb/src/main/java/org/orcid/jaxb/model/v3/release/record/ExternalID.java#L126-L135
  */
 export function groupId(id: FixtureExternalId, mode: IdMode): string {
   const normalized =
@@ -56,7 +56,7 @@ export function groupId(id: FixtureExternalId, mode: IdMode): string {
 /**
  * Whether an id can key a group: not a `part-of` or `funded-by` id, and not empty
  * (`ExternalID.isGroupAble`). A missing relationship groups, and so does `version-of`:
- * https://github.com/ORCID/orcid-model/blob/9592e2d3bde21a1edf703f26f8bc304448f886fb/src/main/java/org/orcid/jaxb/model/v3/release/record/ExternalID.java#L136-L149
+ * https://github.com/ORCID/orcid-model/blob/9592e2d3bde21a1edf703f26f8bc304448f886fb/src/main/java/org/orcid/jaxb/model/v3/release/record/ExternalID.java#L139-L149
  */
 export function isGroupable(id: FixtureExternalId): boolean {
   const relationship = id.external_id_relationship;

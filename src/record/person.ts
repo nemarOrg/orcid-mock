@@ -8,8 +8,8 @@
 // container's `last-modified-date` is recomputed from what survives, so none leaks the date of a
 // hidden item (`PublicAPISecurityManagerV3Impl.filter(Person)`, then
 // `Api3_0LastModifiedDatesHelper.calculateLastModified(Person)`):
-// https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-api-common/src/main/java/org/orcid/api/publicV3/server/security/impl/PublicAPISecurityManagerV3Impl.java#L297-L351
-// https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/version/impl/Api3_0LastModifiedDatesHelper.java#L232-L252
+// https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-api-common/src/main/java/org/orcid/api/publicV3/server/security/impl/PublicAPISecurityManagerV3Impl.java#L297-L344
+// https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/version/impl/Api3_0LastModifiedDatesHelper.java#L243-L262
 import type { StoredUser, Visibility } from "../store/types";
 import type { JsonObject } from "./json";
 import { displayOrder } from "./order";
@@ -265,7 +265,7 @@ export const addresses = makeSection<StoredOf<"addresses"> & PersonItem>({
  * `/personal-details`: the name, the other names, and the biography, with `last-modified-date`
  * the latest of those three that survive filtering (observed to equal the name's on a record
  * whose name was its latest edit):
- * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/version/impl/Api3_0LastModifiedDatesHelper.java#L205-L214
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/version/impl/Api3_0LastModifiedDatesHelper.java#L232-L241
  */
 export function personalDetails(user: StoredUser, viewer: Viewer): Built {
   const nameBuilt = name(user, viewer);
