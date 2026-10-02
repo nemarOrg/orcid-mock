@@ -105,7 +105,8 @@ runs:
 
         docker_args=(
           run --detach --name "${name}"
-          # Loopback only: the admin API is unauthenticated and serves fixture passwords.
+          # Loopback only: the admin API is unauthenticated, returns every user and client secret,
+          # and lets anyone who reaches it reset or rewrite all state.
           --publish "127.0.0.1:${INPUT_PORT}:9700"
           --env "PUBLIC_BASE_URL=${base_url}"
         )

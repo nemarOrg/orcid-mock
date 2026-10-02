@@ -3,9 +3,10 @@
 # users from memory, one store per isolate, with no persistence (see the header of src/worker.ts).
 #
 # WARNING: a deployed Worker is reachable from the internet and exposes the unauthenticated admin
-# API (reset, and the fixture users with their passwords). Deploy it only where that is acceptable,
-# and put Cloudflare Access or another gate in front of it. `workers_dev = false` below keeps it off
-# the public *.workers.dev address until you route it deliberately.
+# API (every fixture user and client secret, and a reset or rewrite of all state). Deploy it only
+# where that is acceptable, and put Cloudflare Access or another gate in front of it.
+# `workers_dev = false` below keeps it off the public *.workers.dev address until you route it
+# deliberately.
 #
 #   bun x wrangler deploy --dry-run --outdir dist/worker   bundle it without deploying
 #   bun x wrangler dev                                     run it locally in workerd

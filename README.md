@@ -40,7 +40,8 @@ docker run --rm -p 127.0.0.1:9700:9700 \
   Inside a container the default would be `http://127.0.0.1:9700`, which is not an address a caller outside the container can use, and every URL the mock emits (the issuer, redirects, links) is built from it.
   Set it to the address your application uses to reach the mock.
 - **Publish the port on loopback** (`-p 127.0.0.1:9700:9700`), as above.
-  A bare `-p 9700:9700` listens on every interface of the host, and the admin API behind it has no authentication and returns the fixture passwords.
+  A bare `-p 9700:9700` listens on every interface of the host, and the admin API behind it has no authentication:
+  it returns every user in the file and every client secret, and lets anyone who can reach it reset or rewrite all state.
 - Tags: `1.2.3`, `1.2`, `1`, and `latest`; a prerelease such as `1.2.3-rc.1` gets only its exact tag.
   The image is multi-arch (`linux/amd64` and `linux/arm64`), runs as `nonroot` on a distroless base with no shell, and holds one file, `/orcid-mock`.
 - The image sets `HOST=0.0.0.0` and `PORT=9700`, since the container's network is the boundary.
@@ -124,7 +125,7 @@ Point your application at it with the same variables you use for the sandbox
 `src/worker.ts` and [`wrangler.toml`](wrangler.toml) are a smoke test that the portable layer runs in a real Workers runtime, not a way to host the mock: it serves the starter users from memory, one store per isolate, with nothing durable and no users file.
 `PUBLIC_BASE_URL` must be set as a binding (it is never taken from the request), or every request answers 500 saying so.
 `bun x wrangler deploy --dry-run --outdir dist/worker` bundles it, and `tests/worker.test.ts` runs that bundle in workerd.
-A deployed Worker is reachable from the internet and exposes the unauthenticated admin API, fixture passwords included, so `wrangler.toml` sets `workers_dev = false` and says to put an access gate in front of it before you route it anywhere.
+A deployed Worker is reachable from the internet and exposes the unauthenticated admin API (every fixture user and client secret, and a reset or rewrite of all state), so `wrangler.toml` sets `workers_dev = false` and says to put an access gate in front of it before you route it anywhere.
 The hosted mode will run the same app inside a Durable Object per tenant.
 
 ## Test helpers
@@ -304,7 +305,8 @@ The rules a schema cannot express (checksums, duplicate iDs and emails, one prim
 
 ### The admin API
 
-No authentication and no cross-origin resource sharing (CORS) in MVP1, so keep the server on loopback.
+No authentication and no cross-origin resource sharing (CORS) in MVP1, so keep the server on loopback:
+anyone who can reach it can read every user and client secret and reset or rewrite all state.
 A request that carries an `Origin` header other than the server's own (the origin of `PUBLIC_BASE_URL`) is refused with `403 {"error":"forbidden_origin"}`: browsers always send `Origin` on a cross-origin request, so a web page cannot reset or rewrite a local mock, while `curl` and test clients, which send none, are unaffected.
 Users are read and written in the users-file form, with the minted iD and every put-code filled in, which is how a test learns them.
 A body must be JSON with a JSON `Content-Type`; anything else is `400 {"error":"invalid_request"}`, and a body that fails validation is `400 {"error":"invalid_fixture","issues":[{"path","message"}]}`.
