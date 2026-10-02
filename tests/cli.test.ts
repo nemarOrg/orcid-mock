@@ -120,14 +120,13 @@ describe("health", () => {
   });
 
   test("is 1 when the server answers something other than 200", async () => {
-    const server = Bun.serve({ port: 0, fetch: () => new Response("no", { status: 503 }) });
-    try {
-      const result = await spawnCli(["health", "--url", `http://127.0.0.1:${server.port}`]);
-      expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain("503");
-    } finally {
-      await server.stop(true);
-    }
+    // A path prefix that the mock does not serve gives a real 404 from the real server.
+    const child = await spawnServerProcess(["serve", "--port", "0"]);
+    running.push(child);
+    const result = await spawnCli(["health", "--url", `${child.url}/x`]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("404");
   });
 });
 
@@ -136,6 +135,24 @@ describe("serve", () => {
     const child = await spawnServerProcess([], { PORT: "0" });
     running.push(child);
     expect(child.url).toBe(`http://127.0.0.1:${child.port}`);
+  });
+
+  test("a port that is already in use exits 1 with the stack on stderr", async () => {
+    const taken = await spawnServerProcess(["serve", "--port", "0"]);
+    running.push(taken);
+    const result = await spawnCli(["serve", "--port", String(taken.port)]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain("in use");
+    expect(result.stderr).toMatch(/\n\s+at /);
+  });
+
+  test("exited resolves only after stderr is complete", async () => {
+    const child = await spawnServerProcess(["serve", "--port", "0"]);
+    running.push(child);
+    child.kill("SIGTERM");
+    await child.exited;
+    expect(child.stderr()).toContain("server_started");
   });
 
   test("SIGTERM stops the server and exits 0", async () => {
@@ -151,6 +168,33 @@ describe("serve", () => {
     running.push(child);
     child.kill("SIGINT");
     expect(await child.exited).toBe(0);
+  });
+});
+
+describe("flags that do not apply", () => {
+  test("a flag from another command exits 2 with a usage line", async () => {
+    const cases: Array<[string[], string, string]> = [
+      [["id", "--port", "3"], "--port does not apply to id", "Usage: orcid-mock id [-n N]"],
+      [["serve", "-n", "3"], "-n does not apply to serve", "Usage: orcid-mock [serve]"],
+      [
+        ["fixture", "--url", "x"],
+        "--url does not apply to fixture",
+        "orcid-mock fixture [--out FILE]",
+      ],
+      [["health", "--out", "x"], "--out does not apply to health", "orcid-mock health [--url URL]"],
+      [
+        ["schema", "--users", "x"],
+        "--users does not apply to schema",
+        "orcid-mock schema [--out FILE]",
+      ],
+    ];
+    for (const [args, message, usage] of cases) {
+      const result = await spawnCli(args);
+      expect(result.exitCode).toBe(2);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toContain(message);
+      expect(result.stderr).toContain(usage);
+    }
   });
 });
 

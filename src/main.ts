@@ -29,6 +29,24 @@ serve options (each overrides its environment variable):
   -v, --version     print the version
 `;
 
+/** The options each command accepts; anything else is a usage error. */
+const FLAGS_BY_COMMAND: Record<string, readonly string[]> = {
+  serve: ["base-url", "port", "host", "users", "log-level"],
+  id: ["n"],
+  fixture: ["out"],
+  schema: ["out"],
+  health: ["url"],
+};
+
+const COMMAND_USAGE: Record<string, string> = {
+  serve:
+    "orcid-mock [serve] [--base-url URL] [--port N] [--host HOST] [--users FILE] [--log-level LVL]",
+  id: "orcid-mock id [-n N]",
+  fixture: "orcid-mock fixture [--out FILE]",
+  schema: "orcid-mock schema [--out FILE]",
+  health: "orcid-mock health [--url URL]",
+};
+
 function fail(message: string, code = 2): never {
   console.error(message);
   process.exit(code);
@@ -72,7 +90,7 @@ async function writeOrPrint(text: string, out: string | undefined): Promise<void
 async function health(url: string): Promise<void> {
   let status: number;
   try {
-    const response = await fetch(`${url.replace(/\/$/, "")}/__admin/health`, {
+    const response = await fetch(`${url.replace(/\/+$/, "")}/__admin/health`, {
       signal: AbortSignal.timeout(3000),
     });
     status = response.status;
@@ -106,6 +124,17 @@ async function main(): Promise<void> {
 
   const command = positionals[0] ?? "serve";
   if (positionals.length > 1) fail(`unexpected argument ${JSON.stringify(positionals[1])}`);
+  const allowed = FLAGS_BY_COMMAND[command];
+  if (allowed === undefined) {
+    fail(`unknown command ${JSON.stringify(command)}\nRun orcid-mock --help for usage.`);
+  }
+  for (const name of Object.keys(values)) {
+    if (name !== "help" && name !== "version" && !allowed.includes(name)) {
+      fail(
+        `${name === "n" ? "-n" : `--${name}`} does not apply to ${command}\nUsage: ${COMMAND_USAGE[command]}`,
+      );
+    }
+  }
   const flags: ConfigFlags = {};
   for (const name of ["base-url", "port", "host", "users", "log-level"] as const) {
     const value = values[name];
@@ -128,8 +157,6 @@ async function main(): Promise<void> {
       return writeOrPrint(usersFileJsonSchemaText(), values.out);
     case "health":
       return health(values.url ?? "http://127.0.0.1:9700");
-    default:
-      fail(`unknown command ${JSON.stringify(command)}\nRun orcid-mock --help for usage.`);
   }
 }
 
@@ -155,5 +182,6 @@ function parseCli(args: string[]) {
 main().catch((error: unknown) => {
   if (error instanceof ConfigError) fail(error.message);
   if (error instanceof FixtureError) fail(error.message);
-  fail(error instanceof Error ? error.message : String(error), 1);
+  // Anything else is a bug or an environment problem (a port in use, say): show the stack.
+  fail(error instanceof Error ? (error.stack ?? error.message) : String(error), 1);
 });
