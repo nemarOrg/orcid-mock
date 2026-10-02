@@ -10,6 +10,7 @@ import type { AppEnv } from "../app";
 import { serverNowMs } from "../clock";
 import { JSON_UTF8, tokenEndpointError } from "../errors";
 import type { ScopeName, Store, StoredClient, TokenRecord } from "../store/types";
+import { grantRefusal } from "./account-state";
 import { authenticateClient } from "./client-auth";
 import { readForm } from "./form";
 import { parseScopes, scopeTokens } from "./scopes";
@@ -134,6 +135,10 @@ async function authorizationCodeGrant(
       "One of the provided parameters is invalid, or, the provided token/code is invalid or expired",
     );
   }
+  // orcid-mock choice: a user locked or deactivated since sign-in gets no token (ADR 0009). The
+  // code is already consumed, so unlocking does not bring it back.
+  const refused = grantRefusal(user);
+  if (refused !== null) return tokenEndpointError(c, 400, "invalid_grant", refused);
 
   const token = await newTokenRecord(store, {
     client,
@@ -180,6 +185,10 @@ async function refreshTokenGrant(
     // the "Invalid authorization code: [code]" wording of its documented code-exchange error.
     return tokenEndpointError(c, 400, "invalid_grant", `Invalid refresh token: ${refreshToken}`);
   }
+  // orcid-mock choice: a user locked or deactivated since sign-in cannot refresh (ADR 0009). The
+  // refresh token is left as it is, so unlocking the user lets the client carry on.
+  const refused = user === null ? null : grantRefusal(user);
+  if (refused !== null) return tokenEndpointError(c, 400, "invalid_grant", refused);
 
   // An empty or omitted `scope` copies the parent's; otherwise it must be a subset
   // (https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-api-web/tutorial/refresh_tokens.md#L28).

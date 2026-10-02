@@ -10,6 +10,7 @@ import type { AppEnv } from "../app";
 import { JSON_LATIN1, oauthError } from "../errors";
 import { requestTarget } from "../request-target";
 import type { ScopeName, StoredClient, StoredUser } from "../store/types";
+import { accountState } from "./account-state";
 import { type Checked, fail } from "./checked";
 import { issueCode } from "./codes";
 import { renderConsentPage } from "./consent-page";
@@ -129,9 +130,8 @@ function errorRedirect(c: Ctx, redirectUri: string, error: string): Response {
 
 /** Why a user may not sign in, or null: orcid-mock choice, real ORCID refuses these sign-ins. */
 function refusal(user: StoredUser, param: string): string | null {
-  if (user.deactivated) return `${param} iD ${user.orcid} is deactivated and cannot sign in`;
-  if (user.locked) return `${param} iD ${user.orcid} is locked and cannot sign in`;
-  return null;
+  const state = accountState(user);
+  return state === null ? null : `${param} iD ${user.orcid} is ${state} and cannot sign in`;
 }
 
 /** The user a `login_as` or consent-form `orcid` names, or the 400 that says why not. */

@@ -4,7 +4,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { IDS, RECORD_USERS_FILE } from "./fixtures/record";
 import { startTestServer, type TestServer } from "./harness";
-import { CLIENTS, obtainToken, refreshTokens } from "./helpers/oauth";
+import { authorizeAs, CLIENTS, exchangeCode, obtainToken, refreshTokens } from "./helpers/oauth";
 import { getRecord, type RecordReply } from "./helpers/record";
 
 let server: TestServer;
@@ -20,6 +20,18 @@ const WITH_LIMITED = ["marisol.quenby@example.test", "marisol.limited@example.te
 
 const emailsOf = (reply: RecordReply): string[] =>
   (reply.json as { email: Array<{ email: string }> }).email.map((item) => item.email);
+
+/** Replaces a user with itself plus `patch`, through the admin API (an upsert, so a PUT). */
+async function patchUser(orcid: string, patch: Record<string, unknown>): Promise<void> {
+  const current = await server.admin<Record<string, unknown>>("GET", `/users/${orcid}`);
+  const put = await server.admin("PUT", `/users/${orcid}`, { ...current.body, ...patch });
+  expect(put.status).toBe(200);
+}
+
+const userinfo = (accessToken: string) =>
+  fetch(`${server.baseUrl}/oauth/userinfo`, {
+    headers: { authorization: `Bearer ${accessToken}` },
+  });
 
 /** Sets whether the starter's member client is a member, through the admin API. */
 async function setMember(member: boolean): Promise<void> {
@@ -94,4 +106,69 @@ describe("a client that loses its membership", () => {
       emailsOf(await getRecord(server, RICH_EMAIL, { token: String(restored.json?.access_token) })),
     ).toEqual(WITH_LIMITED);
   });
+});
+
+describe("a user locked or deactivated after sign-in", () => {
+  for (const state of ["locked", "deactivated"] as const) {
+    const apply = (orcid: string) => patchUser(orcid, { [state]: true });
+    const restore = (orcid: string) => patchUser(orcid, { [state]: false });
+    const refusal = (orcid: string) => ({
+      error: "invalid_grant",
+      error_description: `iD ${orcid} is ${state} and cannot receive a token`,
+    });
+
+    describe(state, () => {
+      test("the code exchange is 400 invalid_grant, and the code is gone", async () => {
+        const { code } = await authorizeAs(server, { orcid: IDS.rich, scope: "/authenticate" });
+        await apply(IDS.rich);
+        const refused = await exchangeCode(server, { code });
+        expect(refused.status).toBe(400);
+        expect(refused.json).toEqual(refusal(IDS.rich));
+        // The code was consumed, so restoring the user does not bring it back.
+        await restore(IDS.rich);
+        const again = await exchangeCode(server, { code });
+        expect(again.json?.error_description).toBe(`Invalid authorization code: ${code}`);
+      });
+
+      test("the refresh grant is 400 invalid_grant, and works again once the user is restored", async () => {
+        const token = await obtainToken(server, { orcid: IDS.rich, scope: "/authenticate" });
+        await apply(IDS.rich);
+        const refused = await refreshTokens(server, { refreshToken: token.refresh_token });
+        expect(refused.status).toBe(400);
+        expect(refused.json).toEqual(refusal(IDS.rich));
+        // The refusal revoked nothing.
+        await restore(IDS.rich);
+        const resumed = await refreshTokens(server, { refreshToken: token.refresh_token });
+        expect(resumed.status).toBe(200);
+      });
+
+      test("userinfo is ORCID's 403, and answers again once the user is restored", async () => {
+        const token = await obtainToken(server, { orcid: IDS.rich, scope: "openid" });
+        expect((await userinfo(token.access_token)).status).toBe(200);
+        await apply(IDS.rich);
+        const refused = await userinfo(token.access_token);
+        expect(refused.status).toBe(403);
+        expect(await refused.json()).toEqual({
+          error: "access_denied",
+          "error-description": "access_token is invalid",
+        });
+        await restore(IDS.rich);
+        expect((await userinfo(token.access_token)).status).toBe(200);
+      });
+
+      test("the record API answers 409, as it always has", async () => {
+        const token = await obtainToken(server, {
+          orcid: IDS.rich,
+          scope: "/read-limited",
+          client: "member",
+        });
+        await apply(IDS.rich);
+        const reply = await getRecord(server, RICH_EMAIL, { token: token.access_token });
+        expect([reply.status, (reply.json as { "error-code": number })["error-code"]]).toEqual([
+          409,
+          state === "locked" ? 9018 : 9044,
+        ]);
+      });
+    });
+  }
 });
