@@ -2,10 +2,11 @@
 // confined to /v3.0/* because of that mount (ADR 0002 forbids it only for routers mounted at the
 // root).
 import { Hono } from "hono";
-import { ORCID_API_ERRORS, orcidApiError } from "../../errors";
+import { malformedAccept, ORCID_API_ERRORS, orcidApiError } from "../../errors";
 import { activities, researchResources } from "../../record/activities";
 import { type AffiliationKind, affiliationItem, affiliations } from "../../record/affiliations";
 import { fundingItem, fundings } from "../../record/fundings";
+import { negotiate } from "../../record/negotiate";
 import { peerReviewItem, peerReviews } from "../../record/peer-reviews";
 import {
   addresses,
@@ -154,11 +155,12 @@ export function recordRoutes(): Hono<RecordEnv> {
   // Anything else under /v3.0: `GET /v3.0/` is a 406 and every other unrouted path a 404, both
   // 9001 with no Content-Type (observed on pub.orcid.org/v3.0 on 2026-10-01). Hono's `route()`
   // drops a sub-app's notFound, so this catch-all keeps the response headers on these too.
-  record.all("*", (c) =>
-    orcidApiError(
-      c,
-      c.req.path === "/v3.0/" ? ORCID_API_ERRORS.notAcceptable : ORCID_API_ERRORS.unrouted,
-    ),
-  );
+  // `/v3.0/` is a resource of ORCID's, so an `Accept` header that does not parse is a 400 there
+  // as on every read path, while an unrouted path is a 404 before any header is read (observed).
+  record.all("*", (c) => {
+    if (c.req.path !== "/v3.0/") return orcidApiError(c, ORCID_API_ERRORS.unrouted);
+    if (negotiate(c.req.header("accept")).kind === "malformed") return malformedAccept(c);
+    return orcidApiError(c, ORCID_API_ERRORS.notAcceptable);
+  });
   return record;
 }

@@ -65,6 +65,21 @@ export function unsupportedMediaType(c: Context, contentType: string | undefined
   });
 }
 
+/**
+ * ORCID's answer to an `Accept` header that is not valid (`application/json;q=abc`, a leading
+ * comma, a space inside a type): 400 with `text/html;charset=utf-8` and `Content-Language: en`,
+ * observed on pub.orcid.org/v3.0 on 2026-10-01. ORCID's body is a Tomcat error page; orcid-mock
+ * sends the same title and message in a minimal page without the server banner.
+ */
+export function malformedAccept(c: Context): Response {
+  return c.body(
+    '<!doctype html><html lang="en"><head><title>HTTP Status 400 - Bad Request</title></head>' +
+      "<body><h1>HTTP Status 400 - Bad Request</h1><p><b>Message</b> Bad Request</p></body></html>",
+    400,
+    { "Content-Type": "text/html;charset=utf-8", "Content-Language": "en" },
+  );
+}
+
 /** The admin API's error body: `{ error }`, plus `issues` for an invalid fixture. */
 export function adminError(
   c: Context,

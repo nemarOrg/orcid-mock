@@ -388,8 +388,10 @@ Not served: search, the unversioned redirects, the member API host, XML, and the
 ### `Accept`
 
 `application/json` is compact, and `application/orcid+json` and `application/vnd.orcid+json` are pretty-printed in Jackson's layout (`"key" : value`, `[ ]` for an empty array).
-The `Content-Type` echoes the type as the client wrote it, with `;charset=UTF-8` added only when it gave no charset; errors follow the same style.
-Media ranges are read with their q-values, so `application/json, text/plain, */*` is JSON.
+The `Content-Type` echoes the type as the client wrote it, with `;charset=UTF-8` added only when it gave no charset (and without any `q` or `qs`); errors follow the same style.
+Ranges are tried by the client's q-value, then specificity, then ORCID's own weight for each type, then the order written, as ORCID does:
+`application/json, text/plain, */*` is JSON, and `application/json, application/vnd.orcid+xml` is JSON in either order.
+A header that does not parse (`application/json;q=abc`, a leading comma) is ORCID's 400 with an HTML page, which orcid-mock sends in a minimal form.
 
 **Deviation, until XML exists:** real ORCID answers XML to a missing `Accept`, to `*/*` and `application/*`, to an XML type, and to a list that prefers XML.
 orcid-mock answers 406 / 9001 with no `Content-Type` and a developer message that says it serves JSON only, that real ORCID would answer XML, and which header to send.
@@ -431,7 +433,7 @@ Every response, errors included, carries `access-control-allow-origin: *`, `cach
 - Bulk works returns found works in put-code order, which is what pub.orcid.org returned for a request in another order; the source leaves it to the database.
   In a 9034 message, `${clientName}` is filled with the reader's client name when the token has one (source only) and left as is for an anonymous reader (observed).
 - Emails keep the fixture's order, since ORCID's has no `order by`.
-- A malformed `Accept` range is skipped; equal quality is broken by specificity, then position; a q-value and everything after it is left out of the echoed `Content-Type`.
+- The parameters of an echoed `Content-Type` keep the order the client wrote, where ORCID's follow a hash map's, and the 400 page for a malformed `Accept` is shorter than Tomcat's.
 - `OPTIONS` answers 200 with `Allow: HEAD,GET,OPTIONS`, and the CORS lists only when the request is a preflight.
 
 ### Example

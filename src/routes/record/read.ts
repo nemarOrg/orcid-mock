@@ -5,6 +5,7 @@ import type { Context, Hono, MiddlewareHandler } from "hono";
 import type { AppEnv } from "../../app";
 import {
   jsonOnlyError,
+  malformedAccept,
   ORCID_API_ERRORS,
   type OrcidApiErrorSpec,
   orcidApiError,
@@ -133,6 +134,7 @@ export function readRoute(
   const read = async (c: RecordContext): Promise<Response> => {
     const accept = c.req.header("accept");
     const negotiation = negotiate(accept);
+    if (negotiation.kind === "malformed") return malformedAccept(c);
     if (negotiation.kind === "unsupported") return orcidApiError(c, ORCID_API_ERRORS.notAcceptable);
     if (negotiation.kind === "xml") return orcidApiError(c, jsonOnlyError(accept));
     const { negotiated } = negotiation;
@@ -175,6 +177,7 @@ export function readRoute(
     // `application/vnd.orcid+xml;qs=0.5;charset=UTF-8`). A CORS preflight, which carries
     // `Access-Control-Request-Method`, also gets the two `Access-Control-Allow-*` headers.
     const negotiation = negotiate(c.req.header("accept"));
+    if (negotiation.kind === "malformed") return malformedAccept(c);
     const headers: Record<string, string> = {
       "Content-Type":
         negotiation.kind === "json"
