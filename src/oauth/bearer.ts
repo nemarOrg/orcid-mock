@@ -1,6 +1,9 @@
-// Bearer-token resolution, shared by the OpenID Connect userinfo endpoint and the record API's
-// `/read-limited` reads. Userinfo maps `none` and `invalid` to its own 403 shape; the record API
-// answers `invalid` with `invalidTokenResponse`.
+// Bearer-token resolution for the record API's `/read-limited` reads, and the two pieces the
+// OpenID Connect userinfo endpoint shares with it: `readBearerHeader` reads the header and
+// `checkAccessToken` is the one validity rule. Userinfo also takes a token from a form field or
+// the query string, so it calls those two itself and answers every failure with its own 403
+// shape; the record API goes through `resolveBearer` and answers `invalid` with
+// `invalidTokenResponse`.
 import type { Context } from "hono";
 import type { AppEnv } from "../app";
 import { serverNowMs } from "../clock";
@@ -39,13 +42,24 @@ export async function checkAccessToken(
  * case-insensitive and the token is trimmed, as ORCID's userinfo controller strips the "Bearer"
  * or "bearer" prefix and trims:
  * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-web/src/main/java/org/orcid/frontend/web/controllers/OpenIDController.java#L82
- * A header
- * with another scheme, or a scheme with nothing after it, presents no bearer token.
+ * A header with another scheme, or a scheme with nothing after it, presents no bearer token.
  */
 export function readBearerHeader(c: Context<AppEnv>): string | null {
-  const header = c.req.header("authorization");
-  const match = header === undefined ? null : /^\s*bearer\s+(\S.*?)\s*$/i.exec(header);
-  return match?.[1] ?? null;
+  return parseBearerHeader(c.req.header("authorization"));
+}
+
+/**
+ * The parsing behind `readBearerHeader`, in linear time: trim, split once at the first
+ * whitespace, compare the scheme case-insensitively, and trim the rest. (A regular expression
+ * with a lazy token and a trailing `\s*$` backtracks quadratically on a long run of spaces.)
+ */
+export function parseBearerHeader(header: string | undefined): string | null {
+  if (header === undefined) return null;
+  const trimmed = header.trim();
+  const split = trimmed.search(/\s/);
+  if (split === -1 || trimmed.slice(0, split).toLowerCase() !== "bearer") return null;
+  const token = trimmed.slice(split).trim();
+  return token === "" ? null : token;
 }
 
 /** The header route: `none` without a bearer header, else `checkAccessToken` on what it holds. */
