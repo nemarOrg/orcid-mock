@@ -193,11 +193,14 @@ function serve<A>(
     }
 
     const token = c.get("token") ?? null;
+    // Membership is read now, not from the token: a client the admin API demoted since sign-in
+    // loses its limited reads at once (ADR 0009).
+    const client = token === null ? null : await deps.store.getClient(token.client_id);
     return handler(
       {
         c,
         user,
-        viewer: viewerFor(token, user, baseUrl),
+        viewer: viewerFor(token, user, baseUrl, client?.member === true),
         negotiated,
         token,
         send: (body) =>

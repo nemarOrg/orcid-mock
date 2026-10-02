@@ -197,6 +197,12 @@ async function refreshTokenGrant(
     }
     scopes = parseScopes(requested).scopes;
   }
+  // orcid-mock choice: a client the admin API has demoted since sign-in cannot carry
+  // `/read-limited` into a new token, the same refusal authorize gives it (ADR 0009). It can
+  // refresh by asking for a narrower `scope`.
+  if (scopes.includes("/read-limited") && !client.member) {
+    return tokenEndpointError(c, 400, "invalid_scope", "Invalid scope: /read-limited");
+  }
 
   // The legacy implementation (removed upstream) defaulted `revoke_old` to true when absent and
   // read a present value with `Boolean.valueOf`, which is true only for "true" in any case:
