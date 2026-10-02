@@ -33,6 +33,8 @@ export const IDS = {
   bioPrivate: "0009-9402-4754-4155",
   /** Nothing public except the name. */
   allPrivate: "0009-9903-5930-8005",
+  /** A name and a biography that are limited: hidden from the public, seen by a limited reader. */
+  limitedName: "0009-9209-8665-4122",
 } as const;
 
 type FixtureUser = UsersFileInput["users"][number];
@@ -736,6 +738,12 @@ const bioPrivate: FixtureUser = {
   ],
 };
 
+const limitedName: FixtureUser = {
+  orcid: IDS.limitedName,
+  name: { given_names: "Isolde", family_name: "Varga", credit_name: null, visibility: "limited" },
+  biography: { content: "A limited biography.", visibility: "limited" },
+};
+
 const primary: FixtureUser = {
   orcid: IDS.primary,
   name: { given_names: "Primrose", family_name: "Aldous", credit_name: null, visibility: "public" },
@@ -814,6 +822,7 @@ export const RECORD_USERS_FILE: UsersFileInput = {
     privateName,
     bioPrivate,
     allPrivate,
+    limitedName,
     grouping,
     primary,
     deprecated,
