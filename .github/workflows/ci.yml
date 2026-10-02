@@ -4,6 +4,8 @@ on:
   push:
   pull_request:
 
+# Nothing here needs more than read access; each job restates it so a job that is ever given more
+# says so in its own block.
 permissions:
   contents: read
 
@@ -14,12 +16,154 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
       - run: bun run lint
       - run: bun run typecheck
+      # Includes tests/worker.test.ts, which bundles src/worker.ts with `wrangler deploy
+      # --dry-run` and runs the bundle in workerd through Miniflare (ADR 0002's real-runtime gate).
       - run: bun run test
+
+  binaries:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      # Every target, so a platform that stops compiling fails here rather than at release time.
+      - run: bun run build:binaries
+      - name: Checksums match the files
+        working-directory: dist
+        run: sha256sum --check SHA256SUMS
+      - name: The linux x64 binary reports its version and mints an iD
+        run: |
+          set -euo pipefail
+          expected="$(bun -e 'console.log(require("./package.json").version)')"
+          actual="$(./dist/orcid-mock-linux-x64 --version)"
+          test "${actual}" = "${expected}" || { echo "version ${actual}, expected ${expected}"; exit 1; }
+          id="$(./dist/orcid-mock-linux-x64 id -n 1)"
+          echo "${id}"
+          [[ "${id}" =~ ^0009-9[0-9]{3}-[0-9]{4}-[0-9]{3}[0-9X]$ ]]
+      - name: The linux x64 binary serves, answers health, and stops on SIGTERM
+        run: |
+          set -euo pipefail
+          ./dist/orcid-mock-linux-x64 serve --port 0 > ready.json 2> server.log &
+          pid=$!
+          for _ in $(seq 1 50); do
+            [ -s ready.json ] && break
+            sleep 0.2
+          done
+          cat ready.json
+          url="$(jq -er .url ready.json)"
+          curl --fail --silent "${url}/__admin/health" | jq -e '.status == "ok"'
+          ./dist/orcid-mock-linux-x64 health --url "${url}"
+          kill -TERM "${pid}"
+          wait "${pid}"
+
+  docker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the image for linux/amd64 (no push)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: orcid-mock:ci
+          build-args: VERSION=ci
+
+      - name: Run it with a mounted fixture and wait for the image's own health check
+        run: |
+          set -euo pipefail
+          docker run --detach --name orcid-mock-ci --publish 9700:9700 \
+            --env PUBLIC_BASE_URL=http://localhost:9700 \
+            --env USERS_FILE=/fixtures/users.json \
+            --volume "${PWD}/fixtures/users.example.json:/fixtures/users.json:ro" \
+            orcid-mock:ci
+          status=starting
+          for _ in $(seq 1 60); do
+            status="$(docker inspect --format '{{.State.Health.Status}}' orcid-mock-ci)"
+            [ "${status}" = healthy ] && break
+            sleep 1
+          done
+          echo "health status: ${status}"
+          [ "${status}" = healthy ]
+      - name: The admin API answers with the fixture's counts
+        run: |
+          set -euo pipefail
+          users="$(jq '.users | length' fixtures/users.example.json)"
+          clients="$(jq '.clients | length' fixtures/users.example.json)"
+          curl --fail --silent http://localhost:9700/__admin/health \
+            | jq -e --argjson users "${users}" --argjson clients "${clients}" \
+              '.status == "ok" and .users == $users and .clients == $clients'
+      - name: The image runs as a non-root user and carries its labels
+        run: |
+          set -euo pipefail
+          label() { docker inspect --format "{{index .Config.Labels \"$1\"}}" orcid-mock-ci; }
+          test "$(docker inspect --format '{{.Config.User}}' orcid-mock-ci)" = nonroot
+          test "$(label org.opencontainers.image.source)" = https://github.com/nemarOrg/orcid-mock
+          test "$(label org.opencontainers.image.licenses)" = MIT
+          test "$(label org.opencontainers.image.version)" = ci
+      - name: It stops cleanly on SIGTERM
+        run: |
+          set -euo pipefail
+          docker stop orcid-mock-ci
+          test "$(docker inspect --format '{{.State.ExitCode}}' orcid-mock-ci)" = 0
+          docker rm orcid-mock-ci
+
+      - name: The compose example runs the same image
+        env:
+          ORCID_MOCK_IMAGE: orcid-mock:ci
+        run: |
+          set -euo pipefail
+          docker compose up --detach --wait
+          curl --fail --silent http://localhost:9700/__admin/health | jq -e '.status == "ok"'
+          docker compose down
+
+      - name: Run the Action from this working tree against the local image
+        id: mock
+        uses: ./
+        with:
+          image: orcid-mock
+          version: ci
+          users-file: fixtures/users.example.json
+          port: "9700"
+      - name: The Action exported the base URL, and the mock is reachable through it
+        env:
+          OUTPUT_URL: ${{ steps.mock.outputs.orcid-mock-url }}
+          OUTPUT_API: ${{ steps.mock.outputs.orcid-api-base }}
+          OUTPUT_PUB_API: ${{ steps.mock.outputs.orcid-pub-api-base }}
+        run: |
+          set -euo pipefail
+          expected=http://localhost:9700
+          for variable in ORCID_API_BASE ORCID_PUB_API_BASE ORCID_MOCK_URL; do
+            actual="${!variable:-}"
+            echo "${variable}=${actual}"
+            test "${actual}" = "${expected}"
+          done
+          test "${OUTPUT_URL}" = "${expected}"
+          test "${OUTPUT_API}" = "${expected}"
+          test "${OUTPUT_PUB_API}" = "${expected}"
+          curl --fail --silent "${ORCID_API_BASE}/__admin/health" | jq -e '.status == "ok"'
+
+      - name: Container logs
+        if: failure()
+        run: |
+          docker ps --all
+          docker logs orcid-mock-ci 2>&1 || true
+          docker logs orcid-mock-9700 2>&1 || true
