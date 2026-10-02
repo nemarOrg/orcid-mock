@@ -4,9 +4,9 @@ An ephemeral mock of the Open Researcher and Contributor ID (ORCID) service for 
 the OAuth 2.0 authorization-code flow, OpenID Connect, and the public record API,
 with users defined in a JSON file and all state kept in memory.
 
-Status: the foundation is in progress on the MVP1 epic (#1).
-The server starts, loads and validates a users file, serves the admin API (health, reset, users, clients), and answers every other path in the right error shape.
-OAuth, OpenID Connect, and the record API arrive in the next phases.
+Status: the server is feature-complete for MVP1 (epic #1, read-only):
+the admin API, OAuth, OpenID Connect, and the public record API are built, and [a conformance suite](#conformance) holds the mock to ORCID's sandbox and drives a brand-new sign-up end to end in CI.
+Nothing is published until the first release, `1.0.0`.
 See [`.context/plan.md`](.context/plan.md) for the roadmap and [`.context/research.md`](.context/research.md) for the findings behind it.
 
 ## Install and run
