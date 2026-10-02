@@ -49,10 +49,10 @@ orcid-mock/
 - **Validation:** Zod, which is also the source of the generated JSON Schema (`bun run schema`).
 
 ## Common Patterns
-- **Async/Await:** For all async operations
-- **Error Handling:** Typed error classes where code throws (`ConfigError`, `FixtureError`), and ORCID-shaped bodies built in `src/errors.ts` where a route answers; no stack trace or exception message ever reaches a response body
-- **Configuration:** Environment variables and flags, a flag winning
-- **Logging:** One JSON object per line on stderr, with levels
+- **Async/Await:** For all async operations.
+- **Error Handling:** Typed error classes where code throws (`ConfigError`, `FixtureError`), and ORCID-shaped bodies built in `src/errors.ts` where a route answers; no stack trace or exception message ever reaches a response body.
+- **Configuration:** Environment variables and flags, a flag winning.
+- **Logging:** One JSON object per line on stderr, with levels.
 
 ## Testing (with bun:test)
 ```typescript
