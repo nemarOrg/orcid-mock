@@ -72,8 +72,8 @@ A body must be JSON with a JSON `Content-Type`; anything else is `400 {"error":"
 | `PUT /__admin/users/{iD}` | upsert; the path iD wins and a body `orcid` that differs is `400`; `201` or `200` |
 | `DELETE /__admin/users/{iD}` | `204`, or `404` |
 | `GET /__admin/clients`, `GET /__admin/clients/{client_id}` | `200` the clients (secret included) in users-file form, or `404` |
-| `POST /__admin/clock` | body `{"advance_seconds": n}` with a finite, non-negative `n`; moves the server's clock forward so codes, tokens, and sessions expire without sleeping; `200 {"offset_ms": n}` is the new total offset, and `400 {"error":"invalid_request"}` for anything else; only validity checks use it, every timestamp the mock emits stays wall time, and `reset` zeroes it |
 | `PUT /__admin/clients/{client_id}` | upsert a client, so an app under test on a random port can register its `redirect_uri`; `201` or `200` |
+| `POST /__admin/clock` | body `{"advance_seconds": n}` with a finite, non-negative `n`; moves the server's clock forward, so codes, tokens, and sessions expire without sleeping; `200 {"offset_ms": n}` is the new total offset; `reset` zeroes it |
 
 ## OAuth
 
@@ -81,10 +81,12 @@ A body must be JSON with a JSON `Content-Type`; anything else is `400 {"error":"
 The starter file registers two clients with the secret `orcid-mock-secret` and the redirect URIs `http://localhost:3000/callback` and `http://127.0.0.1:3000/callback`:
 `APP-ORCIDMOCK000001`, a public client, and `APP-ORCIDMOCK000002`, a member client that may also ask for `/read-limited`.
 Register your own with `PUT /__admin/clients/{client_id}`.
+[ADR 0004](.context/decisions/0004-oauth-surface-and-orcid-mock-choices.md) records the reasoning behind the choices below.
 
 ### A headless round trip
 
-Add `login_as=<iD>` to the authorize request and the consent page is skipped: the answer is a 302 whose `Location` carries the code.
+Add `login_as=<iD>` to the authorize request and the sign-in page is skipped:
+the answer is a 302 whose `Location` carries the code.
 Read it with `curl -i`, then exchange it.
 
 ```bash
@@ -92,30 +94,39 @@ BASE=http://127.0.0.1:9700
 ORCID=$(curl -s $BASE/__admin/users | grep -o '"orcid":"[^"]*"' | head -1 | cut -d'"' -f4)
 
 # 1. Sign in as that user and read the code from the Location header.
-curl -si "$BASE/oauth/authorize?client_id=APP-ORCIDMOCK000001&response_type=code&scope=/authenticate&redirect_uri=http://localhost:3000/callback&state=abc&login_as=$ORCID" | grep -i '^location:'
-# location: http://localhost:3000/callback?code=rHJ4cw&state=abc
+CODE=$(curl -si "$BASE/oauth/authorize?client_id=APP-ORCIDMOCK000001&response_type=code&scope=/authenticate&redirect_uri=http://localhost:3000/callback&state=abc&login_as=$ORCID" | sed -n 's/^[Ll]ocation:.*[?&]code=\([0-9A-Za-z]*\).*/\1/p')
+echo "$CODE"
+# rHJ4cw
 
 # 2. Exchange the code (a form body, as ORCID requires; the redirect_uri must repeat the one above).
 curl -s -X POST $BASE/oauth/token \
-  -d grant_type=authorization_code -d code=rHJ4cw \
+  -d grant_type=authorization_code -d code=$CODE \
   -d client_id=APP-ORCIDMOCK000001 -d client_secret=orcid-mock-secret \
   --data-urlencode redirect_uri=http://localhost:3000/callback
 # {"access_token":"82b915f4-...","token_type":"bearer","refresh_token":"d6e12d69-...","expires_in":631138518,"scope":"/authenticate","name":"A. Fennimore","orcid":"0009-9814-3544-3504"}
 ```
 
-The response has ORCID's keys in ORCID's order: `access_token`, `token_type` (always `bearer`), `refresh_token`, `expires_in` (`631138518`, about twenty years), `scope` (space-separated, `openid` without a slash), `name`, and `orcid` (the bare iD).
-`name` is the public display name: the credit name if the name is public and there is one, else the given and family names if the name is public, else `""`.
+The response has ORCID's keys in ORCID's order:
+`access_token`, `token_type` (always `bearer`), `refresh_token`, `expires_in` (`631138518`, about twenty years), `scope` (space-separated, `openid` without a slash), `name`, and `orcid` (the bare iD).
+`name` is the public display name:
+the credit name if the name is public and there is one, else the given and family names if the name is public, else `""`.
 The code is six characters from `[0-9a-zA-Z]`, works once, and the `state` comes back exactly as sent.
-Helpers that do this in a test are in [`tests/helpers/oauth.ts`](tests/helpers/oauth.ts): `authorizeAs`, `exchangeCode`, `obtainToken`, `clientCredentials`, and `refreshTokens`.
+Helpers that do this in a test are in [`tests/helpers/oauth.ts`](tests/helpers/oauth.ts):
+`authorizeAs`, `exchangeCode`, `obtainToken`, `clientCredentials`, and `refreshTokens`.
 
 ### The sign-in page
 
 Without `login_as`, `GET /oauth/authorize` renders a small page (no script, no external asset) that lists every user in the file as a button, plus Deny.
+There is no password prompt: choosing a user signs in as that user, and the page labels a locked or deactivated user, who cannot sign in.
 Choosing a user issues a code and redirects; Deny redirects with `error=access_denied` and the `state`.
-An unknown `client_id` or a `redirect_uri` that is not under a registered one is a 400 and never a redirect.
-After that, errors go back to the client the way ORCID's current front end does it: `redirect_uri#error=unsupported_response_type` for a `response_type` other than `code`, and `redirect_uri#error=invalid_scope` for a missing or unknown scope, for `/read-public`, or for `/read-limited` from a public client.
-A redirect URI matches when its scheme, userinfo, host (case-sensitive), and port equal a registered one's and its path starts with the registered path; the query is ignored for matching and kept when redirecting.
-Signing in sets a session cookie, which `prompt=none` with the `openid` scope uses to issue a code silently; without a session it redirects with `#login_required`.
+A missing `response_type`, a missing or unknown `client_id`, and a `redirect_uri` that is not under a registered one are each a 400 and never a redirect.
+After that, errors go back to the client the way ORCID's current front end does it:
+`redirect_uri#error=unsupported_response_type` for a `response_type` other than `code`,
+and `redirect_uri#error=invalid_scope` for a missing or unknown scope, for `/read-public`, or for `/read-limited` from a public client.
+A redirect URI matches when its scheme, userinfo, host (case-sensitive), and port equal a registered one's and its path starts with the registered path;
+the query is ignored for matching and kept when redirecting.
+Signing in sets a session cookie, which `prompt=none` with the `openid` scope uses to issue a code silently;
+without a session it redirects with `#login_required`.
 `prompt=login` with `openid` ignores the session and shows the page.
 `login_as` is an orcid-mock extension: a locked or deactivated user cannot sign in, and under `prompt=none` it is ignored.
 
@@ -134,17 +145,23 @@ Three grants are served:
 `POST /oauth/revoke` takes a `token` (access or refresh) and the same client credentials, revokes the pair, and answers 200 with an empty body.
 `POST /__admin/clock` moves the server's clock to expire codes (ten minutes), sessions (24 hours), and tokens (twenty years) without sleeping.
 
-### Where ORCID is undocumented
+### Where ORCID is undocumented or unobserved
 
 These are orcid-mock's own choices, each marked "orcid-mock choice" where it is implemented:
 
 - A code lives ten minutes and a session 24 hours of server time; ORCID documents only that a code works once.
-- A `login_as` or consent-form user who is locked or deactivated is refused with a 400, and the page labels such users; real ORCID would refuse the sign-in.
+- The sign-in page and `login_as` are orcid-mock's own, and a locked or deactivated user is refused with a 400 where real ORCID would refuse the sign-in.
+- The session cookie is `Secure` when `PUBLIC_BASE_URL` is https.
 - Revoke: a missing `token` is `400 invalid_request`, an unknown token is a 200 (RFC 7009 section 2.2), and a token issued to another client is `400 unauthorized_client` and is left alone (RFC 7009 section 2.1).
-- The text of `unsupported_grant_type` for an unknown grant, and `invalid_grant` for a bad code, follow ORCID's April 2026 error documentation but have not been observed live.
-- Refreshing with a scope outside the original is a 400 (the current documentation), where ORCID's legacy server answered 401.
-- `Basic` credentials are used as written, not percent-decoded; the scope of a token keeps the order it was requested in; the 415 body is the sentence alone, without the web server's error page around it.
+- ORCID documents the messages "Invalid authorization code: [code]" and "One of the provided parameters is invalid, or, the provided token/code is invalid or expired" for a failed code exchange, but not their error codes, so `invalid_grant` is orcid-mock's inference.
+- `unsupported_grant_type` for an unknown grant, `code is required`, and `Invalid refresh token: <token>` are orcid-mock's own wording, because ORCID's answers were not observed.
+- Refreshing with a scope outside the original is a 400 `invalid_scope`, following RFC 6749 section 5.2; ORCID's error documentation has a 400 `Invalid scope` only for `/webhook`, and ORCID's registry code maps an invalid scope to a 401.
+- The `state` parameter is returned as sent and its length is not limited, where ORCID documents a limit of 2000 characters.
+- `Basic` credentials are used as written, not percent-decoded.
+- The scope of a token keeps the order it was requested in.
+- The 415 body is the sentence alone, without the web server's error page around it.
 - A redirect URI is refused if it holds a character a header cannot carry (percent-encode it), and `%2e` counts as a dot segment, because a browser resolves it as one.
+- When several parameters are missing, only the order of `response_type` before `client_id` was observed; the order of the others is orcid-mock's.
 
 ## Why
 
