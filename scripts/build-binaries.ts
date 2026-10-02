@@ -10,7 +10,7 @@
 // Cross-compiling downloads the target's Bun runtime on first use, so the machine needs network
 // access unless the target matches the host. Nothing here publishes anything.
 import { mkdir, readdir, rm } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 interface Target {
@@ -75,20 +75,31 @@ async function strayTemporaries(): Promise<Set<string>> {
   return new Set((await readdir(ROOT)).filter((name) => name.endsWith(".bun-build")));
 }
 
+/** Streams the file through the hash, so an 80 MB binary is never held in memory whole. */
 async function sha256(path: string): Promise<string> {
   const hasher = new Bun.CryptoHasher("sha256");
-  hasher.update(await Bun.file(path).arrayBuffer());
+  for await (const chunk of Bun.file(path).stream()) hasher.update(chunk);
   return hasher.digest("hex");
 }
 
 /** `sha256sum -c` format: the digest, two spaces, the bare file name; sorted, one per line. */
-async function writeChecksums(outDir: string): Promise<string[]> {
-  const names = (await readdir(outDir)).filter((name) => name.startsWith("orcid-mock-")).sort();
-  const lines = await Promise.all(
-    names.map(async (name) => `${await sha256(join(outDir, name))}  ${name}`),
-  );
+async function writeChecksums(outDir: string, built: string[]): Promise<string[]> {
+  const lines: string[] = [];
+  for (const file of [...built].sort()) lines.push(`${await sha256(file)}  ${basename(file)}`);
   await Bun.write(join(outDir, "SHA256SUMS"), `${lines.join("\n")}\n`);
   return lines;
+}
+
+/**
+ * Deletes this script's own earlier output, so that what is in the directory afterwards is exactly
+ * what SHA256SUMS lists: a stale binary from an earlier run would otherwise ship without a checksum.
+ */
+async function removeEarlierOutput(outDir: string): Promise<void> {
+  for (const name of await readdir(outDir)) {
+    if (name === "SHA256SUMS" || name.startsWith("orcid-mock-")) {
+      await rm(join(outDir, name), { force: true });
+    }
+  }
 }
 
 async function main(): Promise<void> {
@@ -109,12 +120,14 @@ async function main(): Promise<void> {
 
   const outDir = resolve(ROOT, values.out ?? "dist");
   await mkdir(outDir, { recursive: true });
+  await removeEarlierOutput(outDir);
   const before = await strayTemporaries();
-  for (const target of targets) await compile(target, outDir);
+  const built: string[] = [];
+  for (const target of targets) built.push(await compile(target, outDir));
   for (const name of await strayTemporaries()) {
     if (!before.has(name)) await rm(join(ROOT, name), { force: true });
   }
-  const lines = await writeChecksums(outDir);
+  const lines = await writeChecksums(outDir, built);
   console.log(`\n${join(outDir, "SHA256SUMS")}\n${lines.join("\n")}`);
 }
 
