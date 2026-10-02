@@ -136,7 +136,12 @@ describe.skipIf(!isMock)(
         const { payload, protectedHeader } = await jwtVerify(
           tokens.id_token,
           createRemoteJWKSet(new URL(jwks_uri)),
-          { issuer, audience: clientId, algorithms: ["RS256"] },
+          {
+            issuer,
+            audience: clientId,
+            algorithms: ["RS256"],
+            requiredClaims: ["exp", "iat", "sub", "aud", "iss"],
+          },
         );
         expect(protectedHeader.alg).toBe("RS256");
         expect(payload.sub).toBe(iD);
@@ -174,7 +179,7 @@ describe.skipIf(!isMock)(
       });
 
       // One call returns the mock to the loaded file: the new user, its client, and the tokens go,
-      // and the fixture's own users stay.
+      // and the fixture's own users stay. It resets the whole mock, so run this against one you own.
       await step("reset and find the user gone", async () => {
         const reset = await admin("POST", "/reset");
         expect(reset.status).toBe(200);
@@ -188,6 +193,17 @@ describe.skipIf(!isMock)(
           headers: { authorization: `Bearer ${tokens.access_token}` },
         });
         expect(staleToken.status).toBe(403);
+
+        // The client this test registered is gone too, and a request that names it is refused.
+        expect((await admin("GET", `/clients/${clientId}`)).status).toBe(404);
+        const refused = await client.tokenRequest({
+          grant_type: "client_credentials",
+          scope: "/read-public",
+          client_id: clientId,
+          client_secret: clientSecret,
+        });
+        expect(refused.status).toBe(401);
+        expect((refused.json as { error: string }).error).toBe("invalid_client");
 
         const fixtureUser = await client.readRecord(target.publicId, "personal-details");
         expect(fixtureUser.status).toBe(200);
