@@ -18,7 +18,7 @@ import pytest
 
 from orcid_mock import OrcidMockClient, OrcidMockContainer
 
-pytest_plugins = []
+pytest_plugins = ["pytester"]
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 

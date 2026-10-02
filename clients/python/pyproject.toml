@@ -36,6 +36,9 @@ Homepage = "https://github.com/nemarOrg/orcid-mock#test-helpers"
 Repository = "https://github.com/nemarOrg/orcid-mock"
 Issues = "https://github.com/nemarOrg/orcid-mock/issues"
 
+[project.entry-points.pytest11]
+orcid_mock = "orcid_mock.pytest_plugin"
+
 [dependency-groups]
 dev = [
   "pytest>=9",
@@ -70,7 +73,10 @@ ignore = ["TRY003"]
 python-version = "3.11"
 
 [tool.pytest.ini_options]
-addopts = "-ra"
+# The plugin under test is not loaded into the outer session: pytest imports an entry-point plugin
+# before pytest-cov starts measuring, which would leave its module-level lines uncounted. The
+# pytester runs in tests/test_plugin.py load it through the entry point, as a user's run does.
+addopts = "-ra -p no:orcid_mock"
 testpaths = ["tests"]
 
 [tool.coverage.run]
