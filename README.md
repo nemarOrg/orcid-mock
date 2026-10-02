@@ -4,8 +4,71 @@ An ephemeral mock of the Open Researcher and Contributor ID (ORCID) service for 
 the OAuth 2.0 authorization-code flow, OpenID Connect, and the public record API,
 with users defined in a JSON file and all state kept in memory.
 
-Status: charter and design only. No implementation yet.
+Status: the foundation is in progress on the MVP1 epic (#1).
+The server starts, loads and validates a users file, serves the admin API (health, reset, users, clients), and answers every other path in the right error shape.
+OAuth, OpenID Connect, and the record API arrive in the next phases.
 See [`.context/plan.md`](.context/plan.md) for the roadmap and [`.context/research.md`](.context/research.md) for the findings behind it.
+
+## Run it
+
+Bun only; there is nothing to build.
+
+```bash
+bun install
+bun run src/main.ts                           # serve the bundled starter users
+bun run src/main.ts id -n 3                   # three freshly minted ORCID iDs
+bun run src/main.ts fixture --out users.json  # write the starter users file to edit
+bun run src/main.ts --users users.json        # serve your own file
+```
+
+The server prints exactly one line on stdout once it is listening, and sends its logs (one JSON object per line) to stderr:
+
+```json
+{"event":"listening","url":"http://127.0.0.1:9700","port":9700}
+```
+
+Each setting comes from an environment variable or a flag; a flag wins.
+An invalid value, or a users file that fails validation, prints the problem on stderr and exits with code 2.
+
+| Variable | Flag | Default | Meaning |
+|---|---|---|---|
+| `PUBLIC_BASE_URL` | `--base-url` | `http://{host}:{port}` | Absolute `http` or `https` URL, with no query, fragment, or credentials; one trailing slash is stripped and a path prefix is kept. Every absolute URL the mock emits derives from it, never from the `Host` header. |
+| `PORT` | `--port` | `9700` | `0` picks a free port; the readiness line reports the one it bound. |
+| `HOST` | `--host` | `127.0.0.1` | Interface to bind. The admin API is unauthenticated, so the default is loopback; the container image will set `0.0.0.0`. |
+| `USERS_FILE` | `--users` | the bundled starter | Path to a users file. |
+| `LOG_LEVEL` | `--log-level` | `info` | `debug`, `info`, `warn`, or `error`. |
+
+When `PUBLIC_BASE_URL` is unset, the base URL is built from the bound address: `http://127.0.0.1:{port}` for the default host, and also for a wildcard host (`0.0.0.0` or `::`).
+Inside a container the bound address means nothing to a caller, so set `PUBLIC_BASE_URL` explicitly there.
+
+The other commands are `orcid-mock schema [--out FILE]` (the JSON Schema for the users file), `orcid-mock health [--url URL]` (exit code 0 when `{URL}/__admin/health` answers 200 and 1 otherwise, printing nothing on success, for health checks in images without `curl`), `--version`, and `--help`.
+
+### The users file
+
+[`fixtures/users.example.json`](fixtures/users.example.json) is the bundled starter, and [`fixtures/users.schema.json`](fixtures/users.schema.json) is the JSON Schema it names in its `$schema` line, so an editor validates and completes as you type.
+Field names are ORCID's own in snake_case, and a typo fails with its path.
+Leave `orcid` empty and the mock mints a checksum-valid iD in the `0009-9...` block, the same one on every load, and one that does not change when you add other users.
+An iD from any block is accepted if its checksum is right, for example `0000-0002-1825-0097`, ORCID's own fictional demo record.
+Put-codes you leave out are assigned above the largest one in the file.
+The rules a schema cannot express (checksums, duplicate iDs and emails, one primary email, a public email being verified) are checked when the file loads.
+[ADR 0002](.context/decisions/0002-portable-layer-and-fixture-schema.md) records the reasoning.
+
+### The admin API
+
+No authentication and no CORS in MVP1.
+Users are read and written in the users-file form, with the minted iD and every put-code filled in, which is how a test learns them.
+A body must be JSON with a JSON `Content-Type`; anything else is `400 {"error":"invalid_request"}`, and a body that fails validation is `400 {"error":"invalid_fixture","issues":[{"path","message"}]}`.
+
+| Request | Answer |
+|---|---|
+| `GET /__admin/health` | `200 {"status":"ok","users":n,"clients":n}` |
+| `POST /__admin/reset` | `200`, same body as health; users, clients, and counters return to the loaded file, codes, tokens, and sessions are cleared |
+| `GET /__admin/users` | `200`, an array of users |
+| `GET /__admin/users/{iD}` | `200` the user, or `404` |
+| `POST /__admin/users` | create only; an omitted or empty `orcid` mints one; `201` with the user, or `409 {"error":"conflict"}` if the iD exists |
+| `PUT /__admin/users/{iD}` | upsert; the path iD wins and a body `orcid` that differs is `400`; `201` or `200` |
+| `DELETE /__admin/users/{iD}` | `204`, or `404` |
+| `PUT /__admin/clients/{client_id}` | upsert a client, so an app under test on a random port can register its `redirect_uri`; `201` or `200` |
 
 ## Why
 

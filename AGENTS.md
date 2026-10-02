@@ -8,7 +8,7 @@ Claude Code reads this through `@AGENTS.md` in `CLAUDE.md`.
 An ephemeral mock of the Open Researcher and Contributor ID (ORCID) service for tests and continuous integration:
 the OAuth 2.0 authorization-code flow, OpenID Connect, and the public record API, with users defined in JSON and all state in memory.
 It exists so that a brand-new ORCID sign-up can be driven from an automated test, first for NEMAR and then for anyone, and so that the same code can be run locally, in a CI service container, self-hosted on Cloudflare, or as a hosted multi-tenant service.
-Status: charter only; the MVP1 epic is issue #1. Repository: private under nemarOrg, MIT.
+Status: foundation in progress; the MVP1 epic is issue #1. Repository: private under nemarOrg, MIT.
 
 ## Tooling
 
@@ -40,7 +40,7 @@ Project-specific rules:
 [`ideas.md`](.context/ideas.md) (later ideas, not commitments), and
 [`decisions/`](.context/decisions/README.md) (Architecture Decision Records; copy `0000-template.md` to add one and index it in the README; never delete an ADR, supersede it).
 
-`fixtures/users.example.json` shows the fixture shape until the JSON Schema lands.
+`fixtures/users.schema.json` is the fixture's JSON Schema, generated from `src/fixtures/schema.ts` by `bun run schema` (a test fails when it is stale), and `fixtures/users.example.json` is the bundled starter from `src/fixtures/starter.ts`, which `orcid-mock fixture` writes.
 
 ## Project memory
 
