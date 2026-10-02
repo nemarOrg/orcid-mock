@@ -1,6 +1,14 @@
 // A typed client for orcid-mock's admin API and the headless sign-in sequence.
-// It uses only the standard `fetch`, so it has no dependencies; the Testcontainers module and the
-// Playwright fixture build on it.
+// It has no dependencies; the Testcontainers module and the Playwright fixture build on it.
+//
+// It talks through `node:http` and `node:https` with an agent of its own, not through `fetch`:
+// Bun's `fetch` honors HTTP_PROXY and ALL_PROXY even for localhost (Bun 1.4.2 sends a request to
+// http://localhost:9700 to the proxy unless NO_PROXY names it), and Node's `fetch` and global agent
+// do the same when NODE_USE_ENV_PROXY is set. A proxy must not capture the traffic to a mock on
+// this machine, and neither runtime's own agent can be told to ignore the environment per request.
+import type { IncomingHttpHeaders } from "node:http";
+import { Agent as HttpAgent, request as httpRequest } from "node:http";
+import { Agent as HttpsAgent, request as httpsRequest } from "node:https";
 
 /** The users-file visibility levels. */
 export type Visibility = "public" | "limited" | "private";
@@ -87,6 +95,18 @@ export interface OrcidMockClientOptions {
   timeoutMs?: number;
 }
 
+interface Reply {
+  status: number;
+  headers: IncomingHttpHeaders;
+  text: string;
+}
+
+// The client's own agents, never `http.globalAgent`, so a proxy configured on the global agent
+// (NODE_USE_ENV_PROXY) does not apply. No keep-alive: a test's requests are few, and an open
+// socket must not keep a test process alive.
+const HTTP_AGENT = new HttpAgent({ keepAlive: false });
+const HTTPS_AGENT = new HttpsAgent({ keepAlive: false });
+
 /** A request the mock refused, or an answer the helper could not use. */
 export class OrcidMockError extends Error {
   override readonly name = "OrcidMockError";
@@ -172,6 +192,19 @@ export class OrcidMockClient {
   }
 
   /**
+   * The address the mock puts in every URL it emits (its `PUBLIC_BASE_URL`), read from the
+   * `issuer` of its discovery document. It is `baseUrl` for a container the helper started, and
+   * can differ for a running instance, which a browser is then sent to by this address.
+   */
+  async publicBaseUrl(): Promise<string> {
+    const discovery = await this.#json<{ issuer: string }>(
+      "GET",
+      "/.well-known/openid-configuration",
+    );
+    return discovery.issuer.replace(/\/+$/, "");
+  }
+
+  /**
    * The headless sign-in: `GET /oauth/authorize` with `login_as`, read the code from the
    * `Location` header without following the redirect, then `POST /oauth/token` form-encoded.
    */
@@ -189,74 +222,101 @@ export class OrcidMockClient {
     });
     if (options.nonce !== undefined) query.set("nonce", options.nonce);
 
-    const authorize = await this.#fetch(`/oauth/authorize?${query}`, { redirect: "manual" });
-    const location = authorize.headers.get("location");
-    if (authorize.status !== 302 || location === null) {
+    const authorize = await this.#send("GET", `/oauth/authorize?${query}`);
+    const location = authorize.headers.location;
+    if (authorize.status !== 302 || location === undefined) {
       throw new OrcidMockError(
-        `GET /oauth/authorize answered ${authorize.status}, not a redirect: ${await authorize.text()}`,
+        `GET /oauth/authorize answered ${authorize.status}, not a redirect: ${authorize.text}`,
         authorize.status,
-        "",
+        authorize.text,
       );
     }
     // A refusal that ORCID sends back to the client carries `error` in the fragment, not a code.
-    const target = new URL(location);
-    const code = target.searchParams.get("code");
+    const code = new URL(location).searchParams.get("code");
     if (code === null) {
+      // A redirect is not an HTTP error, so the error carries no status.
       throw new OrcidMockError(
         `GET /oauth/authorize redirected without a code: ${location}`,
-        authorize.status,
+        0,
         "",
       );
     }
 
-    const token = await this.#fetch("/oauth/token", {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
+    const token = await this.#send(
+      "POST",
+      "/oauth/token",
+      new URLSearchParams({
         grant_type: "authorization_code",
         code,
         client_id: clientId,
         client_secret: clientSecret,
         redirect_uri: redirectUri,
-      }),
-    });
-    const text = await token.text();
+      }).toString(),
+      "application/x-www-form-urlencoded",
+    );
     if (token.status !== 200) {
       throw new OrcidMockError(
-        `POST /oauth/token answered ${token.status}: ${text}`,
+        `POST /oauth/token answered ${token.status}: ${token.text}`,
         token.status,
-        text,
+        token.text,
       );
     }
-    return JSON.parse(text) as OrcidMockTokenResponse;
+    return JSON.parse(token.text) as OrcidMockTokenResponse;
   }
 
-  #fetch(path: string, init: RequestInit = {}): Promise<Response> {
-    return fetch(`${this.baseUrl}${path}`, {
-      ...init,
-      signal: AbortSignal.timeout(this.#timeoutMs),
+  /** One request, no redirect followed, no proxy consulted. */
+  #send(method: string, path: string, body?: string, contentType?: string): Promise<Reply> {
+    const url = new URL(`${this.baseUrl}${path}`);
+    const secure = url.protocol === "https:";
+    const headers: Record<string, string | number> = {};
+    if (body !== undefined) {
+      headers["content-type"] = contentType ?? "application/json";
+      headers["content-length"] = Buffer.byteLength(body);
+    }
+    return new Promise((resolve, reject) => {
+      const outgoing = (secure ? httpsRequest : httpRequest)(
+        url,
+        {
+          method,
+          headers,
+          agent: secure ? HTTPS_AGENT : HTTP_AGENT,
+          signal: AbortSignal.timeout(this.#timeoutMs),
+        },
+        (incoming) => {
+          const chunks: Buffer[] = [];
+          incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
+          incoming.on("error", reject);
+          incoming.on("end", () =>
+            resolve({
+              status: incoming.statusCode ?? 0,
+              headers: incoming.headers,
+              text: Buffer.concat(chunks).toString("utf8"),
+            }),
+          );
+        },
+      );
+      outgoing.on("error", reject);
+      outgoing.end(body);
     });
   }
 
-  async #request(method: string, path: string, body?: unknown): Promise<Response> {
-    const response = await this.#fetch(path, {
+  async #request(method: string, path: string, body?: unknown): Promise<Reply> {
+    const reply = await this.#send(
       method,
-      ...(body === undefined
-        ? {}
-        : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
-    });
-    if (!response.ok) {
-      const text = await response.text();
+      path,
+      body === undefined ? undefined : JSON.stringify(body),
+    );
+    if (reply.status < 200 || reply.status >= 300) {
       throw new OrcidMockError(
-        `${method} ${path} answered ${response.status}: ${text}`,
-        response.status,
-        text,
+        `${method} ${path} answered ${reply.status}: ${reply.text}`,
+        reply.status,
+        reply.text,
       );
     }
-    return response;
+    return reply;
   }
 
   async #json<T>(method: string, path: string, body?: unknown): Promise<T> {
-    return (await (await this.#request(method, path, body)).json()) as T;
+    return JSON.parse((await this.#request(method, path, body)).text) as T;
   }
 }

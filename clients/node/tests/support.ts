@@ -6,17 +6,29 @@ import { join } from "node:path";
 export const REPO_ROOT = join(import.meta.dir, "..", "..", "..");
 
 export interface RepoServer {
+  /** The server's public base URL, from its readiness line. */
   url: string;
+  /** Where this machine reaches it, which differs from `url` when a public base URL was set. */
+  localUrl: string;
   stop(): Promise<void>;
 }
 
 /**
  * Runs `bun run src/main.ts serve --port 0` from the repository and resolves with the URL it
- * reports on its readiness line. The child gets no inherited ORCID-mock settings.
+ * reports on its readiness line (its public base URL, which `publicBaseUrl` sets). The child gets
+ * no inherited ORCID-mock settings.
  */
-export async function startRepoServer(): Promise<RepoServer> {
+export async function startRepoServer(opts: { publicBaseUrl?: string } = {}): Promise<RepoServer> {
   const child = Bun.spawn(
-    [process.execPath, "run", join(REPO_ROOT, "src/main.ts"), "serve", "--port", "0"],
+    [
+      process.execPath,
+      "run",
+      join(REPO_ROOT, "src/main.ts"),
+      "serve",
+      "--port",
+      "0",
+      ...(opts.publicBaseUrl === undefined ? [] : ["--base-url", opts.publicBaseUrl]),
+    ],
     {
       cwd: REPO_ROOT,
       env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "" },
@@ -41,9 +53,10 @@ export async function startRepoServer(): Promise<RepoServer> {
     const line = seen.split("\n").find((candidate) => candidate.includes('"event":"listening"'));
     if (line !== undefined) {
       reader.releaseLock();
-      const { url } = JSON.parse(line) as { url: string };
+      const { url, port } = JSON.parse(line) as { url: string; port: number };
       return {
         url,
+        localUrl: `http://127.0.0.1:${port}`,
         stop: async () => {
           child.kill("SIGTERM");
           await child.exited;

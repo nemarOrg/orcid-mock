@@ -64,6 +64,18 @@ describe("startOrConnect with ORCID_MOCK_URL", () => {
   });
 });
 
+describe("publicBaseUrl", () => {
+  test("is the address the mock emits, which can differ from the one the client reaches it at", async () => {
+    const other = await startRepoServer({ publicBaseUrl: "http://public.example.test/" });
+    try {
+      const client = new OrcidMockClient(other.localUrl);
+      expect(await client.publicBaseUrl()).toBe("http://public.example.test");
+    } finally {
+      await other.stop();
+    }
+  });
+});
+
 describe("which image a container runs", () => {
   test("the default is the helper's own version, since helpers release in lockstep", () => {
     expect(defaultImage()).toBe(`${IMAGE_REPOSITORY}:${pkg.version}`);

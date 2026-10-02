@@ -44,6 +44,10 @@ describe("OrcidMockContainer", () => {
     expect(mock.getMappedPort(9700)).toBe(Number(new URL(mock.baseUrl).port));
   });
 
+  test("publicBaseUrl reports the address the mock was told it has", async () => {
+    expect(await mock.client.publicBaseUrl()).toBe(mock.baseUrl);
+  });
+
   test("the mock believes it is at the published address, never the container's", async () => {
     // The consent page's form posts back to a URL built from PUBLIC_BASE_URL.
     const page = await fetch(
@@ -336,5 +340,7 @@ describe("OrcidMockClient against a container", () => {
     // The public starter client may not ask for /read-limited: the mock redirects with
     // #error=invalid_scope, which has no code.
     expect(failure?.message).toContain("invalid_scope");
+    // A redirect is not an HTTP error, so the error carries no status.
+    expect(failure?.status).toBe(0);
   });
 });
