@@ -50,5 +50,6 @@ Work, affiliation, and peer-review ids carry `{ value, transient: true }`; only 
 
 ## Receipts
 
+- `tests/record-project.test.ts` calls the section builders directly, the one exemption from driving the real server, because only a stored user can carry items with different stamps (see `.rules/testing.md`).
 - `src/record/` and `src/routes/record/` implement this decision; each ORCID behavior has a permalink in its comment, and each choice is marked "orcid-mock choice".
 - ORCID's source at ORCID-Source `b34bb7b` (`PublicV3ApiServiceDelegatorImpl`, `PublicAPISecurityManagerV3Impl`, `OrcidSecurityManagerImpl.checkProfile`, `WorkManagerReadOnlyImpl`), and live anonymous reads of `pub.orcid.org/v3.0` on 2026-10-01.
