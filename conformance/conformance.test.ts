@@ -44,13 +44,16 @@
 //     source objects only for their keys.
 //   - The 415 body: ORCID answers a Tomcat error page and orcid-mock the sentence alone
 //     (ADR 0004), so E2 looks for the sentence inside the body.
-// What the record holds is never asserted, so the fixture and the sandbox may differ freely.
+// What the record holds is never asserted, so the fixture and the sandbox may differ freely. Each
+// read says how many items it checked (`A4 works: 3 groups, 4 summaries checked`), and
+// CONFORMANCE_REQUIRE_ITEMS=1 fails a run whose works, employments, or email are empty.
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { createClient, type Reply } from "./client";
 import {
   apiError,
   check,
   clientCredentialsGrant,
+  countItems,
   invalidClient,
   invalidToken,
   recordShapes,
@@ -93,6 +96,23 @@ function decodeEntities(html: string): string {
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&amp;/g, "&");
+}
+
+/** The sections whose items the suite exists to check: an empty one proves little. */
+const ITEM_SECTIONS: ReadonlySet<string> = new Set(["works", "employments", "email"]);
+
+/**
+ * Says how many items a read held, so the output shows how much was actually checked. With
+ * CONFORMANCE_REQUIRE_ITEMS=1 an empty works, employments, or email container fails the run.
+ */
+function reportItems(id: string, section: string, json: unknown): void {
+  const { text, total } = countItems(section, json);
+  console.log(`${id} ${section}: ${text} checked`);
+  if (target.requireItems && ITEM_SECTIONS.has(section) && total === 0) {
+    throw new Error(
+      `${id} ${section}: CONFORMANCE_REQUIRE_ITEMS=1 and the container is empty, so no item was checked.`,
+    );
+  }
 }
 
 /** 200 and JSON, with the body's structure checked against `shape`. */
@@ -174,6 +194,7 @@ describe("A: anonymous public reads", () => {
       const reply = await client.readRecord(target.publicId, section);
       expectRecordRead(reply, shape);
       also?.(reply.json as Record<string, unknown>);
+      reportItems(`A${index + 1}`, section, reply.json);
     });
   }
 });
@@ -185,6 +206,7 @@ describe.skipIf(target.anonymousOnly)(`B: public reads with a bearer token${NEED
       const reply = await client.readRecord(target.publicId, section, token);
       expectRecordRead(reply, shape);
       also?.(reply.json as Record<string, unknown>);
+      reportItems(`B${index + 1}`, section, reply.json);
     });
   }
 });

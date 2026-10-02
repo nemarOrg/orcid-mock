@@ -337,3 +337,88 @@ export const clientCredentialsGrant: Shape = keys({
   scope: { is: "/read-public" },
   orcid: "null",
 });
+
+/** What a read held, so a run can say how much it actually checked. */
+export interface ItemCount {
+  /** For example `3 groups, 4 summaries`. */
+  text: string;
+  /** The number of items, summaries counted and not their groups. */
+  total: number;
+}
+
+const elements = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+const member = (value: unknown, key: string): unknown =>
+  value !== null && typeof value === "object" ? (value as Record<string, unknown>)[key] : undefined;
+/** The elements of `key` in every one of `items`, counted together. */
+const countIn = (items: unknown[], key: string): number =>
+  items.reduce<number>((total, item) => total + elements(member(item, key)).length, 0);
+
+const PERSON_CONTAINERS: ReadonlyArray<readonly [label: string, container: string, items: string]> =
+  [
+    ["other names", "other-names", "other-name"],
+    ["researcher URLs", "researcher-urls", "researcher-url"],
+    ["emails", "emails", "email"],
+    ["addresses", "addresses", "address"],
+    ["keywords", "keywords", "keyword"],
+    ["external identifiers", "external-identifiers", "external-identifier"],
+  ];
+
+function personCount(person: unknown): ItemCount {
+  const parts = PERSON_CONTAINERS.map(([label, container, items]) => ({
+    label,
+    count: elements(member(member(person, container), items)).length,
+  }));
+  return {
+    text: parts.map(({ label, count }) => `${count} ${label}`).join(", "),
+    total: parts.reduce((total, { count }) => total + count, 0),
+  };
+}
+
+function activityCount(
+  container: unknown,
+  groups: "group" | "affiliation-group",
+  summaries: string,
+): ItemCount {
+  const grouped = elements(member(container, groups));
+  const total = countIn(grouped, summaries);
+  return { text: `${grouped.length} groups, ${total} summaries`, total };
+}
+
+/**
+ * How many items a read of `section` held (`json` has already passed `check`): works and
+ * employments by group and summary, email by item, a person's containers by kind.
+ */
+export function countItems(section: string, json: unknown): ItemCount {
+  switch (section) {
+    case "works":
+      return activityCount(json, "group", "work-summary");
+    case "employments":
+      return activityCount(json, "affiliation-group", "summaries");
+    case "email": {
+      const total = elements(member(json, "email")).length;
+      return { text: `${total} emails`, total };
+    }
+    case "personal-details": {
+      const total = elements(member(member(json, "other-names"), "other-name")).length;
+      return { text: `${total} other names`, total };
+    }
+    case "person":
+      return personCount(json);
+    case "record": {
+      const activities = member(json, "activities-summary");
+      const person = personCount(member(json, "person"));
+      const works = activityCount(member(activities, "works"), "group", "work-summary");
+      const employments = activityCount(
+        member(activities, "employments"),
+        "affiliation-group",
+        "summaries",
+      );
+      return {
+        text: `person: ${person.text}; works: ${works.text}; employments: ${employments.text}`,
+        total: person.total + works.total + employments.total,
+      };
+    }
+    default:
+      return { text: "no items counted", total: 0 };
+  }
+}

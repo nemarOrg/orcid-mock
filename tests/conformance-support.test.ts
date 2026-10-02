@@ -4,9 +4,10 @@
 // silently weaken the suite.
 import { describe, expect, test } from "bun:test";
 import { createClient, retryDelayMs } from "../conformance/client";
-import { check, recordShapes } from "../conformance/shapes";
+import { check, countItems, recordShapes } from "../conformance/shapes";
 import { loadTarget } from "../conformance/target";
 import { startTestServer } from "./harness";
+import { userIds } from "./helpers/oauth";
 
 const COMPLETE = {
   CONFORMANCE_TARGET: "sandbox",
@@ -273,6 +274,39 @@ describe("the client", () => {
       expect(failure?.message).toContain("error: invalid_client");
       expect(failure?.message).toContain("error_description: Client authentication failed");
       expect(failure?.message).not.toContain("wrong-secret");
+    } finally {
+      await server.stop();
+    }
+  });
+});
+
+describe("countItems", () => {
+  test("counts what a real read of a full record and an empty one hold", async () => {
+    const server = await startTestServer();
+    try {
+      const { alder, sennet } = await userIds(server);
+      const read = async (iD: string, section: string): Promise<unknown> => {
+        const response = await fetch(`${server.baseUrl}/v3.0/${iD}/${section}`, {
+          headers: { accept: "application/json" },
+        });
+        return response.json();
+      };
+
+      const works = countItems("works", await read(alder, "works"));
+      expect(works.text).toMatch(/^\d+ groups, \d+ summaries$/);
+      expect(works.total).toBeGreaterThan(0);
+      // Alder's three works share a DOI in pairs, so there are fewer groups than summaries.
+      expect(works.text).not.toBe(`${works.total} groups, ${works.total} summaries`);
+      expect(countItems("employments", await read(alder, "employments")).total).toBe(1);
+      expect(countItems("email", await read(alder, "email")).total).toBe(1);
+      expect(countItems("record", await read(alder, "record")).total).toBeGreaterThan(works.total);
+      expect(countItems("person", await read(alder, "person")).total).toBeGreaterThan(0);
+      // Alder has two other names and one is limited, which an anonymous read does not see.
+      expect(countItems("personal-details", await read(alder, "personal-details")).total).toBe(1);
+
+      for (const section of ["works", "employments", "email"]) {
+        expect(countItems(section, await read(sennet, section)).total).toBe(0);
+      }
     } finally {
       await server.stop();
     }
