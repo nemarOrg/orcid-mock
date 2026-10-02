@@ -696,7 +696,7 @@ Each gate is green before a commit:
 | Where | Gates |
 |---|---|
 | the server (repository root) | `bun install`, `bun run lint`, `bun run typecheck`, `bun run test` (which runs only `tests/`; the helpers have their own) |
-| the Node helper (`clients/node`) | `bun install`, `bun run lint`, `bun run typecheck`, `bun run test` |
+| the Node helper (`clients/node`) | `bun install`, `bun run lint`, `bun run typecheck`, `bun run build`, `bun run test` (which also builds, packs, and loads the package under Node, so Node 22 or later must be on `PATH`) |
 | the Python helper (`clients/python`) | `uv sync`, `uv run ruff check`, `uv run ruff format --check`, `uv run ty check`, `uv run pytest --cov` |
 
 The helpers' tests start a real mock, so they need Docker, a local build of the image, and (for the Node helper's browser tests) Chromium:
