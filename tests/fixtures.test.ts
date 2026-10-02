@@ -33,6 +33,16 @@ describe("the starter fixture", () => {
     }
   });
 
+  // Pinned on purpose: consumers hardcode these iDs, so a change here is a breaking change to
+  // announce (see the pinned mint test in orcid-id.test.ts), not a snapshot to refresh.
+  test("the starter users' minted iDs are pinned", () => {
+    expect(load(STARTER_USERS_FILE).users.map((user) => user.orcid)).toEqual([
+      "0009-9814-3544-3504",
+      "0009-9144-7071-3426",
+      "0009-9521-4573-8088",
+    ]);
+  });
+
   test("minted iDs are stable across two loads", () => {
     const first = load(STARTER_USERS_FILE, 1_000).users.map((user) => user.orcid);
     const second = load(STARTER_USERS_FILE, 9_999).users.map((user) => user.orcid);

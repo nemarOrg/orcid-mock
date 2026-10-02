@@ -63,6 +63,15 @@ describe("minting", () => {
     expect(seen.size).toBe(1000);
   });
 
+  // These literals are pinned on purpose. Consumers hardcode minted iDs in their own tests, so
+  // changing the hash, the seed format, or the mint block breaks them; if one of these fails, that
+  // is a breaking change to announce, not a snapshot to refresh.
+  test("minted iDs are pinned", () => {
+    expect(mintOrcidId("seq:1")).toBe("0009-9507-1056-7754");
+    expect(mintOrcidId("seq:2")).toBe("0009-9870-9060-0750");
+    expect(mintOrcidId("seq:1", 1)).toBe("0009-9738-5192-4024");
+  });
+
   test("the same seed and attempt give the same iD", () => {
     expect(mintOrcidId("seq:1")).toBe(mintOrcidId("seq:1"));
     expect(mintOrcidId("seq:1", 3)).toBe(mintOrcidId("seq:1", 3));

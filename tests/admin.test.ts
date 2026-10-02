@@ -92,6 +92,8 @@ describe("creating users", () => {
     expect(created.status).toBe(201);
     expect(isValidOrcidId(created.body.orcid)).toBe(true);
     expect(created.body.orcid.startsWith("0009-9")).toBe(true);
+    // The first runtime mint after a (re)load is pinned: seq 1 (see orcid-id.test.ts).
+    expect(created.body.orcid).toBe("0009-9507-1056-7754");
     expect((await server.admin("GET", "/health")).body).toMatchObject({ users: 4 });
 
     const again = await server.admin(
