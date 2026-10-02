@@ -69,6 +69,37 @@ describe("a client that loses its membership", () => {
     expect(emailsOf(await read())).toEqual(WITH_LIMITED);
   });
 
+  test("a client demoted between authorize and the code exchange gets 400 invalid_scope and no token", async () => {
+    const limited = await authorizeAs(server, {
+      orcid: IDS.rich,
+      scope: "openid /read-limited",
+      client: "member",
+    });
+    const narrow = await authorizeAs(server, {
+      orcid: IDS.rich,
+      scope: "openid",
+      client: "member",
+    });
+    await setMember(false);
+
+    const refused = await exchangeCode(server, { code: limited.code, client: "member" });
+    expect(refused.status).toBe(400);
+    expect(refused.json).toEqual({
+      error: "invalid_scope",
+      error_description: "Invalid scope: /read-limited",
+    });
+    // The code was consumed, as for any refused exchange: promoting the client does not revive it.
+    await setMember(true);
+    const again = await exchangeCode(server, { code: limited.code, client: "member" });
+    expect(again.json?.error).toBe("invalid_grant");
+
+    // A code for a narrower scope exchanges whatever the client's membership.
+    await setMember(false);
+    const ok = await exchangeCode(server, { code: narrow.code, client: "member" });
+    expect(ok.status).toBe(200);
+    expect(ok.json?.scope).toBe("openid");
+  });
+
   test("a refresh that would keep /read-limited is 400 invalid_scope, and burns nothing", async () => {
     const token = await obtainToken(server, {
       orcid: IDS.rich,

@@ -36,9 +36,11 @@ The authorization-code exchange and the refresh grant are now `400 invalid_grant
 The tokens are not revoked, so unlocking the user lets a client carry on, and a refresh refused for this reason does not spend its refresh token.
 
 **A client that loses its membership loses limited reads.**
-A `/read-limited` token is served `limited` items only if it was issued to a member client and that client is a member when the read happens (the store is asked each time, so a `PUT /__admin/clients/{id}` takes effect at once).
+A `/read-limited` token is served `limited` items only if its client is a member when the read happens (the store is asked each time, so a `PUT /__admin/clients/{id}` takes effect at once).
 Otherwise the reader gets the public view, as for any token that fails a test, not an error.
-A refresh that would carry `/read-limited` for a client that is no longer a member is `400 invalid_scope`, as authorize refuses the scope to a public client; the client can refresh with a narrower `scope`, and the refusal revokes nothing.
+The scope is refused to a client that is not a member at every step that could grant it: authorize (as before), the code exchange, and refresh are `400 invalid_scope` (authorize redirects `#error=invalid_scope`), so a client demoted between authorize and the exchange gets no token.
+A refresh can still ask for a narrower `scope`, and a refusal revokes nothing.
+Membership is therefore not stored on a token: the `member` field of `TokenRecord` is removed, an interface change to the `Store` made before 1.0, and the store contract suite no longer sets it.
 
 **Also decided in the same review.**
 A request body above 8 MiB is answered `413` by the socket before the app sees it (Bun's default is 128 MiB).
@@ -50,7 +52,7 @@ The sign-in errors of `login_as` and the consent form put `error_description` fi
   This includes a client helper that connects with `ORCID_MOCK_URL` to an address that differs from the mock's own `PUBLIC_BASE_URL`, and a reverse proxy that rewrites `Host`.
 - A test that deletes a user to simulate an outage and then restores the same iD now needs a new sign-in; it should use `locked` for an outage that ends.
 - Lock, deactivate, and demote are reversible without losing a session, which is what a test of an interrupted flow wants; deletion is the way to end one.
-- A token issued to a member client carries a `member` flag that is now read too: if a client is promoted again, its old limited tokens work again.
+- A client that is promoted again gets its old limited tokens back, since nothing about membership is stored on them.
 - The sign-in page at `/oauth/authorize` still lists every fixture user, so a DNS-rebinding page can read their names and iDs; this is accepted because the data is fictional.
 - A Durable Object `Store` must make `deleteUser` clear the user and everything issued to the iD in one transaction, which the contract suite now checks.
 

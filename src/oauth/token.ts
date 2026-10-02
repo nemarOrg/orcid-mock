@@ -41,7 +41,6 @@ async function newTokenRecord(
     client_id: init.client.client_id,
     orcid: init.orcid,
     scopes: init.scopes,
-    member: init.client.member,
     // Emitted times are wall time; only the expiry, a validity check, uses the admin offset.
     issued_at_ms: Date.now(),
     expires_at_ms: (await serverNowMs(store)) + TOKEN_TTL_SECONDS * 1000,
@@ -139,6 +138,12 @@ async function authorizationCodeGrant(
   // code is already consumed, so unlocking does not bring it back.
   const refused = grantRefusal(user);
   if (refused !== null) return tokenEndpointError(c, 400, "invalid_grant", refused);
+  // orcid-mock choice: a client the admin API has demoted between authorize and the exchange
+  // cannot carry `/read-limited` into a token, the same refusal authorize and refresh give it
+  // (ADR 0009). The code is already consumed, so promoting the client again does not bring it back.
+  if (record.scopes.includes("/read-limited") && !client.member) {
+    return tokenEndpointError(c, 400, "invalid_scope", "Invalid scope: /read-limited");
+  }
 
   const token = await newTokenRecord(store, {
     client,

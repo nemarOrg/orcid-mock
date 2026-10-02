@@ -87,7 +87,6 @@ export interface TokenRecord {
   /** Null for a client-credentials token. */
   orcid: string | null;
   scopes: ScopeName[];
-  member: boolean;
   issued_at_ms: number;
   expires_at_ms: number;
   revoked: boolean;

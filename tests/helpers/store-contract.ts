@@ -37,6 +37,7 @@ function code(value: string, over: Partial<AuthCode> = {}): AuthCode {
   };
 }
 
+// A token record holds no client membership: it is read from the client at request time (ADR 0009).
 function token(access: string, refresh: string, over: Partial<TokenRecord> = {}): TokenRecord {
   return {
     access_token: access,
@@ -44,7 +45,6 @@ function token(access: string, refresh: string, over: Partial<TokenRecord> = {})
     client_id: "APP-ORCIDMOCK000001",
     orcid: "0000-0002-1825-0097",
     scopes: ["/authenticate"],
-    member: false,
     issued_at_ms: 1_000,
     expires_at_ms: 631_139_518_000,
     revoked: false,
