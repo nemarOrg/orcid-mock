@@ -183,7 +183,7 @@ Point your application at it with the same variables you use for the sandbox (fo
 `PUBLIC_BASE_URL` must be set as a binding (it is never taken from the request), or every request answers 500 saying so.
 `bun x wrangler deploy --dry-run --outdir dist/worker` bundles it, and `tests/worker.test.ts` runs that bundle in workerd.
 A deployed Worker is reachable from the internet and exposes the unauthenticated admin API (every fixture user and client secret, and a reset or rewrite of all state), so `wrangler.toml` sets `workers_dev = false` and says to put an access gate in front of it before you route it anywhere.
-The hosted mode will run the same app inside a Durable Object per tenant.
+The planned hosted mode runs the same app inside a Durable Object per tenant.
 
 ## Run it from a checkout
 
