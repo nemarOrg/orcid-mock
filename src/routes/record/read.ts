@@ -10,6 +10,7 @@ import {
   type OrcidApiErrorSpec,
   orcidApiError,
 } from "../../errors";
+import { NO_STORE } from "../../headers";
 import { compactJson, type Json, prettyJson } from "../../json";
 import { invalidTokenResponse } from "../../oauth/bearer";
 import { resolveRecordBearer } from "../../record/bearer";
@@ -40,9 +41,7 @@ export type RecordContext = Context<RecordEnv>;
  */
 const RECORD_HEADERS: Record<string, string> = {
   "access-control-allow-origin": "*",
-  "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
-  pragma: "no-cache",
-  expires: "0",
+  ...NO_STORE,
   "x-content-type-options": "nosniff",
   "x-frame-options": "DENY",
 };

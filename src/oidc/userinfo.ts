@@ -1,11 +1,12 @@
 // GET and POST /oauth/userinfo: who the access token's user is.
 import type { Context } from "hono";
 import type { AppEnv } from "../app";
+import { NO_STORE } from "../headers";
 import { accountState } from "../oauth/account-state";
 import { checkAccessToken, readBearerHeader } from "../oauth/bearer";
 import { publicNameClaims } from "../oauth/display-name";
 import type { StoredUser, TokenRecord } from "../store/types";
-import { corsHeaders, NO_STORE, OIDC_JSON } from "./headers";
+import { corsHeaders, OIDC_JSON } from "./headers";
 
 type Ctx = Context<AppEnv>;
 
