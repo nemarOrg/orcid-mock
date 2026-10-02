@@ -308,9 +308,11 @@ const jwks = createRemoteJWKSet(new URL(`${BASE}/oauth/jwks`));
 const { payload } = await jwtVerify(idToken, jwks, {
   issuer: BASE, // PUBLIC_BASE_URL
   audience: "APP-ORCIDMOCK000002",
+  algorithms: ["RS256"],
 });
 ```
 
+The `algorithms` option is there because the JWKS has no `alg` member, as ORCID's has none, so nothing binds the key to an algorithm: pin RS256, the only one the discovery document advertises.
 The protected header is exactly `{"kid": ..., "alg": "RS256"}`, with no `typ`, as in ORCID's examples.
 The claims are written in this order:
 

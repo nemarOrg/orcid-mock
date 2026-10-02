@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { createHash } from "node:crypto";
+import { createHash, createPublicKey, verify } from "node:crypto";
 import { createRemoteJWKSet, decodeProtectedHeader, errors, jwtVerify } from "jose";
 import { startTestServer, type TestServer } from "./harness";
 import {
@@ -208,7 +208,8 @@ async function verifyIdToken(
   // The discovery document names the public base URL, which differs from `from.baseUrl` only
   // when a test sets a public base URL that is not reachable; those tests fetch from baseUrl.
   const jwksUrl = new URL(config.jwks_uri.replace(from.publicBaseUrl, from.baseUrl));
-  return jwtVerify(idToken, createRemoteJWKSet(jwksUrl), expected);
+  // The JWKS has no `alg` member, so the algorithm is pinned here, as a relying party must.
+  return jwtVerify(idToken, createRemoteJWKSet(jwksUrl), { ...expected, algorithms: ["RS256"] });
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -315,6 +316,24 @@ describe("the id_token", () => {
     const two = JSON.parse(jwtParts(secondToken.id_token).payload) as Record<string, number>;
     expect(two.auth_time).toBe(one.auth_time as number);
     expect(two.auth_time as number).toBeLessThan(two.iat as number);
+  });
+
+  // Everything else here verifies with jose, the library that signs; this checks the signature
+  // against the served key with Node's own RSA implementation, so signing is not only checked by
+  // the code that produced it.
+  test("the signature verifies with node:crypto against the JWK the server publishes", async () => {
+    const token = await openidToken({ orcid: ids.alder });
+    const { keys } = await fetchJwks();
+    const jwk = keys[0] as PublishedKey;
+    const publicKey = createPublicKey({ key: { kty: jwk.kty, n: jwk.n, e: jwk.e }, format: "jwk" });
+    const [header, payload, signature] = token.id_token.split(".") as [string, string, string];
+    const signed = Buffer.from(`${header}.${payload}`, "ascii");
+    const bytes = Buffer.from(signature, "base64url");
+    expect(bytes).toHaveLength(256);
+    expect(verify("RSA-SHA256", signed, publicKey, bytes)).toBe(true);
+    // A changed payload does not verify.
+    const forged = Buffer.from(`${header}.${payload}x`, "ascii");
+    expect(verify("RSA-SHA256", forged, publicKey, bytes)).toBe(false);
   });
 
   test("lasts 24 hours", async () => {
@@ -447,6 +466,7 @@ describe("the id_token", () => {
       const { payload } = await jwtVerify(token.id_token, jwks, {
         issuer: "https://mock.example.test/orcid",
         audience: CLIENTS.public.client_id,
+        algorithms: ["RS256"],
       });
       expect(payload.iss).toBe("https://mock.example.test/orcid");
     } finally {

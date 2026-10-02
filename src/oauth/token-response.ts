@@ -82,6 +82,9 @@ export async function buildTokenResponse(input: TokenResponseInput): Promise<Tok
   if (user === null) return { ...common, orcid: null };
   const body = { ...common, name: publicDisplayName(user), orcid: user.orcid };
   if (input.grant !== "authorization_code" || !token.scopes.includes("openid")) return body;
+  // The authorization-code grant takes `auth_time_ms` from the consumed code, which always has
+  // one; the input type allows null because the refresh and client-credentials grants share it.
+  if (input.auth_time_ms === null) throw new Error("an authorization code carries a sign-in time");
   const id_token = await signIdToken({
     store: input.deps.store,
     issuer: input.deps.config.publicBaseUrl,

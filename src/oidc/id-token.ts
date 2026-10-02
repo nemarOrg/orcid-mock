@@ -19,7 +19,7 @@ import { getSigningKey, importSigningKey } from "./keys";
  * What the 2026 authorization server issues was not observed. A day outlasts any test run, so a
  * client's own expiry check never fails mid-test, and is still a real, finite lifetime.
  */
-export const ID_TOKEN_TTL_SECONDS = 24 * 60 * 60;
+const ID_TOKEN_TTL_SECONDS = 24 * 60 * 60;
 
 export interface IdTokenInput {
   store: Store;
@@ -30,8 +30,8 @@ export interface IdTokenInput {
   user: StoredUser;
   /** Hashed into `at_hash`. */
   accessToken: string;
-  /** Wall-clock sign-in time; an authorization code always carries one. */
-  authTimeMs: number | null;
+  /** Wall-clock sign-in time. */
+  authTimeMs: number;
   /** "pwd" for a member client, else null: ORCID returns `amr` to the Member API only. */
   amr: string | null;
   /** From the authorize request; null when it had none. */
@@ -72,7 +72,7 @@ export async function signIdToken(input: IdTokenInput): Promise<string> {
   const claims = {
     aud: input.clientId,
     sub: input.user.orcid,
-    ...(input.authTimeMs === null ? {} : { auth_time: Math.floor(input.authTimeMs / 1000) }),
+    auth_time: Math.floor(input.authTimeMs / 1000),
     ...(input.amr === null ? {} : { amr: input.amr }),
     iss: input.issuer,
     exp: issuedAt + ID_TOKEN_TTL_SECONDS,
