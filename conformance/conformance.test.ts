@@ -42,8 +42,9 @@
 //   - URIs: orcid-mock writes PUBLIC_BASE_URL where ORCID writes https://orcid.org (ADR 0001 and
 //     0007), so orcid-identifier is checked for agreeing with itself and not for its host, and the
 //     source objects only for their keys.
-//   - The 415 body: ORCID answers a Tomcat error page and orcid-mock the sentence alone
-//     (ADR 0004), so E2 looks for the sentence inside the body.
+//   - The 415 body: ORCID answers a Tomcat error page and orcid-mock the sentence alone (README,
+//     OAuth, "Where ORCID is undocumented or unobserved"), so E2 looks for the sentence inside
+//     the body.
 // What the record holds is never asserted, so the fixture and the sandbox may differ freely. Each
 // read says how many items it checked (`A4 works: 3 groups, 4 summaries checked`), and
 // CONFORMANCE_REQUIRE_ITEMS=1 fails a run whose works, employments, or email are empty.
@@ -73,11 +74,11 @@ const shapes = recordShapes(target.publicId);
 const TEN_YEARS_SECONDS = 10 * 365 * 24 * 60 * 60;
 
 /**
- * An iD with a valid check character that no record has: it lies above the blocks ORCID assigns
- * from (ADR 0003). The obvious 0000-0000-0000-0001 is not safe, since the sandbox has a record
- * there.
+ * An iD with a valid check character that no record has: it lies below the blocks ORCID assigns
+ * from (0000-0001-5000-0007 up, ADR 0003) and outside the `0009-9` block orcid-mock mints from.
+ * The obvious 0000-0000-0000-0001 is not safe, since the sandbox has a record there.
  */
-const UNASSIGNED_ID = "0009-9999-9999-9992";
+const UNASSIGNED_ID = "0000-0000-9999-9993";
 /** A token that no server has issued. */
 const NEVER_ISSUED_TOKEN = "00000000-0000-0000-0000-000000000000";
 
