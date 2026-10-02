@@ -55,10 +55,12 @@ Wire details below were corrected on 2026-10-01 against live ORCID responses and
 
 - Compiled binaries, a multi-arch container image, the npm package with a `bunx` entry, a GitHub Action, a release workflow, and the Worker smoke test.
 
-### Phase 6: adoption and the definition of done (#9)
+### Phase 6: the definition of done (#9)
 
-- A GitHub Actions round trip against the container, the sandbox parity run, and nemar-cli's per-file `Bun.serve` ORCID stand-ins replaced by this server (its device-flow tests already cover a brand-new sign-in through a stand-in).
-- Adoption in the website stays subject to that repository's testing policy (open question 1).
+- An `e2e` job in CI: the image built from the `Dockerfile`, started by this repository's Action, and a brand-new sign-up driven with no browser (create a user, sign in, verify the ID token, read the record, reset).
+- One conformance suite (`conformance/`) whose client code runs unchanged against the mock and against `sandbox.orcid.org`, run weekly against the sandbox, and a smoke test of the image as a `services:` container.
+- Adoption was split off in the re-scope of 2026-10-02: replacing nemar-cli's per-file `Bun.serve` ORCID stand-ins with this server is follow-up #17, after 1.0.0 is published.
+  Adoption in the website stays subject to that repository's testing policy (open question 1).
 
 ### Phase 7: client helpers (#10)
 
