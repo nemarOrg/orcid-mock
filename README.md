@@ -4,9 +4,9 @@ An ephemeral mock of the Open Researcher and Contributor ID (ORCID) service for 
 the OAuth 2.0 authorization-code flow, OpenID Connect, and the public record API,
 with users defined in a JSON file and all state kept in memory.
 
-Status: the server is feature-complete for MVP1 (epic #1, read-only):
+Status: the first minimum viable product (MVP1) is complete (epic #1, read-only):
 the admin API, OAuth, OpenID Connect, and the public record API are built, and [a conformance suite](#conformance) holds the mock to ORCID's sandbox and drives a brand-new sign-up end to end in CI.
-Nothing is published until the first release, `1.0.0`.
+1.0.0 will be the first release, published once the one-time owner setup under [Releasing](#releasing) is done.
 See [`.context/plan.md`](.context/plan.md) for the roadmap and [`.context/research.md`](.context/research.md) for the findings behind it.
 
 ## Install and run
@@ -97,6 +97,27 @@ Linux runners only, because the image is a Linux container.
 A composite action has no post step, so the container is not stopped by the action: it lives until the job ends, and `docker rm -f "${{ steps.<id>.outputs.container-id }}"` stops it sooner.
 Reset between tests with `curl -X POST "$ORCID_MOCK_URL/__admin/reset"`.
 The Action needs a published image, so `uses: nemarOrg/orcid-mock@v1` works after the first release, which will be `1.0.0`.
+
+### As a `services:` container
+
+This also needs the published image, so it works after the first release.
+
+```yaml
+services:
+  orcid:
+    image: ghcr.io/nemarorg/orcid-mock:1
+    ports: ["9700:9700"]
+    env:
+      PUBLIC_BASE_URL: http://localhost:9700
+```
+
+This `ports` line publishes on every interface, which is acceptable only because a hosted runner is a fresh, single-job machine; anywhere else, publish on loopback as above.
+The image defines its own health check, `/orcid-mock health`, and a runner waits for a service container's health check before the first step.
+An `options: --health-cmd` is not needed, and none could run the real command: Docker runs that form through `/bin/sh`, which the image does not have.
+A `services:` container starts before your repository is checked out, so it can serve only the bundled starter users; to serve your own file, use [the Action](#as-a-github-action) after `actions/checkout`.
+
+Point your application at it with the same variables you use for the sandbox
+(for NEMAR: `ORCID_API_BASE` and `ORCID_PUB_API_BASE`).
 
 ### The Cloudflare Worker entry
 
@@ -700,38 +721,18 @@ so nobody can drive a brand-new ORCID sign-up from an automated test.
 No open-source project mocks ORCID's identity layer and its record API together:
 ORCID retired its own mock in 2012, and the generic OAuth and OpenID Connect mocks would still need the whole ORCID surface built on top.
 
-## What it will do (MVP1)
+## What it does
 
-- The authorization-code flow with an auto-consent page, a `login_as` shortcut for headless drivers, exact `redirect_uri` matching, and an unmodified `state` round trip.
-- The token endpoint with ORCID's non-standard response (`orcid` and `name` alongside the access token), refresh tokens, and ORCID's error shapes (`invalid_grant`, `invalid_token`, `invalid_scope`).
-- OpenID Connect: discovery document, JWKS, an RS256 ID token whose `sub` is the iD, and userinfo.
-- Every public read endpoint of the v3.0 API that is a projection of a user: `record`, `person`, `personal-details`, `email`, `employments`, `educations`, `works` and `works/{put-codes}`, `fundings`, `keywords`, `external-identifiers`, `researcher-urls`, `biography`, `activities`,
-  with per-item visibility, verified and primary flags on emails, stable put-codes, the summary-then-detail round trip, `Accept` negotiation with 406, and 400 (error code 9042) above 100 put-codes.
-- Checksum-valid iDs (ISO 7064 MOD 11-2) generated for fixtures.
-- Ephemeral by construction: `POST /__admin/reset`, `POST /__admin/users`, `GET /__admin/health`, a fixed `PUBLIC_BASE_URL`, one process or one container per job.
+- The authorization-code flow with a sign-in page that lists the fixture users, a `login_as` shortcut for headless drivers, ORCID's redirect matching, and an unmodified `state` round trip ([OAuth](#oauth)).
+- The token endpoint with ORCID's non-standard response (`orcid` and `name` alongside the access token), refresh and client-credentials grants, revocation, and ORCID's error bodies, status codes, and key order.
+- OpenID Connect: a discovery document byte-identical to ORCID's apart from the base URL, JWKS, an RS256 ID token whose `sub` is the iD, and userinfo ([OpenID Connect](#openid-connect)).
+- The public v3.0 record reads (search, XML, and the summary and citation variants are not served), projected from the users file with ORCID's wire shapes, per-item visibility, grouping and ordering, `Accept` negotiation, record states, and error codes ([Record API](#record-api)).
+- Checksum-valid iDs (ISO/IEC 7064 MOD 11-2) minted for fixtures, and an admin API to reset the server, add, replace, and remove users, register clients, and move the clock.
+- Four ways to run it (`bunx`, a container, a binary, a GitHub Action) and client helpers for Node (Testcontainers, Playwright) and Python (Testcontainers, pytest).
 
 ## What comes after (MVP2)
 
 Member-API writes for works and employments, the hosted multi-tenant service, XML and other representations, webhooks, rate-limit emulation.
-
-## How it will be used
-
-```yaml
-services:
-  orcid:
-    image: ghcr.io/nemarorg/orcid-mock:1
-    ports: ["9700:9700"]
-    env:
-      PUBLIC_BASE_URL: http://localhost:9700
-```
-
-This `ports` line publishes on every interface, which is acceptable only because a hosted runner is a fresh, single-job machine; anywhere else, publish on loopback as above.
-The image defines its own health check, `/orcid-mock health`, and a runner waits for a service container's health check before the first step.
-An `options: --health-cmd` is not needed, and none could run the real command: Docker runs that form through `/bin/sh`, which the image does not have.
-A `services:` container starts before your repository is checked out, so it can serve only the bundled starter users; to serve your own file, use [the Action](#as-a-github-action) after `actions/checkout`.
-
-Point your application at it with the same variables you use for the sandbox
-(for NEMAR: `ORCID_API_BASE` and `ORCID_PUB_API_BASE`).
 
 ## Releasing
 

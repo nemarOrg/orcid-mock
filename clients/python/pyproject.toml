@@ -7,7 +7,7 @@ name = "orcid-mock-testing"
 # Released in lockstep with the server (and the Node helper): the release workflow refuses a tag
 # that differs from this string. A prerelease is written in the tag's own form, for example
 # 1.2.3-rc.1, which PEP 440 normalizes to 1.2.3rc1.
-version = "0.0.0"
+version = "1.0.0"
 description = "Test helpers for orcid-mock, an ephemeral mock of the ORCID service: an admin-API client, a Testcontainers module, and a pytest plugin"
 readme = "README.md"
 license = "MIT"

@@ -1,6 +1,6 @@
 {
   "name": "@nemarorg/orcid-mock",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "An ephemeral mock of the ORCID OAuth, OpenID Connect, and public record API for tests and CI, with users defined in JSON",
   "license": "MIT",
   "private": false,
