@@ -1,6 +1,6 @@
-// Reusable OAuth helpers for the route tests of phases 2, 3, 4, and 7. They drive the real server
-// over HTTP, like every test here: `authorizeAs` uses the `login_as` shortcut and a manual
-// redirect, and the rest are thin wrappers over `fetch`.
+// Reusable OAuth helpers for the route tests. They drive the real server over HTTP, like every
+// test here: `authorizeAs` uses the `login_as` shortcut and a manual redirect, and the rest are
+// thin wrappers over `fetch`.
 import type { TestServer } from "../harness";
 
 /** What the helpers need to reach a server over HTTP: where it listens. */

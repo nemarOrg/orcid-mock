@@ -1,4 +1,4 @@
-// The epic's definition of done, in one test: a brand-new ORCID sign-up driven from an automated
+// MVP1's definition of done, in one test: a brand-new ORCID sign-up driven from an automated
 // test with no browser. It creates a user the way a sign-up would (through the admin API), signs
 // that user in with the OpenID Connect authorization-code flow, verifies the ID token against the
 // published key, reads the user back through userinfo and the record API, resets the mock, and

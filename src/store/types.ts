@@ -1,5 +1,5 @@
-// The Store interface and every record type. FROZEN after phase 1: phases 2 to 4 consume it and
-// cannot change a signature without the lead.
+// The Store interface and every record type. A stable interface: changing a signature affects
+// every route module and the store contract suite (tests/helpers/store-contract.ts).
 // One Store instance is one tenant, so no method takes a tenant id; all mutable state lives
 // behind this interface, never in module or process variables.
 // Everything is async so a Durable Object store can implement it; records are plain

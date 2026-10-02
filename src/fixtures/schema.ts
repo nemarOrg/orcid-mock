@@ -1,7 +1,7 @@
 // The users-file schema: Zod is the source, the JSON Schema in fixtures/users.schema.json is
 // generated from it, and a test fails when that file is stale.
 // Snake_case field names transliterate ORCID's own (department_name, role_title, ...), so the
-// record-API projection in phase 4 is mechanical. Strict objects, no transforms.
+// record API's projection of them is mechanical. Strict objects, no transforms.
 import { z } from "zod";
 import { isValidOrcidId } from "../orcid-id";
 

@@ -1,5 +1,5 @@
 // The printer is a pure function with no I/O, so it is tested directly with real inputs; the same
-// bytes are checked over HTTP in the record API tests once the routes exist.
+// bytes are also checked over HTTP in the record API tests.
 import { describe, expect, test } from "bun:test";
 import { compactJson, prettyJson } from "../src/json";
 

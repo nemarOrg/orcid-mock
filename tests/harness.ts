@@ -1,4 +1,5 @@
-// The test harness, FROZEN after phase 1: later phases add helpers under tests/helpers/*.ts.
+// The test harness: a real server on a free port, the admin API, and child processes. Helpers for
+// one area of the API live under tests/helpers/*.ts.
 // Every route test file uses one server for the whole file:
 //   beforeAll(async () => { server = await startTestServer(); }, 10_000);
 //   beforeEach(() => server.reset());

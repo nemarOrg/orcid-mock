@@ -1,6 +1,5 @@
 // How the record API reads a bearer token: the header, the `access_token` parameter, the one
-// validity rule, the 401 for a bad token, and which reader sees `limited` items. These cases moved
-// here from a phase 2 test that served the bearer helpers through a probe route; every token comes
+// validity rule, the 401 for a bad token, and which reader sees `limited` items. Every token comes
 // from the real token endpoint, and every check is a request to a real /v3.0 route.
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { IDS, RECORD_USERS_FILE } from "./fixtures/record";
