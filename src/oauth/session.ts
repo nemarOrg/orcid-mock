@@ -40,6 +40,12 @@ export async function startSession(
     expires_at_ms: (await serverNowMs(store)) + SESSION_TTL_MS,
   };
   await store.putSession(session);
-  setCookie(c, SESSION_COOKIE, session.id, { httpOnly: true, sameSite: "Lax", path: "/" });
+  setCookie(c, SESSION_COOKIE, session.id, {
+    httpOnly: true,
+    sameSite: "Lax",
+    path: "/",
+    // orcid-mock choice: behind an https public URL the cookie never travels over plain http.
+    secure: c.get("deps").config.publicBaseUrl.startsWith("https:"),
+  });
   return session;
 }

@@ -797,3 +797,22 @@ function expectErrorFragmentLoginRequired(response: Response, redirectUri: strin
   expect(response.headers.get("location")).toBe(`${redirectUri}#login_required`);
   expect(sessionCookie(response)).toBeNull();
 }
+
+describe("the session cookie", () => {
+  test("is Secure when the public base URL is https, and not otherwise", async () => {
+    const secured = await startTestServer({ publicBaseUrl: "https://orcid.example.test" });
+    try {
+      const { orcid } = (await secured.admin<Array<{ orcid: string }>>("GET", "/users"))
+        .body[0] as { orcid: string };
+      const { response } = await authorizeAs(secured, { orcid, scope: "/authenticate" });
+      expect(response.headers.getSetCookie()[0]).toMatch(
+        /^orcid_mock_session=[0-9a-f-]{36}; Path=\/; HttpOnly; Secure; SameSite=Lax$/,
+      );
+    } finally {
+      await secured.stop();
+    }
+    // The server under test here is plain http: no Secure flag.
+    const plain = await authorizeAs(server, { orcid: ids.alder as string, scope: "/authenticate" });
+    expect(plain.response.headers.getSetCookie()[0]).not.toContain("Secure");
+  });
+});
