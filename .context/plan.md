@@ -22,33 +22,47 @@ so that an integration written against it also works against the real ORCID.
 
 ## MVP1: everything easy, all read-only
 
-### Phase 1: identity
+Tracked in epic #1, re-sequenced on 2026-10-01 into seven phases so fixtures land before identity.
+Phase 1 runs alone; phases 2 and 5 run in parallel after it; then 3, 4, and 7; then 6.
+Wire details below were corrected on 2026-10-01 against live ORCID responses and ORCID's source (see research.md).
 
-- `GET /oauth/authorize`: validates `client_id`, `response_type=code`, `scope`, exact `redirect_uri`; renders a consent page listing fixture users; `login_as=<iD>` (or `prompt=none` with a session) skips it; redirects with `code` and the unmodified `state`.
-- `POST /oauth/token`: `authorization_code` (single use, ten-minute expiry, `invalid_grant` on reuse or mismatch), `refresh_token`, `client_credentials`; response carries `access_token`, `token_type`, `refresh_token`, `expires_in`, `scope`, `orcid`, `name`, and `id_token` when `openid` was requested.
-- OpenID Connect: `/.well-known/openid-configuration`, `/oauth/jwks`, `/oauth/userinfo`, RS256 ID token with `sub` equal to the iD, `nonce`, `auth_time`, `amr`.
-- `POST /oauth/revoke`.
+### Phase 1: foundation (#4)
+
+- Hono on the standard `fetch` interface with a portable layer that uses Web APIs only (ADR 0002), a frozen `Store` interface with the in-memory implementation, and every piece of mutable state inside the Store.
+- The users-file schema (Zod as the source, JSON Schema generated), the ISO/IEC 7064 MOD 11-2 checksum, and a generator that mints iDs and a starter file.
+- Admin API: `GET /__admin/health`, `POST /__admin/reset` (back to the file), `GET`, `POST`, `PUT`, and `DELETE` on `/__admin/users`, and `PUT /__admin/clients/{client_id}`.
+- `PUBLIC_BASE_URL`, `USERS_FILE`, `PORT`, `HOST`, `LOG_LEVEL`; a test harness that starts the real server on a free port; CI.
+
+### Phase 2: OAuth 2.0 (#5)
+
+- `GET /oauth/authorize`: validates `client_id`, `response_type=code`, `scope`, and `redirect_uri` (ORCID matches the origin exactly and the path as a prefix); renders a consent page listing fixture users; `login_as=<iD>` (or `prompt=none` with a session) skips it; redirects with `code` and the unmodified `state`; an unknown client or a mismatched `redirect_uri` never redirects.
+- `POST /oauth/token`, form-encoded only (415 otherwise): `authorization_code` (single use; the ten-minute expiry is this project's choice, ORCID documents none), `refresh_token`, `client_credentials`; the response carries `access_token`, `token_type` (`bearer`), `refresh_token`, `expires_in` (`631138518`, about twenty years), `scope`, `orcid`, and `name` (`orcid` is `null` and `name` is absent for client credentials).
+- `POST /oauth/revoke`; `POST /__admin/clock` to expire codes and tokens without sleeping.
 - Scopes: `/authenticate`, `openid`, `/read-limited`, `/read-public`; unknown scope answers `invalid_scope`.
 
-### Phase 2: record API (public, v3.0, JSON)
+### Phase 3: OpenID Connect (#6)
 
-- `record`, `person`, `personal-details`, `email`, `address`, `other-names`, `keywords`, `external-identifiers`, `researcher-urls`, `biography`, `employments`, `educations`, `qualifications`, `works`, `works/{put-codes}` (413 above 100), `fundings`, `peer-reviews` (empty), `activities`.
-- Visibility: `public`, `limited`, `private` per item; a `/read-limited` token from a member client sees `limited`; email defaults to `private` and only a verified email may be `public`.
-- `Accept`: `application/json`, `application/orcid+json`, `application/vnd.orcid+json`; anything else answers 406.
-- Stable put-codes from the fixture (or assigned at load), summary endpoints returning put-codes only.
-- 404 for an unknown iD, 401 `invalid_token` for a bad bearer on limited data, 409 for a locked record (fixture flag).
+- `/.well-known/openid-configuration`, `/oauth/jwks`, `/oauth/userinfo` (GET and POST; a bad token is a 403 with the hyphenated `error-description` key), RS256 ID token with `sub` equal to the iD, `nonce`, `auth_time`, `amr`; the signing key is generated once per tenant and kept across reset.
 
-### Phase 3: fixtures and admin
+### Phase 4: record API, public v3.0, JSON (#7)
 
-- JSON Schema for the users file; a generator command that mints checksum-valid iDs and a starter file.
-- `GET /__admin/health`, `POST /__admin/reset` (back to the file), `POST /__admin/users` (add or replace), `DELETE /__admin/users/{iD}`.
-- `PUBLIC_BASE_URL`, `USERS_FILE`, `PORT`, `LOG_LEVEL`.
+- `record`, `person`, `personal-details`, `email`, `address`, `other-names`, `keywords`, `external-identifiers`, `researcher-urls`, `biography`, `employments`, `educations`, `qualifications`, `works`, `work/{put-code}`, `works/{put-codes}`, `fundings`, `peer-reviews`, `activities`.
+- Every section is a container of `last-modified-date`, the item array, and `path`; non-public items are removed, not redacted; a non-public name or biography is `null`; a `/read-limited` token from a member client also sees `limited`.
+- `Accept`: `application/json`, `application/orcid+json`, `application/vnd.orcid+json`; a missing or wildcard `Accept` gets XML from real ORCID, so the mock answers 406 with a message saying so (documented deviation until XML exists); anything else answers 406 (error 9001).
+- More than 100 put-codes answers 400 (error 9042); an unknown or malformed iD answers 404 (error 9016); deprecated answers 301 with `Location`; locked, deactivated, and unclaimed answer 409; a bad bearer answers 401 `invalid_token`.
 
-### Phase 4: packaging and adoption
+### Phase 5: packaging and distribution (#8)
 
-- npm package with a `bunx @nemarorg/orcid-mock` entry, container image, GitHub Actions service-container example, a Playwright example.
-- Adoption in nemar-cli: replace the per-file `Bun.serve` stand-ins in `backend/test` with this server; add the brand-new-ORCID-sign-up case to the device-flow tests.
-- Adoption in the website: a live test of `/auth/orcid/start` through `/complete`, subject to that repo's testing policy (open question 1).
+- Compiled binaries, a multi-arch container image, the npm package with a `bunx` entry, a GitHub Action, a release workflow, and the Worker smoke test.
+
+### Phase 6: adoption and the definition of done (#9)
+
+- A GitHub Actions round trip against the container, the sandbox parity run, and nemar-cli's per-file `Bun.serve` ORCID stand-ins replaced by this server (its device-flow tests already cover a brand-new sign-in through a stand-in).
+- Adoption in the website stays subject to that repository's testing policy (open question 1).
+
+### Phase 7: client helpers (#10)
+
+- Testcontainers modules for Node and Python, a Playwright fixture, and a pytest plugin.
 
 ## MVP2
 
