@@ -519,10 +519,11 @@ jobs:
             uv publish --dry-run --trusted-publishing never dist/*
             exit 0
           fi
-          # --check-url skips a file the index already has, so a re-run after a later job failed
-          # finishes instead of failing on a second upload of the same version.
-          uv publish --trusted-publishing always \
-            --check-url https://pypi.org/simple/orcid-mock-testing/ dist/*
+          # --check-url takes the index root: uv appends the project name itself (a URL that
+          # already ends in the project name would be asked about /simple/<name>/<name>/, find
+          # nothing, and skip nothing). It skips a file the index already has, so a re-run after a
+          # later job failed finishes instead of failing on a second upload of the same version.
+          uv publish --trusted-publishing always --check-url https://pypi.org/simple/ dist/*
 
   release:
     needs: [verify, image, npm, pypi]
