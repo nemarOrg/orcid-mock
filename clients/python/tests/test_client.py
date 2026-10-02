@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import threading
+from collections.abc import Iterator
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+import httpx
 import pytest
 
 from orcid_mock import OrcidMockClient, OrcidMockError
@@ -133,9 +138,59 @@ def test_a_scope_the_client_may_not_have_is_reported_as_the_error_redirect_it_is
     with pytest.raises(OrcidMockError) as refused:
         mock.sign_in(mock.users()[0]["orcid"], scope="/read-limited")
     assert "invalid_scope" in str(refused.value)
+    # A redirect is not an HTTP error, so the error carries no status.
+    assert refused.value.status == 0
 
 
 def test_the_client_closes_and_strips_a_trailing_slash(repo_server: str) -> None:
     with OrcidMockClient(f"{repo_server}/") as client:
         assert client.base_url == repo_server
         assert client.health()["status"] == "ok"
+
+
+@pytest.fixture
+def recording_proxy(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
+    """A server that answers 502 to everything and records what reached it, named as the proxy."""
+    seen: list[str] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            seen.append(self.path)
+            self.send_response(502)
+            self.send_header("content-length", "0")
+            self.end_headers()
+
+        do_POST = do_GET
+
+        def log_message(self, format: str, *args: object) -> None:
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    proxy = f"http://127.0.0.1:{server.server_address[1]}"
+    for name in ("HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"):
+        monkeypatch.setenv(name, proxy)
+    for name in ("NO_PROXY", "no_proxy"):
+        monkeypatch.delenv(name, raising=False)
+    try:
+        yield seen
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_a_proxy_in_the_environment_does_not_capture_the_mock_traffic(
+    repo_server: str, recording_proxy: list[str]
+) -> None:
+    # The control: a client that trusts the environment is sent to the proxy, so the proxy
+    # would capture the helper's traffic if the helper let it.
+    with httpx.Client(trust_env=True) as plain:
+        assert plain.get(f"{repo_server}/__admin/health").status_code == 502
+    assert recording_proxy != []
+    recording_proxy.clear()
+
+    with OrcidMockClient(repo_server) as client:
+        assert client.health()["status"] == "ok"
+        assert client.sign_in(client.users()[0]["orcid"])["token_type"] == "bearer"
+    assert recording_proxy == []

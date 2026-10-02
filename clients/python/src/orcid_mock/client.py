@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, NotRequired, Self, TypedDict
+from typing import Any, Literal, NotRequired, Self, TypedDict
 from urllib.parse import parse_qs, quote, urlsplit
 
 import httpx
@@ -22,7 +22,7 @@ ClientRegistration = dict[str, Any]
 class Health(TypedDict):
     """The answer of ``health()`` and ``reset()``."""
 
-    status: str
+    status: Literal["ok"]
     users: int
     clients: int
 
@@ -60,7 +60,9 @@ class OrcidMockClient:
 
     def __init__(self, base_url: str, *, timeout: float = 30.0) -> None:
         self.base_url = base_url.rstrip("/")
-        self._http = httpx.Client(base_url=self.base_url, timeout=timeout)
+        # trust_env=False: a proxy named by HTTP_PROXY or ALL_PROXY must not capture the traffic to
+        # a mock on localhost, and a netrc entry or SSL_CERT_FILE has no business here either.
+        self._http = httpx.Client(base_url=self.base_url, timeout=timeout, trust_env=False)
 
     def close(self) -> None:
         self._http.close()
@@ -152,9 +154,8 @@ class OrcidMockClient:
         # A refusal ORCID sends back to the client carries `error` in the fragment, not a code.
         codes = parse_qs(urlsplit(location).query).get("code")
         if not codes:
-            raise OrcidMockError(
-                f"GET /oauth/authorize redirected without a code: {location}", authorize.status_code
-            )
+            # Not an HTTP error, so no status: see OrcidMockError.status.
+            raise OrcidMockError(f"GET /oauth/authorize redirected without a code: {location}")
 
         token = self._http.post(
             "/oauth/token",
