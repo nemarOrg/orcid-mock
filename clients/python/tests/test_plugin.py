@@ -139,3 +139,19 @@ def test_container_mode_without_options_serves_the_starter_users(
         """
     )
     pytester.runpytest_inprocess().assert_outcomes(passed=1)
+
+
+def test_the_image_option_wins_over_the_environment(
+    pytester: pytest.Pytester, container_mode: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = resolve_image()
+    monkeypatch.setenv("ORCID_MOCK_IMAGE", "orcid-mock-does-not-exist:0")
+    pytester.makepyfile(
+        """
+        def test_starter(orcid_mock):
+            assert orcid_mock.health()["status"] == "ok"
+        """
+    )
+    # The control: the environment alone names an image that does not exist.
+    pytester.runpytest_inprocess().assert_outcomes(errors=1)
+    pytester.runpytest_inprocess("--orcid-mock-image", real).assert_outcomes(passed=1)

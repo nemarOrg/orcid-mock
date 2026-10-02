@@ -8,7 +8,6 @@ authentication.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import re
 import socket
@@ -18,6 +17,7 @@ from os import PathLike
 from pathlib import Path
 from typing import Any, Self, cast
 
+from docker.errors import NotFound
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
@@ -69,7 +69,6 @@ class OrcidMockContainer(DockerContainer):
         # Every interface inside the container; the host side of the port is bound to loopback.
         self.with_env("HOST", "0.0.0.0")  # noqa: S104
         self.waiting_for(LogMessageWaitStrategy(_READY).with_startup_timeout(60))
-        self._users: str | None = None
         self._base_url: str | None = None
         self._client: OrcidMockClient | None = None
         if users is not None:
@@ -80,17 +79,23 @@ class OrcidMockContainer(DockerContainer):
 
         The content is copied into the container with mode 0644, so it works whatever the file's
         own permissions are (a bind mount must be readable by the image's ``nonroot`` user) and
-        with a remote Docker daemon. A path is read now, so a missing file fails here.
+        with a remote Docker daemon. A path is read now, so a missing file fails here. Calling it
+        again replaces the earlier file; it never queues a second copy.
         """
         if isinstance(users, Mapping):
-            self._users = json.dumps(users)
+            content = json.dumps(users)
         else:
             path = Path(users)
             try:
-                self._users = path.read_text(encoding="utf-8")
+                content = path.read_text(encoding="utf-8")
             except OSError as error:
                 message = f"cannot read the users file {path}: {error}"
                 raise OrcidMockStartError(message) from error
+        self._transferable_specs = [
+            spec for spec in self._transferable_specs if spec[1] != CONTAINER_USERS_PATH
+        ]
+        self.with_copy_into_container(content.encode(), CONTAINER_USERS_PATH, 0o644)
+        self.with_env("USERS_FILE", CONTAINER_USERS_PATH)
         return self
 
     @property
@@ -109,10 +114,6 @@ class OrcidMockContainer(DockerContainer):
         return self._client
 
     def start(self) -> Self:
-        if self._users is not None:
-            self.with_copy_into_container(self._users.encode(), CONTAINER_USERS_PATH, 0o644)
-            self.with_env("USERS_FILE", CONTAINER_USERS_PATH)
-
         for attempt in range(1, _PORT_ATTEMPTS + 1):
             port = self._pick_port()
             base_url = f"http://localhost:{port}"
@@ -122,12 +123,14 @@ class OrcidMockContainer(DockerContainer):
                 self._base_url = base_url
                 self._wait_until_reachable()
             except Exception as error:
-                logs = self._discard()
+                logs, problems = self._discard()
                 if attempt < _PORT_ATTEMPTS and _is_port_conflict(error):
                     continue
                 message = f"orcid-mock did not start from {self.image}: {error}"
                 if logs:
                     message += f"\n--- container output ---\n{logs}"
+                if problems:
+                    message += "\n--- cleanup ---\n" + "\n".join(problems)
                 raise OrcidMockStartError(message) from error
             return self
         raise AssertionError("unreachable")  # pragma: no cover
@@ -169,21 +172,30 @@ class OrcidMockContainer(DockerContainer):
         message = f"the container is up but {self.base_url} does not answer"
         raise OrcidMockStartError(message) from last_error
 
-    def _discard(self) -> str:
+    def _discard(self) -> tuple[str, list[str]]:
         """After a failed start: the tail of the container's output, and the container removed.
 
         The server's own message (a users file it rejected, say) is in that output. Touches only
-        the container this start created.
+        the container this start created. Returns the output and a note for each step that failed,
+        so a container that could not be removed is reported, never left silently.
         """
         container = self._container
         if container is None:
-            return ""
+            return "", []
         self._container = None
         self._client = None
+        problems: list[str] = []
+        output = ""
         try:
             output = container.logs(tail=_LOG_TAIL_LINES).decode(errors="replace").strip()
-        except Exception:  # the container may already be gone
-            output = ""
-        with contextlib.suppress(Exception):  # nothing left to clean up
+        except NotFound:
+            pass
+        except Exception as error:  # report it, and still try to remove the container
+            problems.append(f"could not read the container's output: {error}")
+        try:
             container.remove(force=True, v=True)
-        return output
+        except NotFound:
+            pass
+        except Exception as error:  # a container left running is worth knowing about
+            problems.append(f"could not remove container {container.short_id}: {error}")
+        return output, problems

@@ -7,10 +7,13 @@ import re
 import stat
 from pathlib import Path
 
+import docker
 import httpx
 import pytest
+from docker.errors import NotFound
 
 from orcid_mock import OrcidMockContainer, OrcidMockStartError
+from orcid_mock._shared import resolve_image
 
 
 def user(given: str, email: str, orcid: str | None = None) -> dict:
@@ -160,3 +163,55 @@ def test_stop_removes_the_container_and_closes_the_client() -> None:
     # Nothing answers at the old address any more.
     with pytest.raises(httpx.ConnectError):
         httpx.get(f"{started.base_url}/__admin/health")
+
+
+def test_the_host_port_is_published_on_loopback_only(container: OrcidMockContainer) -> None:
+    wrapped = container.get_wrapped_container()
+    wrapped.reload()
+    assert wrapped.attrs is not None
+    bindings = wrapped.attrs["NetworkSettings"]["Ports"]["9700/tcp"]
+    assert [binding["HostIp"] for binding in bindings] == ["127.0.0.1"]
+    assert bindings[0]["HostPort"] == container.base_url.rsplit(":", 1)[1]
+
+
+class _Remembering(OrcidMockContainer):
+    """Remembers which container a failed start created, so a test can look for it afterwards."""
+
+    created: str | None = None
+
+    def _discard(self) -> tuple[str, list[str]]:
+        if self._container is not None:
+            self.created = self._container.id
+        return super()._discard()
+
+
+def test_a_container_that_is_up_but_unreachable_fails_start_and_is_removed() -> None:
+    # PORT=9701 makes the server print its readiness line but listen where the published port
+    # does not point, so the readiness wait passes and the reachability check fails.
+    stuck = _Remembering()
+    stuck.with_env("PORT", "9701")
+    with pytest.raises(OrcidMockStartError, match="does not answer"):
+        stuck.start()
+    assert stuck.created is not None
+    with pytest.raises(NotFound):
+        docker.from_env().containers.get(stuck.created)
+
+
+def test_a_second_users_file_replaces_the_first() -> None:
+    first = {"clients": [], "users": [user("First", "first@example.test", "0000-0002-1825-0097")]}
+    second = {
+        "clients": [],
+        "users": [user("Second", "second@example.test", "0000-0001-5109-3700")],
+    }
+    with OrcidMockContainer(users=first).with_users(second) as custom:
+        assert [u["orcid"] for u in custom.client.users()] == ["0000-0001-5109-3700"]
+
+
+def test_the_image_argument_wins_over_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    real = resolve_image()
+    monkeypatch.setenv("ORCID_MOCK_IMAGE", "orcid-mock-does-not-exist:0")
+    # The control: with only the environment to go by, the bogus image is what is started.
+    with pytest.raises(OrcidMockStartError, match="orcid-mock-does-not-exist:0"):
+        OrcidMockContainer().start()
+    with OrcidMockContainer(real) as chosen:
+        assert chosen.client.health()["status"] == "ok"
