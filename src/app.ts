@@ -66,9 +66,11 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     switch (errorFamily(c.req.path)) {
       case "record":
         // 9008 is ORCID's catch-all and its user message is `apiError.9008.userMessage` in
-        // ORCID-Source orcid-core/src/main/resources/i18n/api_en.properties; that key has no
-        // developerMessage, so the 500 status and the developer message here are orcid-mock's
-        // choice (ORCID's wire text for a 9008 is unobserved).
+        // api_en.properties, which has no developerMessage for it, so the 500 status and the
+        // developer message here are orcid-mock's choice (ORCID's wire text for a 9008 is
+        // unobserved):
+        // https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/resources/i18n/api_en.properties#L30
+        // https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/exception/OrcidCoreExceptionMapper.java#L128-L133
         return orcidApiError(
           c,
           {

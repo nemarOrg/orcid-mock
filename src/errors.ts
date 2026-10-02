@@ -82,15 +82,15 @@ export interface OrcidApiErrorSpec {
 }
 
 // ORCID's troubleshooting link, the same in every error body: the `apiError.<code>.moreInfo` keys
-// in ORCID/ORCID-Source orcid-core/src/main/resources/i18n/api_en.properties.
+// in api_en.properties:
+// https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/resources/i18n/api_en.properties#L11
 const MORE_INFO = "https://members.orcid.org/api/resources/troubleshooting";
 
 /**
  * ORCID's v3.0 error body, keys in this fixed order, as observed on pub.orcid.org/v3.0 on
  * 2026-10-01: `response-code`, `developer-message`, `user-message`, `error-code`, `more-info`.
- * ORCID builds it in ORCID/ORCID-Source
- * orcid-core/src/main/java/org/orcid/core/exception/OrcidCoreExceptionMapper.java, from the
- * `apiError.<code>.*` keys in orcid-core/src/main/resources/i18n/api_en.properties.
+ * ORCID builds it in `getOrcidErrorV3`, from the `apiError.<code>.*` keys in api_en.properties:
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/exception/OrcidCoreExceptionMapper.java#L221-L238
  * `contentType` is the negotiated type; real ORCID sends no Content-Type at all on a 9001
  * (observed on pub.orcid.org/v3.0 on 2026-10-01), so leaving it out sends none.
  */
@@ -137,7 +137,9 @@ function headerlessBody(
  * The 9001 body ORCID sends for anything it cannot route or negotiate; `detail` varies
  * (`HTTP 404 Not Found`, `HTTP 406 Not Acceptable`, `HTTP 405 Method Not Allowed`).
  * Text: `apiError.9001.developerMessage` and `.userMessage` in api_en.properties, then
- * ` Full validation error: <detail>` appended by OrcidCoreExceptionMapper.
+ * ` Full validation error: <detail>` appended by `getDeveloperMessage`:
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/resources/i18n/api_en.properties#L9-L10
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/exception/OrcidCoreExceptionMapper.java#L249-L296
  */
 export function unroutedError(status: ErrorStatus, detail: string): OrcidApiErrorSpec {
   return {
@@ -154,14 +156,18 @@ export function unroutedError(status: ErrorStatus, detail: string): OrcidApiErro
 
 /**
  * The canonical record-API errors phase 4 serves. Each message is the `apiError.<code>` entry in
- * ORCID/ORCID-Source orcid-core/src/main/resources/i18n/api_en.properties, with the
- * ` Full validation error: ...` suffix OrcidCoreExceptionMapper appends where there is one.
+ * api_en.properties, with the ` Full validation error: ...` suffix `getDeveloperMessage` appends
+ * where there is one (not for the 404 codes 9011, 9016, 9027, 9028, 9029, and 9041):
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/exception/OrcidCoreExceptionMapper.java#L249-L296
  * All were observed on pub.orcid.org/v3.0 on 2026-10-01 unless marked "source only".
  */
 export const ORCID_API_ERRORS = {
   /** 9001 (`apiError.9001`), an unrouted path: `Full validation error: HTTP 404 Not Found`. */
   unrouted: unroutedError(404, "HTTP 404 Not Found"),
-  /** 9016 (`apiError.9016`), an unknown or malformed iD, or an unknown put-code. */
+  /**
+   * 9016 (`apiError.9016`), an unknown or malformed iD, or an unknown put-code:
+   * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/resources/i18n/api_en.properties#L53-L54
+   */
   notFound: {
     status: 404,
     code: 9016,
@@ -170,8 +176,9 @@ export const ORCID_API_ERRORS = {
   },
   /**
    * 9039 (`apiError.9039`), a biography that is not public (observed); a single item that is not
-   * public is source only (OrcidSecurityManagerImpl, orcid-core/src/main/java/org/orcid/core/
-   * manager/v3/impl/OrcidSecurityManagerImpl.java).
+   * public is source only, thrown by `checkIsPublic`:
+   * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/resources/i18n/api_en.properties#L122-L123
+   * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-api-common/src/main/java/org/orcid/api/publicV3/server/security/impl/PublicAPISecurityManagerV3Impl.java#L38-L44
    */
   notPublic: {
     status: 403,
@@ -183,7 +190,9 @@ export const ORCID_API_ERRORS = {
   /**
    * 9042 (`apiError.9042.userMessage`), more than 100 put-codes on a bulk read: HTTP 400, not
    * 413. The key has no developerMessage, so the body carries the exception class name and the
-   * validation error, as OrcidCoreExceptionMapper does.
+   * validation error, as `getDeveloperMessage` does:
+   * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/resources/i18n/api_en.properties#L131-L132
+   * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/manager/v3/read_only/impl/WorkManagerReadOnlyImpl.java#L441-L447
    */
   tooManyPutCodes: {
     status: 400,
@@ -192,7 +201,11 @@ export const ORCID_API_ERRORS = {
       "org.orcid.core.exception.ExceedMaxNumberOfPutCodesException Full validation error: Too many put codes specified: maximum is 100",
     userMessage: "Too many put codes supplied",
   },
-  /** 9044 (`apiError.9044`), a deactivated record. */
+  /**
+   * 9044 (`apiError.9044`), a deactivated record:
+   * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/resources/i18n/api_en.properties#L136-L137
+   * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/manager/v3/impl/OrcidSecurityManagerImpl.java#L192-L197
+   */
   deactivated: (orcid: string): OrcidApiErrorSpec => ({
     status: 409,
     code: 9044,
@@ -200,8 +213,10 @@ export const ORCID_API_ERRORS = {
     userMessage: "The ORCID record is deactivated.",
   }),
   /**
-   * 9018 (`apiError.9018`), a locked record. Source only: raised by `checkProfile` in
-   * ORCID-Source orcid-core/src/main/java/org/orcid/core/manager/v3/impl/OrcidSecurityManagerImpl.java.
+   * 9018 (`apiError.9018`), a locked record. Source only (no locked record was found to observe),
+   * raised by `checkProfile`:
+   * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/resources/i18n/api_en.properties#L59-L60
+   * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/manager/v3/impl/OrcidSecurityManagerImpl.java#L185-L190
    */
   locked: (orcid: string): OrcidApiErrorSpec => ({
     status: 409,
@@ -211,7 +226,9 @@ export const ORCID_API_ERRORS = {
   }),
   /**
    * 9036 (`apiError.9036`), an unclaimed record inside the claim wait period. Source only, from
-   * the same `checkProfile`.
+   * the same `checkProfile`:
+   * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/resources/i18n/api_en.properties#L113-L114
+   * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/manager/v3/impl/OrcidSecurityManagerImpl.java#L169-L183
    */
   unclaimed: {
     status: 409,
@@ -223,7 +240,9 @@ export const ORCID_API_ERRORS = {
   /**
    * 9007 (`apiError.9007`), a deprecated record; the response is a 301 whose `Location` points at
    * the primary record with the same path suffix. The URIs are ORCID's `https://orcid.org/<iD>`
-   * form.
+   * form (orcid-mock builds them from `PUBLIC_BASE_URL`):
+   * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/resources/i18n/api_en.properties#L27-L28
+   * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/manager/v3/impl/OrcidSecurityManagerImpl.java#L155-L167
    */
   deprecated: (primaryUri: string, ownUri: string): OrcidApiErrorSpec => ({
     status: 301,
