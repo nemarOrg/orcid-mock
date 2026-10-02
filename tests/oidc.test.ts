@@ -83,7 +83,7 @@ describe("GET /oauth/jwks", () => {
     }
   });
 
-  test("a server's first requests, fired together, agree on one key", async () => {
+  test("ten JWKS requests to a fresh server all return the same key", async () => {
     const fresh = await startTestServer();
     try {
       const results = await Promise.all(Array.from({ length: 10 }, () => fetchJwks(fresh.baseUrl)));
@@ -467,11 +467,12 @@ describe("the id_token", () => {
     ).rejects.toBeInstanceOf(errors.JWTClaimValidationFailed);
   });
 
-  test("a server's first exchanges and JWKS reads, fired together, all agree on one key", async () => {
+  test("id_tokens from a fresh server all verify against the one key it publishes", async () => {
     const fresh = await startTestServer();
     try {
       const freshIds = await userIds(fresh);
-      // Codes need no key, so these can be issued first and exchanged together.
+      // Codes need no key, so these can be issued first and exchanged together. Whether two first
+      // uses can race to different keys is tested in signing-key.test.ts, where they can overlap.
       const codes = await Promise.all(
         Array.from({ length: 5 }, () =>
           authorizeAs(fresh, { orcid: freshIds.alder, scope: "openid" }),
