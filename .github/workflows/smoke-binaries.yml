@@ -1,8 +1,12 @@
 name: Smoke the binaries
 
-# Runs the compiled binaries, built once on Linux and downloaded here, on a runner of each kind,
-# so that what is released has actually started on those platforms. Called by ci.yml (when
-# packaging changes) and by release.yml (always, before anything is published).
+# Runs the compiled binaries, built once on Linux and downloaded here, so that what is released has
+# actually started on every platform it is built for: all eight targets. Each runs on a runner of
+# its kind (the Intel macOS one is the last x86_64 image GitHub offers, and goes in August 2027),
+# except the two musl builds, which run in Alpine containers on the Linux runner of the same
+# architecture. Each binary is asked for its version and mints an iD; only the linux x64 one is also
+# started as a server (the binaries job in ci.yml). Called by ci.yml (when packaging changes) and by
+# release.yml (always, before anything is published).
 on:
   workflow_call:
     inputs:
@@ -17,6 +21,10 @@ on:
 
 permissions:
   contents: read
+
+env:
+  # Runs the musl binaries. Pinned by digest like the other images, and bumped by hand (RELEASING.md).
+  ALPINE_IMAGE: alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 
 jobs:
   smoke:
@@ -33,19 +41,28 @@ jobs:
             file: orcid-mock-linux-x64
           - os: ubuntu-24.04-arm
             file: orcid-mock-linux-arm64
+          - os: ubuntu-latest
+            file: orcid-mock-linux-x64-musl
+            alpine: true
+          - os: ubuntu-24.04-arm
+            file: orcid-mock-linux-arm64-musl
+            alpine: true
+          - os: macos-15-intel
+            file: orcid-mock-darwin-x64
           - os: macos-latest
             file: orcid-mock-darwin-arm64
           - os: windows-latest
             file: orcid-mock-windows-x64.exe
+          - os: windows-11-arm
+            file: orcid-mock-windows-arm64.exe
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ inputs.artifact }}
           path: dist
-      - name: Verify, then run the binary
+      - name: Verify the checksum
         shell: bash
         env:
-          VERSION: ${{ inputs.version }}
           FILE: ${{ matrix.file }}
         run: |
           set -euo pipefail
@@ -57,9 +74,36 @@ jobs:
             grep " ${FILE}\$" SHA256SUMS | shasum -a 256 --check -
           fi
           chmod +x "${FILE}"
+      - name: Run the binary
+        if: ${{ !matrix.alpine }}
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          FILE: ${{ matrix.file }}
+        run: |
+          set -euo pipefail
+          cd dist
           # Windows prints a carriage return, which command substitution does not strip.
           actual="$("./${FILE}" --version | tr -d '\r')"
           test "${actual}" = "${VERSION}" || { echo "reports ${actual}, expected ${VERSION}"; exit 1; }
           id="$("./${FILE}" id -n 1 | tr -d '\r')"
           echo "${id}"
           [[ "${id}" =~ ^0009-9[0-9]{3}-[0-9]{4}-[0-9]{3}[0-9X]$ ]]
+      # The musl builds need Alpine's C++ runtime libraries, which the image does not carry (the
+      # README says to install them), so they are installed here the way a user would.
+      - name: Run the binary in an Alpine container
+        if: ${{ matrix.alpine }}
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          FILE: ${{ matrix.file }}
+        run: |
+          set -euo pipefail
+          docker run --rm --env FILE --env VERSION --volume "${PWD}/dist:/dist:ro" "${ALPINE_IMAGE}" sh -euc '
+            apk add --no-cache libstdc++ libgcc > /dev/null
+            actual="$("/dist/${FILE}" --version)"
+            test "${actual}" = "${VERSION}" || { echo "reports ${actual}, expected ${VERSION}"; exit 1; }
+            id="$("/dist/${FILE}" id -n 1)"
+            echo "${id}"
+            echo "${id}" | grep -Eq "^0009-9[0-9]{3}-[0-9]{4}-[0-9]{3}[0-9X]\$"
+          '

@@ -7,7 +7,7 @@ name: Release
 # Order, so that a failure leaves nothing public and a re-run converges:
 #   verify            tag, version, the helpers' versions, and Action default agree; lint, typecheck, tests
 #   preflight         the NPM_TOKEN secret exists and npm accepts it (real runs only)
-#   binaries, smoke   build every binary once, run it on each kind of runner (gating)
+#   binaries, smoke   build every binary once, run all eight (smoke-binaries.yml; gating)
 #   node-dist,        build the two helpers' packages (the Node tarball, the Python wheel and sdist),
 #   pypi-dist         gating, in jobs that hold no credentials
 #   image             build and smoke-test the image BEFORE pushing; then push only the exact tag,
