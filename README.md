@@ -24,12 +24,12 @@ bunx @nemarorg/orcid-mock fixture --out users.json     # write the starter users
 bunx @nemarorg/orcid-mock --users users.json           # serve your own file
 ```
 
-The package also exports `createApp` from `@nemarorg/orcid-mock` (portable, Web APIs only, for a Worker or any `fetch` host) and `startServer` from `@nemarorg/orcid-mock/server` (Bun only).
+The package also exports `createApp` from `@nemarorg/orcid-mock` and `createMockApp` (a users file in, an app and its store out) from `@nemarorg/orcid-mock/bootstrap`, both portable (Web APIs only, for a Worker or any `fetch` host), `startServer` from `@nemarorg/orcid-mock/server` (Bun only), and the users-file JSON Schema and example as `@nemarorg/orcid-mock/fixtures/users.schema.json` and `.../users.example.json`.
 
 ### As a container
 
 ```bash
-docker run --rm -p 9700:9700 \
+docker run --rm -p 127.0.0.1:9700:9700 \
   -e PUBLIC_BASE_URL=http://localhost:9700 \
   -e USERS_FILE=/fixtures/users.json \
   -v "$PWD/users.json:/fixtures/users.json:ro" \
@@ -39,6 +39,8 @@ docker run --rm -p 9700:9700 \
 - **Set `PUBLIC_BASE_URL`.**
   Inside a container the default would be `http://127.0.0.1:9700`, which is not an address a caller outside the container can use, and every URL the mock emits (the issuer, redirects, links) is built from it.
   Set it to the address your application uses to reach the mock.
+- **Publish the port on loopback** (`-p 127.0.0.1:9700:9700`), as above.
+  A bare `-p 9700:9700` listens on every interface of the host, and the admin API behind it has no authentication and returns the fixture passwords.
 - Tags: `1.2.3`, `1.2`, `1`, and `latest`; a prerelease such as `1.2.3-rc.1` gets only its exact tag.
   The image is multi-arch (`linux/amd64` and `linux/arm64`), runs as `nonroot` on a distroless base with no shell, and holds one file, `/orcid-mock`.
 - The image sets `HOST=0.0.0.0` and `PORT=9700`, since the container's network is the boundary.
@@ -63,7 +65,11 @@ chmod +x orcid-mock-linux-x64
 - The `-musl` builds are for Alpine, which needs `apk add libstdc++ libgcc` first.
 - A binary does not read `.env` or `bunfig.toml` from the directory it runs in.
 - The binaries are not code-signed beyond macOS's ad hoc signature, so a macOS browser download may need `xattr -d com.apple.quarantine <file>`, and Windows SmartScreen may ask once.
-  Each release also carries a build provenance attestation: `gh attestation verify orcid-mock-linux-x64 --repo nemarOrg/orcid-mock`.
+- Each release also carries GitHub build provenance attestations, for the binaries and for the image:
+  ```bash
+  gh attestation verify orcid-mock-linux-x64 --repo nemarOrg/orcid-mock
+  gh attestation verify oci://ghcr.io/nemarorg/orcid-mock:1.2.3 --repo nemarOrg/orcid-mock
+  ```
 
 ### As a GitHub Action
 
@@ -81,22 +87,23 @@ Then it exports `ORCID_API_BASE`, `ORCID_PUB_API_BASE`, and `ORCID_MOCK_URL` (al
 
 | Input | Default | Meaning |
 |---|---|---|
-| `version` | `latest` | Image tag to run: `1`, `1.2`, `1.2.3`, or `latest`. |
+| `version` | `1` | Image tag to run: `1`, `1.2`, `1.2.3`, or `latest`. The default is the Action's own major, so `@v1` runs the 1.x line; the release workflow refuses a release whose major differs from it. |
 | `users-file` | none | Path in your workspace to a users file, mounted read-only and readable by every user; the starter users when empty. |
 | `port` | `9700` | Port published on the runner's loopback interface. |
-| `public-base-url` | `http://localhost:<port>` | The URL your application uses to reach the mock; it becomes the issuer and the base of every absolute URL. |
+| `public-base-url` | `http://localhost:<port>` | The URL your application uses to reach the mock; it becomes the issuer and the base of every absolute URL. It must be an `http` or `https` URL with no whitespace or control characters (the Action refuses anything else, since the value is written to `GITHUB_ENV`); trailing slashes are removed. |
 | `image` | `ghcr.io/nemarorg/orcid-mock` | Image repository without a tag, for running a locally built image. |
 
 Linux runners only, because the image is a Linux container.
 A composite action has no post step, so the container is not stopped by the action: it lives until the job ends, and `docker rm -f "${{ steps.<id>.outputs.container-id }}"` stops it sooner.
 Reset between tests with `curl -X POST "$ORCID_MOCK_URL/__admin/reset"`.
-The Action needs a published image, so `uses: nemarOrg/orcid-mock@v1` works after the first release.
+The Action needs a published image, so `uses: nemarOrg/orcid-mock@v1` works after the first release, which will be `1.0.0`.
 
 ### The Cloudflare Worker entry
 
 `src/worker.ts` and [`wrangler.toml`](wrangler.toml) are a smoke test that the portable layer runs in a real Workers runtime, not a way to host the mock: it serves the starter users from memory, one store per isolate, with nothing durable and no users file.
 `PUBLIC_BASE_URL` must be set as a binding (it is never taken from the request), or every request answers 500 saying so.
 `bun x wrangler deploy --dry-run --outdir dist/worker` bundles it, and `tests/worker.test.ts` runs that bundle in workerd.
+A deployed Worker is reachable from the internet and exposes the unauthenticated admin API, fixture passwords included, so `wrangler.toml` sets `workers_dev = false` and says to put an access gate in front of it before you route it anywhere.
 The hosted mode will run the same app inside a Durable Object per tenant.
 
 ## Run it from a checkout
@@ -196,6 +203,7 @@ services:
       PUBLIC_BASE_URL: http://localhost:9700
 ```
 
+This `ports` line publishes on every interface, which is acceptable only because a hosted runner is a fresh, single-job machine; anywhere else, publish on loopback as above.
 The image defines its own health check, `/orcid-mock health`, and a runner waits for a service container's health check before the first step.
 An `options: --health-cmd` is not needed, and none could run the real command: Docker runs that form through `/bin/sh`, which the image does not have.
 A `services:` container starts before your repository is checked out, so it can serve only the bundled starter users; to serve your own file, use [the Action](#as-a-github-action) after `actions/checkout`.
@@ -207,24 +215,49 @@ Point your application at it with the same variables you use for the sandbox
 
 For maintainers.
 Nothing is published until a version tag is pushed.
+One version, from `package.json`, numbers the npm package, the image, the binaries, and (as its major) the Action.
 
 1. Bump `version` in `package.json` in a pull request and merge it to `main`.
-   A prerelease is `1.2.3-rc.1`: it gets only its exact image tag, the `next` tag on npm, and no change to the floating tags.
+   The first release is `1.0.0`: the Action defaults to the image tag `1`, and the workflow refuses a stable release whose major differs from that default in `action.yml`.
+   A prerelease is `1.2.3-rc.1`: it gets only its exact image tag, the `next` tag on npm, a prerelease GitHub Release, and no change to any floating tag.
 2. Tag the merge commit and push the tag: `git tag v1.2.3 && git push origin v1.2.3`.
-3. The [Release workflow](.github/workflows/release.yml) refuses a tag that differs from `package.json` or is not on `main`, runs lint, type checking, and the tests, and then:
-   builds the binaries and attaches them with `SHA256SUMS` to a GitHub Release with generated notes;
-   builds and pushes the multi-arch image to `ghcr.io/nemarorg/orcid-mock` as `1.2.3`, `1.2`, `1`, and `latest`, with a build provenance attestation;
-   publishes `@nemarorg/orcid-mock` to npm;
-   and moves the `v1` tag that `uses: nemarOrg/orcid-mock@v1` follows.
-4. To rehearse, run the workflow by hand (Actions, Release, Run workflow) with "dry-run" on, from any branch.
+3. The [Release workflow](.github/workflows/release.yml) then works in this order, so that a failure leaves nothing public and a re-run converges:
+   it refuses a tag that differs from `package.json` or is not on `main`, runs lint, type checking, and the tests, and checks the npm token (`bun pm whoami`);
+   it builds every binary once and runs each on a runner of its kind (Linux x64 and arm64, macOS arm64, Windows x64);
+   it builds the image, smoke-tests the amd64 image and runs the arm64 image once, and only then pushes the exact tag `1.2.3`, tests what it pushed, and attests it;
+   it publishes `@nemarorg/orcid-mock` to npm, unless that version is already there;
+   it creates the GitHub Release if it does not exist and uploads the binaries and `SHA256SUMS` (replacing any earlier upload);
+   and last it moves `latest`, `1`, and `1.2`, and the `v1` tag that `uses: nemarOrg/orcid-mock@v1` follows.
+4. Floating tags only move forward: each moves only when the released version is the highest stable version in its scope (`latest` against all, `1` against 1.x.y, `1.2` against 1.2.z), so a patch for an old line never takes `latest`.
+   An exact image tag is never overwritten: if it already exists and was built from another commit, the workflow stops.
+5. After a partial failure, re-run the workflow's failed jobs (or all of them); each step skips what is already done.
+6. To rehearse, run the workflow by hand (Actions, Release, Run workflow) with "dry-run" on, from any branch.
    It does every build and check, and does not push the image, publish, create the release, or move a tag.
+   A dry run does not use the `release` environment, so it cannot check the npm token, and says so.
 
-Before the first release, once:
+### One-time setup, by the repository owner
 
-- The `@nemarorg` scope must exist on npm, and the repository needs an `NPM_TOKEN` secret holding an npm automation token that may publish to it.
-  The workflow fails with a message naming the secret when it is missing, in a dry run too.
-  `bun publish` cannot attach npm's provenance statement, so the package has none; the image and the binaries carry GitHub attestations instead.
-- After the first image push, set the `orcid-mock` package's visibility to public in the organization's package settings on GitHub.
+These are repository and registry settings; no workflow or pull request creates them.
+
+- **npm.**
+  The `@nemarorg` scope must exist.
+  Create a granular access token ([npm's documentation](https://docs.npmjs.com/about-access-tokens): classic tokens were revoked in November 2025, so a granular token is the only kind) with read and write permission on `@nemarorg/orcid-mock` or the scope, and "Bypass 2FA" checked, because nobody is present to enter a one-time password in a workflow.
+  A granular token that can write is capped at 90 days ([GitHub changelog, 5 November 2025](https://github.blog/changelog/2025-11-05-npm-security-update-classic-token-creation-disabled-and-granular-token-changes/)), so put the expiry date in your calendar and replace the secret before it passes; the workflow's `bun pm whoami` check fails the release early, before anything is public, when the token has expired.
+  Be aware that npm's documentation says the ability to publish directly with a bypass-2FA token is scheduled for removal in January 2027, in favor of trusted publishing (OpenID Connect) or stage-only tokens, and that trusted publishing needs the npm command line, not `bun publish` ([oven-sh/bun#22423](https://github.com/oven-sh/bun/issues/22423)).
+  The publish job will need rework before then; [ADR 0005](.context/decisions/0005-distribution-and-release.md) records this.
+- **GitHub environment `release`** (Settings, Environments, New environment).
+  Under "Deployment branches and tags", choose "Selected branches and tags" and add a tag rule `v*.*.*`.
+  Turn on "Required reviewers" and add yourself, so every real release waits for an approval.
+  Under "Environment secrets", add `NPM_TOKEN` with the token (an environment secret, not a repository secret).
+  Only the `preflight` and `npm` jobs use the environment, and only on real runs.
+- **Tag ruleset** (Settings, Rules, Rulesets, New ruleset, New tag ruleset).
+  Name it `release tags`, set enforcement to Active, and target tags matching `v*`.
+  Turn on "Restrict creations", "Restrict updates", and "Restrict deletions".
+  Add a bypass for the Repository admin role, so you can push release tags, and for the GitHub Actions app, so the last job can move `v1`.
+  The ruleset stops anyone else from creating, moving, or deleting a `v*` tag, which the Action (`@v1`) and the release workflow trust.
+  Check on the first real release that the `promote` job could push `v1`; if the ruleset blocks it, the app is missing from the bypass list.
+- **Package visibility.**
+  After the first image push, set the `orcid-mock` package to public in the organization's package settings on GitHub, and confirm it is linked to this repository (the image's `org.opencontainers.image.source` label does that).
   A new package starts private, and neither `docker pull` nor the Action works for anyone else until it is public.
 
 ## License
