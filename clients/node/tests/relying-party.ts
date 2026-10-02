@@ -9,7 +9,7 @@ const CLIENT_ID = "APP-RELYING-PARTY";
 const CLIENT_SECRET = "relying-party-secret";
 
 export interface RelyingParty {
-  /** `http://127.0.0.1:<port>`; `/login` starts a sign-in, `/slow-login` starts one after 800 ms. */
+  /** `http://127.0.0.1:<port>`; `/login` starts a sign-in, `/slow-login` starts one after 800 ms, and `/popup-login` has a button that starts one in a popup. */
   url: string;
   /** Registers the relying party as a client of the mock; `reset()` on the mock undoes it. */
   register(): Promise<void>;
@@ -47,6 +47,12 @@ export async function startRelyingParty(mock: OrcidMockClient): Promise<RelyingP
         // A delayed redirect, so a test can call signInAs while the browser is still here.
         const target = JSON.stringify(authorizeUrl("state-2"));
         send(200, page(`<script>setTimeout(() => { location.href = ${target}; }, 800);</script>`));
+      } else if (requested.pathname === "/popup-login") {
+        // An application that signs in in a popup window.
+        send(
+          200,
+          page(`<button id="open" onclick="window.open('/login', '_blank')">Sign in</button>`),
+        );
       } else if (requested.pathname === "/callback") {
         const code = requested.searchParams.get("code");
         if (code === null) {

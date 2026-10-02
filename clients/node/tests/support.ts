@@ -18,7 +18,9 @@ export interface RepoServer {
  * reports on its readiness line (its public base URL, which `publicBaseUrl` sets). The child gets
  * no inherited ORCID-mock settings.
  */
-export async function startRepoServer(opts: { publicBaseUrl?: string } = {}): Promise<RepoServer> {
+export async function startRepoServer(
+  opts: { publicBaseUrl?: string; port?: number } = {},
+): Promise<RepoServer> {
   const child = Bun.spawn(
     [
       process.execPath,
@@ -26,7 +28,7 @@ export async function startRepoServer(opts: { publicBaseUrl?: string } = {}): Pr
       join(REPO_ROOT, "src/main.ts"),
       "serve",
       "--port",
-      "0",
+      String(opts.port ?? 0),
       ...(opts.publicBaseUrl === undefined ? [] : ["--base-url", opts.publicBaseUrl]),
     ],
     {

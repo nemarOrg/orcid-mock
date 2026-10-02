@@ -5,6 +5,8 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: ".",
   testMatch: "*.pw.ts",
+  // precedence.pw.ts needs its own environment, so it runs only when asked for.
+  testIgnore: process.env.RUNNER_PRECEDENCE ? [] : ["**/precedence.pw.ts"],
   workers: 2,
   // tests/runner.test.ts asks for a JSON report, to read which mock each test used.
   reporter: process.env.RUNNER_JSON

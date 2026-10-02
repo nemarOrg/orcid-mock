@@ -25,6 +25,12 @@ export interface OrcidMock {
   readonly client: OrcidMockClient;
   /** `url` when `ORCID_MOCK_URL` pointed at a running instance, `container` when one was started. */
   readonly mode: "url" | "container";
+  /**
+   * The address the mock puts in every URL it emits, which is where a browser is sent to sign in:
+   * `baseUrl` for a container, and for a running instance whatever `PUBLIC_BASE_URL` it was
+   * started with (read from its discovery document), which can differ from `ORCID_MOCK_URL`.
+   */
+  publicBaseUrl(): Promise<string>;
   /** Stops a container this call started; a running instance is never stopped. */
   stop(): Promise<void>;
 }
@@ -54,7 +60,17 @@ export async function startOrConnect(options: StartOrConnectOptions = {}): Promi
         },
       );
     }
-    return { baseUrl: client.baseUrl, client, mode: "url", stop: async () => {} };
+    let publicBaseUrl: Promise<string> | undefined;
+    return {
+      baseUrl: client.baseUrl,
+      client,
+      mode: "url",
+      publicBaseUrl: () => {
+        publicBaseUrl ??= client.publicBaseUrl();
+        return publicBaseUrl;
+      },
+      stop: async () => {},
+    };
   }
 
   const { OrcidMockContainer } = await import("./testcontainers.js");
@@ -65,6 +81,7 @@ export async function startOrConnect(options: StartOrConnectOptions = {}): Promi
     baseUrl: started.baseUrl,
     client: started.client,
     mode: "container",
+    publicBaseUrl: async () => started.baseUrl,
     stop: async () => {
       await started.stop();
     },
