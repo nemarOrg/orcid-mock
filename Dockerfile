@@ -42,7 +42,8 @@ ENV HOST=0.0.0.0 PORT=9700
 EXPOSE 9700
 USER nonroot
 ENTRYPOINT ["/orcid-mock"]
-# The image has no shell and no curl, so the binary checks itself. Port 9700 is hard-coded:
-# override the check (docker run --health-cmd) if you change PORT.
-HEALTHCHECK --interval=10s --timeout=5s --start-period=2s --retries=5 \
-  CMD ["/orcid-mock", "health", "--url", "http://127.0.0.1:9700"]
+# The image has no shell and no curl, so the binary checks itself: `health` without --url looks at
+# http://127.0.0.1:$PORT, so the check follows a PORT override. Failures during the start period
+# do not count, and the check runs every second until the first success.
+HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --start-interval=1s --retries=5 \
+  CMD ["/orcid-mock", "health"]

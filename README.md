@@ -42,7 +42,7 @@ docker run --rm -p 9700:9700 \
 - Tags: `1.2.3`, `1.2`, `1`, and `latest`; a prerelease such as `1.2.3-rc.1` gets only its exact tag.
   The image is multi-arch (`linux/amd64` and `linux/arm64`), runs as `nonroot` on a distroless base with no shell, and holds one file, `/orcid-mock`.
 - The image sets `HOST=0.0.0.0` and `PORT=9700`, since the container's network is the boundary.
-  Its health check runs `/orcid-mock health` (there is no `curl`, and no shell for `docker run --health-cmd`); it checks port 9700, so override the check if you change `PORT`.
+  Its health check runs `/orcid-mock health` (there is no `curl`, and no shell for `docker run --health-cmd`), which checks `http://127.0.0.1:$PORT`, so it follows a `PORT` override.
 - Without `USERS_FILE` it serves the bundled starter users.
   A mounted users file must be readable by user `nonroot` (uid 65532).
 - [`docker-compose.yml`](docker-compose.yml) is a ready example: `docker compose up --wait`.
@@ -132,7 +132,7 @@ When `PUBLIC_BASE_URL` is unset, the base URL is built from the bound address: `
 Inside a container the bound address means nothing to a caller, so set `PUBLIC_BASE_URL` explicitly there.
 A path prefix in `PUBLIC_BASE_URL` (`https://example.test/orcid`) is only used to build URLs: the server still routes at the root, so a reverse proxy must strip the prefix before forwarding.
 
-The other commands are `orcid-mock schema [--out FILE]` (the JSON Schema for the users file), `orcid-mock health [--url URL]` (exit code 0 when `{URL}/__admin/health` answers 200 and 1 otherwise, printing nothing on success, for health checks in images without `curl`), `--version`, and `--help`.
+The other commands are `orcid-mock schema [--out FILE]` (the JSON Schema for the users file), `orcid-mock health [--url URL]` (exit code 0 when `{URL}/__admin/health` answers 200 and 1 otherwise, printing nothing on success, for health checks in images without `curl`; without `--url` it checks `http://127.0.0.1:$PORT`, port 9700 when `PORT` is unset), `--version`, and `--help`.
 
 ### The users file
 
