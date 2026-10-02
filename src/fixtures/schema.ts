@@ -270,14 +270,13 @@ function userIssues(user: z.output<typeof UserShape>): RawIssue[] {
   const emails = user.emails ?? [];
   const seen = new Set<string>();
   emails.forEach((email, k) => {
-    // ORCID's interface says "Only verified email addresses can be displayed publicly or shared
-    // with trusted parties" (`manage.email.only_verified` in ORCID/ORCID-Source
-    // orcid-core/src/main/resources/i18n/messages_en.properties). The mock enforces the public
-    // half of that rule only: orcid-mock's choice, since ORCID's API docs state no such rule.
-    if (email.visibility === "public" && !email.verified) {
+    // ORCID's rule: "Only verified email addresses can be displayed publicly or shared with
+    // trusted parties", that is, public or limited (`manage.email.only_verified` in
+    // ORCID/ORCID-Source orcid-core/src/main/resources/i18n/messages_en.properties).
+    if (email.visibility !== "private" && !email.verified) {
       issues.push({
         path: ["emails", k, "visibility"],
-        message: "A public email must be verified",
+        message: "Only a verified email can be public or limited",
       });
     }
     const key = email.email.toLowerCase();

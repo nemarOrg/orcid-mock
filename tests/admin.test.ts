@@ -474,11 +474,33 @@ describe("fixture refinements through the API", () => {
     expect(issues.map((issue) => issue.path)).toEqual(["emails[0].email"]);
   });
 
-  test("a public email that is not verified names its visibility", async () => {
-    const issues = await invalid(
-      person("A", { emails: [email("a@example.test", { verified: false, visibility: "public" })] }),
+  test("a public or limited email that is not verified names its visibility", async () => {
+    for (const visibility of ["public", "limited"]) {
+      const issues = await invalid(
+        person("A", { emails: [email("a@example.test", { verified: false, visibility })] }),
+      );
+      expect(issues.map((issue) => issue.path)).toEqual(["emails[0].visibility"]);
+      expect(issues[0]?.message).toBe("Only a verified email can be public or limited");
+    }
+  });
+
+  test("an unverified private email, and a verified email of any visibility, are accepted", async () => {
+    const unverifiedPrivate = await server.admin(
+      "POST",
+      "/users",
+      person("B", {
+        emails: [email("b@example.test", { verified: false, visibility: "private" })],
+      }),
     );
-    expect(issues.map((issue) => issue.path)).toEqual(["emails[0].visibility"]);
+    expect(unverifiedPrivate.status).toBe(201);
+    for (const [n, visibility] of ["public", "limited", "private"].entries()) {
+      const verified = await server.admin(
+        "POST",
+        "/users",
+        person(`V${n}`, { emails: [email(`v${n}@example.test`, { visibility })] }),
+      );
+      expect(verified.status).toBe(201);
+    }
   });
 
   test("two primary emails, and none, name the list", async () => {

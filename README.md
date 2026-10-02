@@ -52,7 +52,7 @@ Field names are ORCID's own in snake_case, and a typo fails with its path.
 Leave `orcid` empty and the mock mints a checksum-valid iD in the `0009-9...` block, the same one on every load, and one that does not change when you add other users.
 An iD from any block is accepted if its checksum is right, for example `0000-0002-1825-0097`, ORCID's own fictional demo record.
 Put-codes you leave out are assigned above the largest one in the file.
-The rules a schema cannot express (checksums, duplicate iDs and emails, one primary email, a public email being verified) are checked when the file loads.
+The rules a schema cannot express (checksums, duplicate iDs and emails, one primary email, a public or limited email being verified) are checked when the file loads.
 [ADR 0003](.context/decisions/0003-fixture-schema-and-id-minting.md) records the reasoning, including the small risk that a minted iD belongs to someone.
 
 ### The admin API

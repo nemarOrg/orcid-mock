@@ -17,7 +17,7 @@ It says nothing more about who else holds numbers outside those blocks.
 The users file is described once, in Zod, with strict objects and no transforms, and `z.config({ jitless: true })` is the first statement in the schema module.
 Zod would otherwise compile its parsers with `new Function`, and Ajv, the usual JSON Schema validator, always does.
 `fixtures/users.schema.json` is generated from the Zod source with `io: "input"`, committed, and checked by a test that fails when it is stale; shapes used in several places carry an `id` so they appear once under `$defs`.
-Rules a JSON Schema cannot express (checksums, duplicates, exactly one primary email, a public email being verified, deprecation cycles) are refinements that run when the file loads, each failing with a dotted path such as `users[1].emails[0].visibility`.
+Rules a JSON Schema cannot express (checksums, duplicates, exactly one primary email, a public or limited email being verified, deprecation cycles) are refinements that run when the file loads, each failing with a dotted path such as `users[1].emails[0].visibility`.
 
 **Minted iDs live in the `0009-9` block.**
 `MINT_PREFIX` is `00099`, so a minted iD reads `0009-9ddd-dddd-ddd` plus the check character.
