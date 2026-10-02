@@ -190,3 +190,29 @@ describe("headers on every response", () => {
     expect(reply.headers.get("cache-control")).toBeNull();
   });
 });
+
+describe("no real request reaches the generic 500 handler", () => {
+  // None of these is a bug to fix: ORCID's own answers (a 404 for an unknown iD, 400 / 9006 for a
+  // bad element) cover them. They are here so a change that lets one throw fails a test, since
+  // the 500 handler is the only place a stack trace could ever be logged.
+  const exotic: Array<[string, number]> = [
+    ["/v3.0/%E0%A4%A/email", 404],
+    ["/v3.0/%/email", 404],
+    [`/v3.0/${IDS.rich}/email?access_token=%E0%A4%A`, 401],
+    [`/v3.0/${IDS.rich}/work/%E0%A4%A`, 404],
+    [`/v3.0/${IDS.rich}/works/%E0%A4%A`, 400],
+    [`/v3.0/${IDS.rich}/works/${"1,".repeat(5000)}`, 400],
+    [`/v3.0/${IDS.rich}/work/${"9".repeat(500)}`, 404],
+    [`/v3.0/${IDS.rich}/works/${"9".repeat(500)}`, 400],
+    [`/v3.0/${IDS.rich}/other-names/${"9".repeat(500)}`, 404],
+    [`/v3.0/${IDS.deprecated}/%E0%A4%A`, 404],
+  ];
+  for (const [path, status] of exotic) {
+    test(path.slice(0, 70), async () => {
+      const reply = await rawRequest(server, "GET", path, { Accept: "application/json" });
+      expect(reply.status).toBe(status);
+      expect(reply.text).not.toContain("Something went wrong");
+      expect(reply.headers.get("cache-control")).toBe(RECORD_HEADERS["cache-control"]);
+    });
+  }
+});

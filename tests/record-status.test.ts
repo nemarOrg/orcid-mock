@@ -158,3 +158,100 @@ describe("the checks run in ORCID's order", () => {
     expect((reply.json as { "error-code": number })["error-code"]).toBe(9018);
   });
 });
+
+// Every record-scoped read path, with a put-code where it takes one. The state checks come before
+// any of them is served; only the bulk read, below, differs.
+const READ_PATHS = [
+  "",
+  "/",
+  "/record",
+  "/record/",
+  "/activities",
+  "/research-resources",
+  "/person",
+  "/personal-details",
+  "/email",
+  "/biography",
+  "/address",
+  "/other-names",
+  "/keywords",
+  "/external-identifiers",
+  "/researcher-urls",
+  "/employments",
+  "/educations",
+  "/qualifications",
+  "/distinctions",
+  "/invited-positions",
+  "/memberships",
+  "/services",
+  "/fundings",
+  "/peer-reviews",
+  "/works",
+  "/works/",
+  "/work/1",
+  "/employment/1",
+  "/education/1",
+  "/qualification/1",
+  "/funding/1",
+  "/peer-review/1",
+  "/other-names/1",
+  "/keywords/1",
+  "/researcher-urls/1",
+  "/external-identifiers/1",
+  "/address/1",
+];
+
+describe("every read path checks the record's state", () => {
+  test("an unknown iD is 404 / 9016 on every path", async () => {
+    for (const suffix of READ_PATHS) {
+      const reply = await getRecord(server, `/v3.0/0000-0000-0000-0000${suffix}`);
+      expect([
+        suffix,
+        reply.status,
+        (reply.json as { "error-code": number })["error-code"],
+      ]).toEqual([suffix, 404, 9016]);
+    }
+  });
+
+  test("a deprecated record is a 301 to the same path on the primary record, on every path", async () => {
+    for (const suffix of READ_PATHS) {
+      const reply = await getRecord(server, `/v3.0/${IDS.deprecated}${suffix}`);
+      expect([suffix, reply.status]).toEqual([suffix, 301]);
+      expect(reply.headers.get("location")).toBe(
+        `${server.publicBaseUrl}/v3.0/${IDS.primary}${suffix}`,
+      );
+    }
+  });
+
+  test("unclaimed, locked, and deactivated are 409 / 9036, 9018, and 9044 on every path", async () => {
+    for (const [orcid, code] of [
+      [IDS.unclaimed, 9036],
+      [IDS.locked, 9018],
+      [IDS.deactivated, 9044],
+    ] as const) {
+      for (const suffix of READ_PATHS) {
+        const reply = await getRecord(server, `/v3.0/${orcid}${suffix}`);
+        expect([
+          suffix,
+          reply.status,
+          (reply.json as { "error-code": number })["error-code"],
+        ]).toEqual([suffix, 409, code]);
+      }
+    }
+  });
+
+  test("a healthy record serves every section path (the item paths find no put-code 1)", async () => {
+    for (const suffix of READ_PATHS) {
+      const reply = await getRecord(server, `/v3.0/${IDS.rich}${suffix}`);
+      const item = /\/[a-z-]+\/1$/.test(suffix) && !suffix.startsWith("/works");
+      expect([suffix, reply.status]).toEqual([suffix, item ? 404 : 200]);
+    }
+  });
+
+  test("bulk works checks only that the record exists: the states do not apply", async () => {
+    for (const orcid of [IDS.deprecated, IDS.unclaimed, IDS.locked, IDS.deactivated]) {
+      expect((await getRecord(server, `/v3.0/${orcid}/works/1`)).status).toBe(200);
+    }
+    expect((await getRecord(server, "/v3.0/0000-0000-0000-0000/works/1")).status).toBe(404);
+  });
+});
