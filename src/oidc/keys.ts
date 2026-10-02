@@ -2,6 +2,7 @@
 // The key is generated on first use and kept in the Store, which keeps it across `reset()`, so a
 // client that cached the JWKS stays valid. Nothing here runs at module scope: Workers refuse to
 // draw random values or generate keys while a module is being evaluated (ADR 0002).
+import { randomString } from "../random";
 import type { SigningKey, Store } from "../store/types";
 
 const RSA_IMPORT = { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" } as const;
@@ -14,8 +15,6 @@ const RSA_ALGORITHM = {
 const KID_PREFIX = "orcid-mock-";
 const KID_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz";
 const KID_RANDOM_LENGTH = 32;
-// Bytes at or above this would favor the first characters of the alphabet, so they are discarded.
-const UNBIASED_BYTE_LIMIT = 256 - (256 % KID_ALPHABET.length);
 
 /**
  * ORCID's key ids read `<env>-orcid-org-<32 lowercase alphanumerics>` (observed on orcid.org on
@@ -23,17 +22,7 @@ const UNBIASED_BYTE_LIMIT = 256 - (256 % KID_ALPHABET.length);
  * orcid-mock's own read `orcid-mock-<32 lowercase alphanumerics>`.
  */
 function newKeyId(): string {
-  let random = "";
-  const bytes = new Uint8Array(KID_RANDOM_LENGTH);
-  while (random.length < KID_RANDOM_LENGTH) {
-    crypto.getRandomValues(bytes);
-    for (const byte of bytes) {
-      if (byte < UNBIASED_BYTE_LIMIT && random.length < KID_RANDOM_LENGTH) {
-        random += KID_ALPHABET.charAt(byte % KID_ALPHABET.length);
-      }
-    }
-  }
-  return KID_PREFIX + random;
+  return KID_PREFIX + randomString(KID_ALPHABET, KID_RANDOM_LENGTH);
 }
 
 /**

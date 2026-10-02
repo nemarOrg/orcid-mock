@@ -1,5 +1,6 @@
 // Authorization codes: generation and issuing.
 import { serverNowMs } from "../clock";
+import { randomString } from "../random";
 import type { ScopeName, Store, StoredClient } from "../store/types";
 
 /**
@@ -12,8 +13,6 @@ export const CODE_TTL_MS = 10 * 60 * 1000;
 
 const ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const CODE_LENGTH = 6;
-// Bytes at or above this would favor the first characters of the alphabet, so they are discarded.
-const UNBIASED_BYTE_LIMIT = 256 - (256 % ALPHABET.length);
 
 /**
  * Six mixed-case alphanumeric characters: ORCID's tutorial says "a 6-character authorization
@@ -22,17 +21,7 @@ const UNBIASED_BYTE_LIMIT = 256 - (256 % ALPHABET.length);
  * https://github.com/ORCID/ORCID-Source/blob/7eeb1e7709760f328f5d3f72ebf2629f0a5d54c9/orcid-core/src/main/java/org/orcid/core/oauth/service/NamespacedRandomCodeGenerator.java#L14-L15
  */
 export function generateCode(): string {
-  let code = "";
-  const bytes = new Uint8Array(16);
-  while (code.length < CODE_LENGTH) {
-    crypto.getRandomValues(bytes);
-    for (const byte of bytes) {
-      if (byte < UNBIASED_BYTE_LIMIT && code.length < CODE_LENGTH) {
-        code += ALPHABET.charAt(byte % ALPHABET.length);
-      }
-    }
-  }
-  return code;
+  return randomString(ALPHABET, CODE_LENGTH);
 }
 
 export interface CodeGrant {
