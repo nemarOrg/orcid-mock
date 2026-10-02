@@ -15,7 +15,7 @@ import { buildTokenResponse, type Grant, TOKEN_TTL_SECONDS } from "./token-respo
 type Ctx = Context<AppEnv>;
 
 /** A fresh access and refresh token pair, expiring twenty years from server time. */
-export async function newTokenRecord(
+async function newTokenRecord(
   store: Store,
   init: {
     client: StoredClient;

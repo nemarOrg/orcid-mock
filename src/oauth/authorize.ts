@@ -6,6 +6,7 @@ import type { Context } from "hono";
 import type { AppEnv } from "../app";
 import { oauthError } from "../errors";
 import type { ScopeName, StoredClient, StoredUser } from "../store/types";
+import { type Checked, fail } from "./checked";
 import { issueCode } from "./codes";
 import { renderConsentPage } from "./consent-page";
 import { readForm } from "./form";
@@ -26,23 +27,22 @@ interface AuthorizeRequest {
   nonce: string | null;
 }
 
-type Checked = { ok: true; request: AuthorizeRequest } | { ok: false; response: Response };
-
-const reject = (response: Response): Checked => ({ ok: false, response });
-
 /**
  * Steps 1 to 3 of the authorize validation, shared by the GET and the consent POST.
  * Real ORCID answers the first two with no redirect, because it cannot trust the `redirect_uri`
  * of an unknown client or a mismatch; the rest it hands back to the client app.
  */
-async function checkRequest(c: Ctx, params: URLSearchParams): Promise<Checked> {
+async function checkRequest(
+  c: Ctx,
+  params: URLSearchParams,
+): Promise<Checked<{ request: AuthorizeRequest }>> {
   const { store } = c.get("deps");
 
   // research 1.2 and 1.4, observed on auth.sandbox.orcid.org/oauth2/authorize on 2026-10-01:
   // 400 with `error_description` before `error`, and `invalid_request` rather than `invalid_client`.
   const clientId = params.get("client_id");
   if (clientId === null || clientId === "") {
-    return reject(
+    return fail(
       oauthError(c, 400, "invalid_request", "Missing parameter: client_id is missing", {
         descriptionFirst: true,
       }),
@@ -50,7 +50,7 @@ async function checkRequest(c: Ctx, params: URLSearchParams): Promise<Checked> {
   }
   const client = await store.getClient(clientId);
   if (!client) {
-    return reject(
+    return fail(
       oauthError(c, 400, "invalid_request", "Invalid parameter: client_id", {
         descriptionFirst: true,
       }),
@@ -62,7 +62,7 @@ async function checkRequest(c: Ctx, params: URLSearchParams): Promise<Checked> {
   // The current server's body is unobserved, so the legacy text is kept.
   const redirectUri = params.get("redirect_uri");
   if (!redirectUri || !redirectUriMatches(redirectUri, client.redirect_uris)) {
-    return reject(
+    return fail(
       oauthError(
         c,
         400,
@@ -76,7 +76,7 @@ async function checkRequest(c: Ctx, params: URLSearchParams): Promise<Checked> {
   // fragment with no description and no state (orcid-angular src/app/core/oauth/oauth.service.ts,
   // OAUTH_SESSION_ERROR_CODES_HANDLE_BY_CLIENT_APP: `${redirectUrl}#error=${error}`).
   if (params.get("response_type") !== "code") {
-    return reject(errorRedirect(c, redirectUri, "unsupported_response_type"));
+    return fail(errorRedirect(c, redirectUri, "unsupported_response_type"));
   }
   const { scopes, unknown } = parseScopes(params.get("scope"));
   if (
@@ -87,7 +87,7 @@ async function checkRequest(c: Ctx, params: URLSearchParams): Promise<Checked> {
     scopes.includes("/read-public") ||
     (scopes.includes("/read-limited") && !client.member)
   ) {
-    return reject(errorRedirect(c, redirectUri, "invalid_scope"));
+    return fail(errorRedirect(c, redirectUri, "invalid_scope"));
   }
 
   return {
@@ -119,23 +119,17 @@ async function signInTarget(
   c: Ctx,
   orcid: string | null,
   param: "login_as" | "orcid",
-): Promise<{ ok: true; user: StoredUser } | { ok: false; response: Response }> {
+): Promise<Checked<{ user: StoredUser }>> {
   const { store } = c.get("deps");
   if (orcid === null || orcid === "") {
-    return {
-      ok: false,
-      response: oauthError(c, 400, "invalid_request", `Missing parameter: ${param}`),
-    };
+    return fail(oauthError(c, 400, "invalid_request", `Missing parameter: ${param}`));
   }
   const user = await store.getUser(orcid);
   if (!user) {
-    return {
-      ok: false,
-      response: oauthError(c, 400, "invalid_request", `Unknown ${param} iD: ${orcid}`),
-    };
+    return fail(oauthError(c, 400, "invalid_request", `Unknown ${param} iD: ${orcid}`));
   }
   const why = refusal(user, param);
-  if (why !== null) return { ok: false, response: oauthError(c, 400, "invalid_request", why) };
+  if (why !== null) return fail(oauthError(c, 400, "invalid_request", why));
   return { ok: true, user };
 }
 

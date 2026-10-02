@@ -2,8 +2,9 @@
 import type { Context } from "hono";
 import type { AppEnv } from "../app";
 import { unsupportedMediaType } from "../errors";
+import { type Checked, fail } from "./checked";
 
-export type FormResult = { ok: true; params: URLSearchParams } | { ok: false; response: Response };
+export type FormResult = Checked<{ params: URLSearchParams }>;
 
 /**
  * The body of a POST with `Content-Type: application/x-www-form-urlencoded` (parameters such as
@@ -15,7 +16,7 @@ export async function readForm(c: Context<AppEnv>): Promise<FormResult> {
   const contentType = c.req.header("content-type");
   const mediaType = contentType?.split(";")[0]?.trim().toLowerCase();
   if (c.req.method !== "POST" || mediaType !== "application/x-www-form-urlencoded") {
-    return { ok: false, response: unsupportedMediaType(c, contentType) };
+    return fail(unsupportedMediaType(c, contentType));
   }
   return { ok: true, params: new URLSearchParams(await c.req.text()) };
 }

@@ -3,8 +3,9 @@ import type { Context } from "hono";
 import type { AppEnv } from "../app";
 import { oauthError } from "../errors";
 import type { StoredClient } from "../store/types";
+import { type Checked, fail } from "./checked";
 
-export type ClientAuth = { ok: true; client: StoredClient } | { ok: false; response: Response };
+export type ClientAuth = Checked<{ client: StoredClient }>;
 
 /** The id and secret of a well-formed `Authorization: Basic` header, or null. */
 function parseBasic(header: string): { id: string; secret: string } | null {
@@ -38,13 +39,13 @@ export async function authenticateClient(
   c: Context<AppEnv>,
   params: URLSearchParams,
 ): Promise<ClientAuth> {
-  const invalidClient = (): ClientAuth => ({
-    ok: false,
+  const invalidClient = (): ClientAuth =>
     // Observed on sandbox.orcid.org on 2026-10-01: 401, `error_description` before `error`.
-    response: oauthError(c, 401, "invalid_client", "Client authentication failed", {
-      descriptionFirst: true,
-    }),
-  });
+    fail(
+      oauthError(c, 401, "invalid_client", "Client authentication failed", {
+        descriptionFirst: true,
+      }),
+    );
 
   let clientId: string | null;
   let secret: string | null;
@@ -58,16 +59,10 @@ export async function authenticateClient(
     clientId = params.get("client_id");
     secret = params.get("client_secret");
     if (!clientId) {
-      return {
-        ok: false,
-        response: oauthError(c, 401, "invalid_request", "client_id is required"),
-      };
+      return fail(oauthError(c, 401, "invalid_request", "client_id is required"));
     }
     if (!secret) {
-      return {
-        ok: false,
-        response: oauthError(c, 401, "invalid_request", "client_secret is required"),
-      };
+      return fail(oauthError(c, 401, "invalid_request", "client_secret is required"));
     }
   }
 
