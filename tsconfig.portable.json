@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": [],
+    "lib": ["ES2023", "WebWorker"],
+    "skipLibCheck": true
+  },
+  "files": ["src/app.ts"],
+  "include": []
+}
