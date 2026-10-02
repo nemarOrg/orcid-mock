@@ -338,7 +338,7 @@ A day outlasts any test run and is still a real, finite lifetime.
 ### Userinfo
 
 `GET /oauth/userinfo` reads `Authorization: Bearer <access token>`.
-`POST /oauth/userinfo` reads an `access_token` form field first and then the header, and a form token that is no good does not hide a good header, as in ORCID's controller.
+`POST /oauth/userinfo` reads an `access_token` parameter first, from the query string or a form body (the query string wins, as a servlet's `getParameter` returns the first value), and then the header; a parameter that is no good does not hide a good header, as in ORCID's controller.
 The token must be a live access token with the `/authenticate` or the `openid` scope; `/read-limited` and `/read-public` tokens do not qualify.
 
 ```json

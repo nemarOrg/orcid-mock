@@ -707,6 +707,68 @@ describe("POST /oauth/userinfo", () => {
   });
 });
 
+describe("POST /oauth/userinfo token sources", () => {
+  const tokenFor = async (orcid: string) =>
+    (await obtainToken(server, { orcid, scope: "openid" })).access_token;
+
+  test("reads access_token from the query string, with or without a body", async () => {
+    const token = await tokenFor(ids.alder);
+    for (const init of [
+      {},
+      { headers: { "content-type": "application/json" }, body: "{}" },
+      {
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: "unrelated=1",
+      },
+    ]) {
+      const response = await fetch(`${server.baseUrl}/oauth/userinfo?access_token=${token}`, {
+        method: "POST",
+        ...init,
+      });
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe(userinfoText(ids.alder, ALDER_NAMES));
+    }
+  });
+
+  test("a query-string token comes before a form token, as a servlet's getParameter returns the first value", async () => {
+    const fromQuery = await tokenFor(ids.alder);
+    const fromForm = await tokenFor(ids.sennet);
+    const response = await fetch(`${server.baseUrl}/oauth/userinfo?access_token=${fromQuery}`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ access_token: fromForm }),
+    });
+    expect(await response.text()).toBe(userinfoText(ids.alder, ALDER_NAMES));
+  });
+
+  test("a bad query-string token falls through to the header, like a bad form token", async () => {
+    const good = await tokenFor(ids.alder);
+    const response = await fetch(
+      `${server.baseUrl}/oauth/userinfo?access_token=00000000-0000-4000-8000-000000000000`,
+      { method: "POST", headers: { authorization: `Bearer ${good}` } },
+    );
+    expect(response.status).toBe(200);
+  });
+
+  test("the form token comes before the header token, and each answers as its own user", async () => {
+    const fromForm = await tokenFor(ids.alder);
+    const fromHeader = await tokenFor(ids.sennet);
+    const response = await postUserinfo({
+      form: { access_token: fromForm },
+      headers: { authorization: `Bearer ${fromHeader}` },
+    });
+    expect(await response.text()).toBe(userinfoText(ids.alder, ALDER_NAMES));
+    // The other way round, to show the header is read at all.
+    const other = await postUserinfo({
+      form: { access_token: "00000000-0000-4000-8000-000000000000" },
+      headers: { authorization: `Bearer ${fromHeader}` },
+    });
+    expect(await other.text()).toBe(
+      userinfoText(ids.sennet, { name: null, family: null, given: "Sennet" }),
+    );
+  });
+});
+
 describe("userinfo refuses with ORCID's one 403", () => {
   /** Every way of presenting a token that must not work, as `[description, request]`. */
   async function refusals(): Promise<Array<[string, () => Promise<Response>]>> {

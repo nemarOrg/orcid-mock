@@ -42,28 +42,38 @@ function canReadUserinfo(token: TokenRecord): boolean {
 }
 
 /**
- * The `access_token` field of a POST's form body, which is the first place ORCID looks
- * (`request.getParameter("access_token")`, which a servlet fills only from a form-encoded body
- * here). Any other method or content type has none, and so does an empty value.
+ * The `access_token` parameter of a POST, which is the first place ORCID looks
+ * (`request.getParameter("access_token")`). A servlet's parameter set is the query string
+ * followed by the body, and `getParameter` returns the first value, so a query-string token wins
+ * over a form field; the body counts only when it is `application/x-www-form-urlencoded`
+ * (Jakarta Servlet 6.0, section 3.1, "HTTP Protocol Parameters":
+ * https://jakarta.ee/specifications/servlet/6.0/jakarta-servlet-spec-6.0; ORCID's web server is
+ * Tomcat 10.1, the Servlet 6.0 implementation, as the 415 page captured on sandbox.orcid.org on
+ * 2026-10-01 shows). A GET has no such parameter here: its handler reads the header alone. An
+ * empty value is no token.
  */
-async function formAccessToken(c: Ctx): Promise<string | null> {
+async function parameterAccessToken(c: Ctx): Promise<string | null> {
+  if (c.req.method !== "POST") return null;
   const mediaType = c.req.header("content-type")?.split(";")[0]?.trim().toLowerCase();
-  if (c.req.method !== "POST" || mediaType !== "application/x-www-form-urlencoded") return null;
-  const token = new URLSearchParams(await c.req.text()).get("access_token");
+  const fromForm =
+    mediaType === "application/x-www-form-urlencoded"
+      ? new URLSearchParams(await c.req.text()).get("access_token")
+      : null;
+  const token = c.req.query("access_token") ?? fromForm;
   return token === "" ? null : token;
 }
 
 /**
- * The user behind the first token that works. ORCID's POST handler tries the form token and, if
+ * The user behind the first token that works. ORCID's POST handler tries the parameter and, if
  * that gives no answer for any reason (absent, unknown, revoked, or without the scope), falls
- * through to the `Authorization` header, so a bad form token does not hide a good header:
+ * through to the `Authorization` header, so a bad parameter does not hide a good header:
  * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-web/src/main/java/org/orcid/frontend/web/controllers/OpenIDController.java#L93-L105
  * GET reads the header alone.
  * orcid-mock choice: a token whose user has been deleted is as invalid as an unknown one.
  */
 async function userForRequest(c: Ctx): Promise<StoredUser | null> {
   const { store } = c.get("deps");
-  for (const presented of [await formAccessToken(c), readBearerHeader(c)]) {
+  for (const presented of [await parameterAccessToken(c), readBearerHeader(c)]) {
     if (presented === null) continue;
     const checked = await checkAccessToken(store, presented);
     if (checked.kind !== "ok" || !canReadUserinfo(checked.token) || checked.token.orcid === null) {
