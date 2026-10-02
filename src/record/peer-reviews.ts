@@ -4,7 +4,7 @@ import type { StoredUser } from "../store/types";
 import { groupIdsJson, idsJson } from "./extid";
 import { groupItems } from "./groups";
 import type { Json, JsonObject } from "./json";
-import { peerReviewOrder } from "./order";
+import { compareCompletionDesc, peerReviewOrder } from "./order";
 import { canSee, type Viewer } from "./viewer";
 import {
   type Built,
@@ -62,8 +62,8 @@ function groupKey(reviewGroupId: string): JsonObject {
  * `/peer-reviews`, three levels: `group` holds the reviews of one review-group id (an exact,
  * case-sensitive match), `peer-review-group` inside it holds the reviews that share an external
  * id, and `peer-review-summary` inside that holds the summaries. The visible reviews come in the
- * database's order, latest completion date first (reviews with none last), which fixes the order
- * of the outer groups and of the inner groups and summaries within them; there is no
+ * database's order (see `peerReviewOrder`), which fixes the order of the outer groups and of the
+ * summaries; the inner groups are then ordered newest completion date first; there is no
  * display-index ordering. Every level has a `last-modified-date`, recomputed from what survives:
  * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/manager/v3/read_only/impl/PeerReviewManagerReadOnlyImpl.java#L170-L210
  * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/utils/v3/activities/PeerReviewGroupGenerator.java#L17-L55
@@ -84,8 +84,11 @@ export function peerReviews(user: StoredUser, viewer: Viewer): Built {
   }
 
   const groups = [...outer].map(([reviewGroupId, reviews]) => {
-    const inner = groupItems(reviews, (review) => review.external_ids, "normalized").map(
-      (group) => {
+    const inner = groupItems(reviews, (review) => review.external_ids, "normalized")
+      .sort((a, b) =>
+        compareCompletionDesc(a.members[0] as StoredReview, b.members[0] as StoredReview),
+      )
+      .map((group) => {
         const lastMs = maxMs(group.members.map((review) => review.modified_ms));
         return {
           lastMs,
@@ -95,8 +98,7 @@ export function peerReviews(user: StoredUser, viewer: Viewer): Built {
             "peer-review-summary": group.members.map((review) => summary(user, viewer, review)),
           } as JsonObject,
         };
-      },
-    );
+      });
     const lastMs = maxMs(inner.map((group) => group.lastMs));
     return {
       lastMs,

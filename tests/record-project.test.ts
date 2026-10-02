@@ -162,12 +162,14 @@ describe("a group's date is the latest of its summaries, and the container's the
     const built = peerReviews(user, PUBLIC);
     type Inner = Record<string, unknown>;
     const outer = (built.json as { group: Array<{ "peer-review-group": Inner[] } & Inner> }).group;
-    // issn:1111-1111 holds 3401+3402 (dates 2000, 5000) and 3403 (3000).
-    const group1111 = outer[1];
+    // issn:1111-1111 holds 3401+3402 (dates 2000, 5000), 3409 (the stamp 1000), and 3403 (3000),
+    // fourth in the database's order.
+    const group1111 = outer[3];
     expect(group1111).toBeDefined();
     expect(dateOf(group1111)).toEqual({ value: 5000 });
     expect(group1111?.["peer-review-group"].map(dateOf)).toEqual([
       { value: 5000 },
+      { value: 1000 },
       { value: 3000 },
     ]);
     expect(dateOf(built.json)).toEqual({ value: 5000 });

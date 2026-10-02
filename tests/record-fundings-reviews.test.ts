@@ -311,17 +311,21 @@ describe("peer reviews", () => {
         }
       ).json.group;
 
-    test("outer groups by review-group id, newest completion first; inner groups by shared id", async () => {
-      // Sorted by completion date, newest first: 3404, 3401, 3402, 3403, then 3405 (no date).
+    test("outer groups follow the database's order, nulls first; inner groups are newest first", async () => {
+      // PostgreSQL puts NULLs first in a descending sort, so the order of the list is: 3405 (no
+      // date), 3404 (2024-02-02), then 2023 with no month, 3407 and 3409 (fixture order), then
+      // 3401 (2023-05-01), 3402 (2023-01-15), and 3403 (2022-12-01).
       const groups = await outer();
       expect(groups.map((g) => g["external-ids"]["external-id"][0]?.["external-id-value"])).toEqual(
-        ["issn:2222-2222", "issn:1111-1111", "issn:3333-3333"],
+        ["issn:3333-3333", "issn:2222-2222", "issn:6666-6666", "issn:1111-1111"],
       );
+      // Inside issn:1111-1111 the groups were formed 3409, then 3401 and 3402 (one id), then
+      // 3403; they are then ordered newest first, a missing month counting as zero.
       expect(
         groups.map((g) =>
           g["peer-review-group"].map((i) => i["peer-review-summary"].map((s) => s["put-code"])),
         ),
-      ).toEqual([[[3404]], [[3401, 3402], [3403]], [[3405]]]);
+      ).toEqual([[[3405]], [[3404]], [[3407]], [[3401, 3402], [3409], [3403]]]);
     });
 
     test("a hidden review's whole group is gone", async () => {

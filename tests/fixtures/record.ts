@@ -714,6 +714,9 @@ const grouping: FixtureUser = {
     review(3404, "issn:2222-2222", { completion_date: "2024-02-02", external_ids: [workId("C3")] }),
     review(3405, "issn:3333-3333", {}),
     review(3406, "issn:4444-4444", { completion_date: "2025-01-01", visibility: "private" }),
+    // Year-only dates: the database sorts the missing month first (PostgreSQL, descending).
+    review(3407, "issn:6666-6666", { completion_date: "2023", external_ids: [workId("D4")] }),
+    review(3409, "issn:1111-1111", { completion_date: "2023", external_ids: [workId("B3")] }),
   ],
 };
 

@@ -188,29 +188,59 @@ interface Completable {
   created_ms: number;
 }
 
-/** A completion date as year, month, day numbers, each -1 when missing (sorts lowest). */
-function completionTuple(date: string | null | undefined): [number, number, number] {
+/** A completion date as year, month, day numbers, with `missing` for a part it lacks. */
+function completionTuple(
+  date: string | null | undefined,
+  missing: number,
+): [number, number, number] {
   const parts = dateParts(date);
-  if (parts === null) return [-1, -1, -1];
+  if (parts === null) return [missing, missing, missing];
   return [
     Number(parts[0]),
-    parts[1] === undefined ? -1 : Number(parts[1]),
-    parts[2] === undefined ? -1 : Number(parts[2]),
+    parts[1] === undefined ? missing : Number(parts[1]),
+    parts[2] === undefined ? missing : Number(parts[2]),
   ];
 }
 
 /**
- * Peer reviews come from a query ordered `completionDate.year desc, month desc, day desc`, so the
- * latest review is first and a review with no completion date, which the database sorts lowest,
- * is last:
+ * Peer reviews come from a query ordered `completionDate.year desc, month desc, day desc`:
  * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-persistence/src/main/java/org/orcid/persistence/dao/impl/PeerReviewDaoImpl.java#L47
- * Ties keep the fixture's order.
+ * ORCID's database is PostgreSQL, which puts NULLs first in a descending order, so a review
+ * dated only `2004` comes before one dated `2004-06`, and a review with no completion date comes
+ * before all of them (source only; ORCID's behavior was not observed, and the Carberry record's
+ * one review has a full date):
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/properties/development.properties#L8
+ * The outer groups keep this order. Ties keep the fixture's order.
  */
 export function peerReviewOrder<T extends Completable>(items: readonly T[]): T[] {
   return items
-    .map((item) => ({ item, key: completionTuple(item.completion_date) }))
-    .sort((a, b) => b.key[0] - a.key[0] || b.key[1] - a.key[1] || b.key[2] - a.key[2])
+    .map((item) => ({ item, key: completionTuple(item.completion_date, Number.POSITIVE_INFINITY) }))
+    .sort(
+      (a, b) =>
+        cmpDesc(a.key[0], b.key[0]) || cmpDesc(a.key[1], b.key[1]) || cmpDesc(a.key[2], b.key[2]),
+    )
     .map(({ item }) => item);
+}
+
+/** Descending, with equal infinities equal (their difference is NaN). */
+function cmpDesc(a: number, b: number): number {
+  return a === b ? 0 : b > a ? 1 : -1;
+}
+
+/**
+ * How ORCID orders the groups of reviews that share an id inside one review group: newest
+ * completion date first, a missing part counting as zero and a review with no date last
+ * (`PeerReviewDuplicateGroupComparator`, comparing `FuzzyDate.compareTo`'s padded strings):
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/utils/v3/activities/PeerReviewDuplicateGroupComparator.java#L11-L24
+ * https://github.com/ORCID/orcid-model/blob/9592e2d3bde21a1edf703f26f8bc304448f886fb/src/main/java/org/orcid/jaxb/model/v3/release/common/FuzzyDate.java#L200-L213
+ */
+export function compareCompletionDesc(a: Completable, b: Completable): number {
+  const aDated = dateParts(a.completion_date) !== null;
+  const bDated = dateParts(b.completion_date) !== null;
+  if (!aDated || !bDated) return aDated === bDated ? 0 : aDated ? -1 : 1;
+  const ka = completionTuple(a.completion_date, 0);
+  const kb = completionTuple(b.completion_date, 0);
+  return cmpDesc(ka[0], kb[0]) || cmpDesc(ka[1], kb[1]) || cmpDesc(ka[2], kb[2]);
 }
 
 /**
