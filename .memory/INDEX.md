@@ -6,4 +6,4 @@ entry changes.
 
 | Entry | Type | Revalidate after | Hook |
 | --- | --- | --- | --- |
-| [update-rules-expected-drift](update-rules-expected-drift.md) | observation | 2026-11-01 | What `project-diff-rules` reports here that is intended, so an update-rules run can skip it |
+| [update-rules-expected-drift](update-rules-expected-drift.md) | observation | 2026-11-01 | What project-diff-rules reports here that is intended, so an update-rules run can skip it |

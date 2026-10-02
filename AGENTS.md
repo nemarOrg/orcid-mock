@@ -46,10 +46,14 @@ Project-specific rules:
 
 `.memory/` is the tracked, cross-agent store for durable operational observations:
 what cost someone time and will cost the next agent the same unless written down.
-Keep one fact per Markdown file with `name`, `description`, `type`, `recorded`, and `revalidate_after` frontmatter,
-and add a one-line hook to [`.memory/INDEX.md`](.memory/INDEX.md); [`.memory/README.md`](.memory/README.md) has the format.
+Keep one fact per Markdown file with `name`, `description`, `type`, and `recorded` frontmatter,
+plus `revalidate_after` when the fact depends on a changing surface,
+and add a row (entry link, type, revalidate-after date, one-line hook) to the table in [`.memory/INDEX.md`](.memory/INDEX.md).
+[`.memory/README.md`](.memory/README.md) has the format;
+it is a verbatim template copy and keeps its hard wrapping so `update-rules` reports it current.
 
-- `.context/decisions/` is binding, `.context/` is non-binding analysis and plans, and `.memory/` is non-binding observation.
+- `.context/decisions/` is binding, the rest of `.context/` is non-binding analysis and plans,
+  and `.memory/` is non-binding observation.
   Promote a memory to an ADR when it encodes a choice; never cite a memory as policy.
 - Correct or delete a memory when it becomes false.
 - Never store secrets, tokens, credentials, private transcripts, customer data, personal data, or anything about a named individual.
