@@ -1,7 +1,7 @@
 # orcid-mock as a container: one static-ish binary on a distroless base, no shell, no curl.
 #
 #   docker build -t orcid-mock .
-#   docker run --rm -p 9700:9700 -e PUBLIC_BASE_URL=http://localhost:9700 orcid-mock
+#   docker run --rm -p 127.0.0.1:9700:9700 -e PUBLIC_BASE_URL=http://localhost:9700 orcid-mock
 #
 # Both base images are pinned by digest (the multi-arch index, so amd64 and arm64 builds share
 # the pin); bump the digest and the tag together, and let the CI docker job prove the result.
@@ -29,11 +29,15 @@ RUN case "${TARGETARCH}" in \
 
 FROM ${RUNTIME_IMAGE}
 ARG VERSION=dev
+# The commit the image was built from; the release workflow compares it with the commit it is
+# running for before it will touch an existing tag.
+ARG REVISION=unknown
 LABEL org.opencontainers.image.title="orcid-mock" \
       org.opencontainers.image.description="An ephemeral mock of the ORCID OAuth, OpenID Connect, and public record API for tests and CI" \
       org.opencontainers.image.source="https://github.com/nemarOrg/orcid-mock" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.version="${VERSION}"
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}"
 COPY --from=build /out/orcid-mock /orcid-mock
 # The admin API is unauthenticated, so the binary binds loopback by default; inside a container
 # the container network is the boundary, so bind every interface. Set PUBLIC_BASE_URL too: the
