@@ -106,6 +106,125 @@ The Action needs a published image, so `uses: nemarOrg/orcid-mock@v1` works afte
 A deployed Worker is reachable from the internet and exposes the unauthenticated admin API, fixture passwords included, so `wrangler.toml` sets `workers_dev = false` and says to put an access gate in front of it before you route it anywhere.
 The hosted mode will run the same app inside a Durable Object per tenant.
 
+## Test helpers
+
+Helpers for tests that need a mock ORCID: a typed client for the admin API and the headless sign-in, a Testcontainers module that starts the image on a port it picks, Playwright fixtures, and a pytest plugin.
+They are separate packages in this repository, [`clients/node`](clients/node) (`@nemarorg/orcid-mock-testing` on npm) and [`clients/python`](clients/python) (`orcid-mock-testing` on PyPI, imported as `orcid_mock`), and carry the server's version, so the default image of a helper is the image of its own version ([ADR 0008](.context/decisions/0008-client-helpers.md)).
+Nothing is published until the first release, `1.0.0`.
+
+### The rules every helper follows
+
+- **`ORCID_MOCK_URL`.**
+  When it is set (the [GitHub Action](#as-a-github-action) sets it), the Playwright fixtures, `startOrConnect`, and the pytest fixtures use that running instance, start nothing, and never stop it.
+  Handing them a users file is an error then, because a running instance's users cannot be set from outside: load them where it starts.
+  The container classes themselves (`OrcidMockContainer`) always start a container.
+- **`ORCID_MOCK_IMAGE`.**
+  Otherwise a helper starts a container from this image, and the default is `ghcr.io/nemarorg/orcid-mock:<the helper's version>`.
+  An explicit option (a constructor argument, `withImage`, `--orcid-mock-image`) wins over the variable, which wins over the default.
+- **Starting a container.**
+  The helper picks a free host port, binds the container's port 9700 to it on `127.0.0.1` only, and starts the image with `PUBLIC_BASE_URL=http://localhost:<port>` and `HOST=0.0.0.0`, because the mock never derives its address from the request.
+  It waits for the readiness line on stdout, then for the published port to answer, and copies a users file into the container (mode 0644, so the file's own permissions do not matter).
+  If the start fails, the error carries the tail of the container's output, which is where the server says why it exited.
+  The Docker daemon must be on the machine that runs the tests.
+- **Reset.**
+  `reset()` restores the loaded file: users, clients, counters, and the clock, and clears codes, tokens, and sessions.
+  A client registered with `putClient` is dropped too, so register it again after a reset.
+- **Sign-in.**
+  `signIn` is the headless sequence of [the round trip above](#a-headless-round-trip): `GET /oauth/authorize` with `login_as` without following the redirect, the code from `Location`, then `POST /oauth/token`.
+  By default it uses the starter file's public client and `/authenticate`; any non-2xx answer is an `OrcidMockError` carrying the status and body.
+
+### Testcontainers for Node
+
+The package ships TypeScript source, like the server, so it needs Bun 1.4 or later.
+`testcontainers` and `@playwright/test` are optional peer dependencies, each needed only by the entry point that uses it.
+
+```bash
+bun add -d @nemarorg/orcid-mock-testing testcontainers
+```
+
+```ts
+import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import {
+  OrcidMockContainer,
+  type StartedOrcidMockContainer,
+} from "@nemarorg/orcid-mock-testing/testcontainers";
+
+let mock: StartedOrcidMockContainer;
+
+beforeAll(async () => {
+  mock = await new OrcidMockContainer()
+    .withUsers("fixtures/users.json") // optional: the starter users otherwise
+    .start();
+}, 120_000);
+afterAll(() => mock.stop());
+beforeEach(() => mock.client.reset());
+
+test("a user can sign in", async () => {
+  const [alder] = await mock.client.users();
+  const token = await mock.client.signIn({ orcid: alder.orcid });
+  expect(token.orcid).toBe(alder.orcid);
+  // Point the application under test at mock.baseUrl.
+});
+```
+
+`OrcidMockClient` (from `@nemarorg/orcid-mock-testing/client`, no dependencies) has `health`, `reset`, `users`, `user`, `createUser`, `putUser`, `deleteUser`, `putClient`, `advanceClock`, and `signIn`.
+`startOrConnect()` from the Testcontainers entry point does what the fixtures below do: it uses `ORCID_MOCK_URL` when that is set and starts a container otherwise.
+
+### Playwright
+
+```ts
+// tests/signin.spec.ts
+import { expect, test } from "@nemarorg/orcid-mock-testing/playwright";
+
+test("signs in with ORCID", async ({ page, orcidMock, signInAs }) => {
+  await orcidMock.client.putClient("APP-MY-APP", {
+    client_secret: "my-secret",
+    redirect_uris: ["http://localhost:5173/auth/callback"],
+  });
+  const [alder] = await orcidMock.client.users();
+
+  await page.goto("http://localhost:5173/login"); // the app redirects to the mock
+  await signInAs(page, alder.orcid); // waits for the consent page, clicks that user's button
+  await expect(page.getByText(alder.orcid)).toBeVisible();
+});
+```
+
+`orcidMock` is worker-scoped (one mock per worker, from `ORCID_MOCK_URL` or a container) and has `baseUrl` and `client`; `signInAs(page, iD)` waits until the page is on `<baseUrl>/oauth/authorize`, clicks the button whose accessible name holds the iD, and throws with the mock's answer if it refuses the sign-in (a locked user).
+Set the container's image and users with `test.use({ orcidMockOptions: { image, users } })`.
+`signInAs(page, iD, { baseUrl })` is also exported for a plain Playwright `Page`.
+
+- **Run Playwright under Bun.**
+  `bun --bun x playwright test` (or `bun run --bun playwright test`) runs the runner and the fixtures on Bun 1.4.2, tested with `@playwright/test` 1.63.
+  Without `--bun` the runner runs on Node, which refuses to load TypeScript from `node_modules`, so an installed copy of this package does not load there ([ADR 0008](.context/decisions/0008-client-helpers.md)).
+- **An application that must know the mock's address at start-up** (a `webServer` entry in `playwright.config.ts`) cannot wait for a worker's random port: start the mock yourself on a fixed port and set `ORCID_MOCK_URL` to it, as the [GitHub Action](#as-a-github-action) does.
+
+### pytest
+
+```bash
+uv add --dev orcid-mock-testing
+```
+
+The plugin registers itself with pytest on install (the `pytest11` entry point) and needs Python 3.11 or later.
+
+```python
+# tests/test_signin.py
+def test_a_user_can_sign_in(orcid_mock_reset):
+    alder = orcid_mock_reset.users()[0]
+    token = orcid_mock_reset.sign_in(alder["orcid"])
+    assert token["orcid"] == alder["orcid"]
+```
+
+`orcid_mock` is a session-scoped fixture that yields the `OrcidMockClient` (`base_url` is the address to give the application under test); `orcid_mock_reset` is function-scoped, resets before the test, and yields the same client.
+Choose the container with `pytest --orcid-mock-image ghcr.io/nemarorg/orcid-mock:1 --orcid-mock-users fixtures/users.json`.
+Without the plugin, `orcid_mock.container.OrcidMockContainer` is a `testcontainers` `DockerContainer`:
+
+```python
+from orcid_mock.container import OrcidMockContainer
+
+with OrcidMockContainer(users="fixtures/users.json") as mock:
+    token = mock.client.sign_in(mock.client.users()[0]["orcid"])
+```
+
 ## Run it from a checkout
 
 Bun only; there is nothing to build.
@@ -501,17 +620,19 @@ Point your application at it with the same variables you use for the sandbox
 
 For maintainers.
 Nothing is published until a version tag is pushed.
-One version, from `package.json`, numbers the npm package, the image, the binaries, and (as its major) the Action.
+One version, from `package.json`, numbers the npm package, the image, the binaries, the two [test helpers](#test-helpers), and (as its major) the Action.
 
-1. Bump `version` in `package.json` in a pull request and merge it to `main`.
+1. Bump `version` in `package.json`, `clients/node/package.json`, and `clients/python/pyproject.toml` to the same string, in a pull request, and merge it to `main`.
+   The workflow refuses a tag that differs from any of the three, and the helpers' tests fail until the three agree.
    The first release is `1.0.0`: the Action defaults to the image tag `1`, and the workflow refuses a stable release whose major differs from that default in `action.yml`.
    A prerelease is `1.2.3-rc.1`: it gets only its exact image tag, the `next` tag on npm, a prerelease GitHub Release, and no change to any floating tag.
+   Write it `-alpha.N`, `-beta.N`, or `-rc.N` and nothing else, because the Python helper needs a form that Python Enhancement Proposal (PEP) 440 can spell (`1.2.3-rc.1` is `1.2.3rc1` on PyPI).
 2. Tag the merge commit and push the tag: `git tag v1.2.3 && git push origin v1.2.3`.
 3. The [Release workflow](.github/workflows/release.yml) then works in this order, so that a failure leaves nothing public and a re-run converges:
    it refuses a tag that differs from `package.json` or is not on `main`, runs lint, type checking, and the tests, and checks the npm token (`bun pm whoami`);
-   it builds every binary once and runs each on a runner of its kind (Linux x64 and arm64, macOS arm64, Windows x64);
+   it builds every binary once and runs each on a runner of its kind (Linux x64 and arm64, macOS arm64, Windows x64), and builds the Python helper's wheel and source distribution in a job that holds no credentials;
    it builds the image, smoke-tests the amd64 image and runs the arm64 image once, and only then pushes the exact tag `1.2.3`, tests what it pushed, and attests it;
-   it publishes `@nemarorg/orcid-mock` to npm, unless that version is already there;
+   it publishes `@nemarorg/orcid-mock` and `@nemarorg/orcid-mock-testing` to npm, each unless that version is already there, and `orcid-mock-testing` to PyPI through trusted publishing (the `pypi` job only uploads the files the earlier job built, and skips a file the index already has);
    it creates the GitHub Release if it does not exist and uploads the binaries and `SHA256SUMS` (replacing any earlier upload);
    and last it moves `latest`, `1`, and `1.2`, and the `v1` tag that `uses: nemarOrg/orcid-mock@v1` follows.
 4. Floating tags only move forward: each moves only when the released version is the highest stable version in its scope (`latest` against all, `1` against 1.x.y, `1.2` against 1.2.z), so a patch for an old line never takes `latest`.
@@ -519,8 +640,8 @@ One version, from `package.json`, numbers the npm package, the image, the binari
 5. After a partial failure, re-run the workflow's failed jobs (or all of them); each step skips what is already done.
 6. To rehearse, run the workflow by hand (Actions, Release, Run workflow) with "dry-run" on, from any branch.
    It does every build and check, and does not push the image, publish, create the release, or move a tag.
-   A dry run does not use the `release` environment, so it cannot check the npm token, and says so.
-7. A real release asks the environment's reviewer twice: before the preflight job (the token check) and before the npm publish, since each job that uses an environment is approved on its own.
+   A dry run does not use the `release` or `pypi` environments, so it cannot check the npm token or the trusted publisher, and says so.
+7. A real release asks the `release` environment's reviewer twice: before the preflight job (the token check) and before the npm publish, since each job that uses an environment is approved on its own; and it asks the `pypi` environment's reviewers, if it has any, before the PyPI publish.
 
 ### One-time setup, by the repository owner
 
@@ -528,7 +649,7 @@ These are repository and registry settings; no workflow or pull request creates 
 
 - **npm.**
   The `@nemarorg` scope must exist.
-  Create a granular access token ([npm's documentation](https://docs.npmjs.com/about-access-tokens): classic tokens were revoked in November 2025, so a granular token is the only kind) with read and write permission on `@nemarorg/orcid-mock` or the scope, and "Bypass 2FA" checked, because nobody is present to enter a one-time password in a workflow.
+  Create a granular access token ([npm's documentation](https://docs.npmjs.com/about-access-tokens): classic tokens were revoked in November 2025, so a granular token is the only kind) with read and write permission on `@nemarorg/orcid-mock` and `@nemarorg/orcid-mock-testing`, or on the scope (a package that does not exist yet cannot be named, so a scope-wide token is the simple choice before the first release), and "Bypass 2FA" checked, because nobody is present to enter a one-time password in a workflow.
   A granular token that can write is capped at 90 days ([GitHub changelog, 5 November 2025](https://github.blog/changelog/2025-11-05-npm-security-update-classic-token-creation-disabled-and-granular-token-changes/)), so put the expiry date in your calendar and replace the secret before it passes; the workflow's `bun pm whoami` check fails the release early, before anything is public, when the token has expired.
   Be aware that npm's documentation says the ability to publish directly with a bypass-2FA token is scheduled for removal in January 2027, in favor of trusted publishing (OpenID Connect) or stage-only tokens, and that trusted publishing needs the npm command line, not `bun publish` ([oven-sh/bun#22423](https://github.com/oven-sh/bun/issues/22423)).
   The publish job will need rework before then; [ADR 0005](.context/decisions/0005-distribution-and-release.md) records this.
@@ -537,6 +658,13 @@ These are repository and registry settings; no workflow or pull request creates 
   Turn on "Required reviewers" and add yourself, so every real release waits for an approval.
   Under "Environment secrets", add `NPM_TOKEN` with the token (an environment secret, not a repository secret).
   Only the `preflight` and `npm` jobs use the environment, and only on real runs.
+- **PyPI.**
+  The name `orcid-mock-testing` was free on PyPI on 2026-10-01.
+  The first release creates the project, through a pending trusted publisher, so create that before tagging: sign in at pypi.org, open Your account, Publishing, and add a pending publisher for the project `orcid-mock-testing` with owner `nemarOrg`, repository `orcid-mock`, workflow `release.yml`, and environment `pypi` ([PyPI's documentation](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)).
+  There is no token to create or rotate; the `pypi` job's OpenID Connect identity is the credential.
+- **GitHub environment `pypi`** (Settings, Environments, New environment).
+  Under "Deployment branches and tags", choose "Selected branches and tags" and add the tag rule `v*.*.*`, as for `release`; "Required reviewers" is optional, and it needs no secret.
+  The environment's name must match the one in the pending publisher.
 - **Tag ruleset** (Settings, Rules, Rulesets, New ruleset, New tag ruleset).
   Name it `release tags`, set enforcement to Active, and target tags matching `v*`.
   Turn on "Restrict creations", "Restrict updates", and "Restrict deletions".
@@ -546,6 +674,32 @@ These are repository and registry settings; no workflow or pull request creates 
 - **Package visibility.**
   After the first image push, set the `orcid-mock` package to public in the organization's package settings on GitHub, and confirm it is linked to this repository (the image's `org.opencontainers.image.source` label does that).
   A new package starts private, and neither `docker pull` nor the Action works for anyone else until it is public.
+
+## Contributing
+
+Bun for JavaScript and TypeScript and `uv` for Python, never `npm`, `npx`, or `pip`.
+Each gate is green before a commit:
+
+| Where | Gates |
+|---|---|
+| the server (repository root) | `bun install`, `bun run lint`, `bun run typecheck`, `bun run test` (which runs only `tests/`; the helpers have their own) |
+| the Node helper (`clients/node`) | `bun install`, `bun run lint`, `bun run typecheck`, `bun run test` |
+| the Python helper (`clients/python`) | `uv sync`, `uv run ruff check`, `uv run ruff format --check`, `uv run ty check`, `uv run pytest --cov` |
+
+The helpers' tests start a real mock, so they need Docker, a local build of the image, and (for the Node helper's browser tests) Chromium:
+
+```bash
+docker build -t orcid-mock:local .
+export ORCID_MOCK_IMAGE=orcid-mock:local
+(cd clients/node && bun x playwright install chromium)
+```
+
+They also start the server from this checkout (`bun run src/main.ts serve --port 0`) to test `ORCID_MOCK_URL` mode, so run `bun install` at the repository root first.
+Python files are linted and formatted by a pre-commit hook that runs `ruff` through the Python helper's project on the staged files only; enable it once per clone with:
+
+```bash
+git config core.hooksPath .githooks
+```
 
 ## License
 

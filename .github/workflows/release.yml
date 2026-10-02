@@ -515,6 +515,7 @@ jobs:
           if [ "${DRY_RUN}" = true ]; then
             # A dry run uses no environment, so it cannot be a trusted publisher: it only checks
             # the files.
+            echo "::notice title=Dry run::A dry run does not use the pypi environment, so whether PyPI trusts this workflow is NOT checked. The files are."
             uv publish --dry-run --trusted-publishing never dist/*
             exit 0
           fi
