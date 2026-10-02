@@ -16,8 +16,8 @@ on:
         default: sandbox
       image:
         description: >-
-          Image for the services-smoke job, with its tag. It can pass only once the image is
-          published and its package is public (the first release is 1.0.0).
+          Image for the services-smoke job, with its tag. It can pass only against a published image
+          whose package is public.
         default: ghcr.io/nemarorg/orcid-mock:1
   schedule:
     # Mondays, early morning UTC: a sandbox that changes is found within a week.
@@ -36,8 +36,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # The sandbox client's secrets live in this environment, which the owner restricts to main
-    # (README, Conformance), so a branch cannot read them. Repository secrets of the same names
-    # work until it exists.
+    # (RELEASING.md, owner checklist), so a branch cannot read them. Repository secrets of the same
+    # names work until it exists.
     environment: conformance
     permissions:
       contents: read
@@ -60,7 +60,7 @@ jobs:
           if [ "${#missing[@]}" -gt 0 ]; then
             printf -v list '%s, ' "${missing[@]}"
             list="${list%, }"
-            echo "::warning title=Sandbox conformance skipped::Not run. Missing: ${list}. See the Conformance section of the README."
+            echo "::warning title=Sandbox conformance skipped::Not run. Missing: ${list}. See the owner checklist in RELEASING.md."
             {
               echo "### Sandbox conformance skipped"
               echo
@@ -117,7 +117,9 @@ jobs:
       contents: read
     services:
       orcid:
-        image: ${{ inputs.image }}
+        # Mutable on purpose: the input names the published image or a candidate tag to smoke-test by
+        # hand, and this job holds no secrets.
+        image: ${{ inputs.image }} # zizmor: ignore[unpinned-images]
         ports:
           - 9700:9700
         env:

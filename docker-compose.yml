@@ -10,9 +10,10 @@
 # ORCID_MOCK_IMAGE overrides the image, for example to try a local build.
 services:
   orcid-mock:
-    image: ${ORCID_MOCK_IMAGE:-ghcr.io/nemarorg/orcid-mock:latest}
+    image: ${ORCID_MOCK_IMAGE:-ghcr.io/nemarorg/orcid-mock:1}
     ports:
-      # Loopback only: the admin API is unauthenticated and serves the fixture passwords.
+      # Loopback only: the admin API is unauthenticated, returns every user and client secret, and
+      # lets anyone who reaches it reset or rewrite all state.
       - "127.0.0.1:9700:9700"
     environment:
       PUBLIC_BASE_URL: http://localhost:9700

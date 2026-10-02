@@ -1,4 +1,4 @@
-# ADR 0003: Fixture schema and iD minting
+# Architecture Decision Record (ADR) 0003: Fixture schema and iD minting
 
 **Status:** accepted
 **Date:** 2026-10-01
@@ -22,7 +22,7 @@ Rules a JSON Schema cannot express (checksums, duplicates, exactly one primary e
 **Minted iDs live in the `0009-9` block.**
 `MINT_PREFIX` is `00099`, so a minted iD reads `0009-9ddd-dddd-ddd` plus the check character.
 That is above the `0009` range ORCID documents, and inside the `0009` prefix ORCID uses.
-Whether ISNI or ORCID has allocated anything in `0009-9...` is unknown, so the mock cannot promise that a minted iD is nobody's; the residual collision risk is accepted for a test tool, and the `0009-9` prefix makes a mock iD recognizable at a glance.
+Whether the International Standard Name Identifier (ISNI) system or ORCID has allocated anything in `0009-9...` is unknown, so the mock cannot promise that a minted iD is nobody's; the residual collision risk is accepted for a test tool, and the `0009-9` prefix makes a mock iD recognizable at a glance.
 Minting is deterministic: a 53-bit synchronous hash (cyrb53) of the user's primary email and names, with the attempt number bumped on collision, so adding a user never changes anyone else's iD.
 Runtime creates through the admin API hash `seq:<n>` from the store's counter instead.
 Fixture iDs from any block are accepted, as long as the checksum is right.

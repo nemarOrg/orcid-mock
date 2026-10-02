@@ -1,5 +1,7 @@
 # Continuous Rule Improvement
 
+**Project note:** learnings go to `.memory/` and to the Architecture Decision Records in `.context/decisions/`, not to `.context/scratch_history.md`, which this repository does not keep.
+
 ## Philosophy: Rules Grow from Understanding
 **Think deeply:** Why did this pattern emerge? What problem does it solve?
 **Learn actively:** Every project teaches something - capture it.

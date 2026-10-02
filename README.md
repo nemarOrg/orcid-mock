@@ -1,18 +1,84 @@
 # orcid-mock
 
-An ephemeral mock of the Open Researcher and Contributor ID (ORCID) service for tests and continuous integration:
+An ephemeral mock of the Open Researcher and Contributor ID (ORCID) service for tests and continuous integration (CI):
 the OAuth 2.0 authorization-code flow, OpenID Connect, and the public record API,
 with users defined in a JSON file and all state kept in memory.
 
-Status: the first minimum viable product (MVP1) is complete (epic #1, read-only):
-the admin API, OAuth, OpenID Connect, and the public record API are built, and [a conformance suite](#conformance) holds the mock to ORCID's sandbox and drives a brand-new sign-up end to end in CI.
-1.0.0 will be the first release, published once the one-time owner setup under [Releasing](#releasing) is done.
+Status: the first minimum viable product (MVP1) is complete ([epic #1](https://github.com/nemarOrg/orcid-mock/issues/1)); releases are listed on the [GitHub Releases](https://github.com/nemarOrg/orcid-mock/releases) page.
 See [`.context/plan.md`](.context/plan.md) for the roadmap and [`.context/research.md`](.context/research.md) for the findings behind it.
+
+## Contents
+
+- [Quick start](#quick-start)
+- [What it does](#what-it-does) and [Why](#why)
+- [Install and run](#install-and-run): `bunx`, a container, a binary, a GitHub Action, a `services:` container, and the Cloudflare Worker entry
+- [Run it from a checkout](#run-it-from-a-checkout): the settings, the users file, and the admin API
+- [Test helpers](#test-helpers) for Node and Python
+- [OAuth](#oauth), [OpenID Connect](#openid-connect), and the [Record API](#record-api)
+- [Conformance](#conformance): one suite against the mock and ORCID's sandbox
+- [What comes after MVP1](#what-comes-after-mvp1), [Contributing](#contributing), and [License](#license)
+
+## Quick start
+
+Run the mock with its starter users, either from the npm package or from a checkout of this repository (both need Bun 1.4 or later, and each runs in the foreground, so use one and leave it running).
+From the package:
+
+```bash
+bunx @nemarorg/orcid-mock
+```
+
+Or from a checkout:
+
+```bash
+bun install && bun run src/main.ts
+```
+
+It listens on `http://127.0.0.1:9700` and prints one line on stdout when it is ready.
+From another terminal, check that it is up:
+
+```bash
+curl -s http://127.0.0.1:9700/__admin/health
+# {"status":"ok","users":3,"clients":2}
+```
+
+Then sign in as a user with no browser, in three commands.
+`login_as` skips the sign-in page, so the redirect's `Location` header carries the code, and the code is exchanged for tokens ([the same round trip, explained](#a-headless-round-trip)):
+
+```bash
+BASE=http://127.0.0.1:9700
+ORCID=$(curl -s $BASE/__admin/users | grep -o '"orcid":"[^"]*"' | head -1 | cut -d'"' -f4)
+CODE=$(curl -si "$BASE/oauth/authorize?client_id=APP-ORCIDMOCK000001&response_type=code&scope=/authenticate&redirect_uri=http://localhost:3000/callback&login_as=$ORCID" | sed -n 's/^[Ll]ocation:.*[?&]code=\([0-9A-Za-z]*\).*/\1/p')
+curl -s -X POST $BASE/oauth/token -d grant_type=authorization_code -d code=$CODE -d client_id=APP-ORCIDMOCK000001 -d client_secret=orcid-mock-secret --data-urlencode redirect_uri=http://localhost:3000/callback
+# {"access_token":"82b915f4-...","token_type":"bearer","refresh_token":"d6e12d69-...","expires_in":631138518,"scope":"/authenticate","name":"A. Fennimore","orcid":"0009-9814-3544-3504"}
+```
+
+A test does the same with one call, `signIn` (`sign_in` in Python), from the [Node and Python helpers](#test-helpers).
+A container, a binary, and a GitHub Action run the same server: see [Install and run](#install-and-run).
+
+## What it does
+
+- The authorization-code flow with a sign-in page that lists the fixture users, a `login_as` shortcut for headless drivers, ORCID's redirect matching, and an unmodified `state` round trip ([OAuth](#oauth)).
+- The token endpoint with ORCID's non-standard response (`orcid` and `name` alongside the access token), refresh and client-credentials grants, revocation, and ORCID's error bodies, status codes, and key order.
+- OpenID Connect: a discovery document byte-identical to ORCID's apart from the base URL, the JSON Web Key Set (JWKS), an RS256 (RSA with SHA-256) identity (ID) token whose `sub` is the iD, and userinfo ([OpenID Connect](#openid-connect)).
+- The public v3.0 record reads, projected from the users file with ORCID's wire shapes, per-item visibility, grouping and ordering, `Accept` negotiation, record states, and error codes ([Record API](#record-api)).
+  Search, Extensible Markup Language (XML), and the summary and citation variants are not served.
+- Checksum-valid iDs (ISO/IEC 7064 MOD 11-2) minted for fixtures, and an admin API to reset the server, add, replace, and remove users, register clients, and move the clock.
+- Five ways to run it (`bunx`, a container, a binary, a GitHub Action, a `services:` container) and client helpers for Node (Testcontainers, Playwright) and Python (Testcontainers, pytest) ([Install and run](#install-and-run), [Test helpers](#test-helpers)).
+- A [conformance suite](#conformance) that holds the mock to ORCID's sandbox and drives a brand-new sign-up end to end in CI, with no browser.
+
+## Why
+
+ORCID's sandbox is shared, cannot be reset from an API, delivers mail only to one throwaway provider, and needs real accounts,
+so nobody can drive a brand-new ORCID sign-up from an automated test.
+No open-source project mocks ORCID's identity layer and its record API together:
+ORCID retired its own mock in 2012, and the generic OAuth and OpenID Connect mocks would still need the whole ORCID surface built on top.
+It was built first for the Neuroelectromagnetic Data Archive and Tools Resource (NEMAR), whose command-line sign-in goes through ORCID, and it is meant for anyone with the same problem.
 
 ## Install and run
 
-One codebase, four ways to run it, in order of how much you control.
-All four take the same settings (a users file, `PUBLIC_BASE_URL`, and the admin API), described under [Run it from a checkout](#run-it-from-a-checkout).
+One codebase runs as a `bunx` command, a container, a binary, a GitHub Action, and a `services:` container;
+a sixth section describes the Cloudflare Worker entry, which is a portability check and not a way to host the mock.
+All of them take the same settings (a users file, `PUBLIC_BASE_URL`, and the admin API), described under [Run it from a checkout](#run-it-from-a-checkout).
 
 ### With `bunx`
 
@@ -24,7 +90,8 @@ bunx @nemarorg/orcid-mock fixture --out users.json     # write the starter users
 bunx @nemarorg/orcid-mock --users users.json           # serve your own file
 ```
 
-The package also exports `createApp` from `@nemarorg/orcid-mock` and `createMockApp` (a users file in, an app and its store out) from `@nemarorg/orcid-mock/bootstrap`, both portable (Web APIs only, for a Worker or any `fetch` host), `startServer` from `@nemarorg/orcid-mock/server` (Bun only), and the users-file JSON Schema and example as `@nemarorg/orcid-mock/fixtures/users.schema.json` and `.../users.example.json`.
+The package also exports `createApp` from `@nemarorg/orcid-mock` and `createMockApp` (a users file in, an app and its store out) from `@nemarorg/orcid-mock/bootstrap`, both portable (Web APIs only, for a Worker or any `fetch` host),
+`startServer` from `@nemarorg/orcid-mock/server` (Bun only), and the users-file JSON Schema and example as `@nemarorg/orcid-mock/fixtures/users.schema.json` and `.../users.example.json`.
 
 ### As a container
 
@@ -33,14 +100,15 @@ docker run --rm -p 127.0.0.1:9700:9700 \
   -e PUBLIC_BASE_URL=http://localhost:9700 \
   -e USERS_FILE=/fixtures/users.json \
   -v "$PWD/users.json:/fixtures/users.json:ro" \
-  ghcr.io/nemarorg/orcid-mock:latest
+  ghcr.io/nemarorg/orcid-mock:1
 ```
 
 - **Set `PUBLIC_BASE_URL`.**
   Inside a container the default would be `http://127.0.0.1:9700`, which is not an address a caller outside the container can use, and every URL the mock emits (the issuer, redirects, links) is built from it.
   Set it to the address your application uses to reach the mock.
 - **Publish the port on loopback** (`-p 127.0.0.1:9700:9700`), as above.
-  A bare `-p 9700:9700` listens on every interface of the host, and the admin API behind it has no authentication and returns the fixture passwords.
+  A bare `-p 9700:9700` listens on every interface of the host, and the admin API behind it has no authentication:
+  it returns every user in the file and every client secret, and lets anyone who can reach it reset or rewrite all state.
 - Tags: `1.2.3`, `1.2`, `1`, and `latest`; a prerelease such as `1.2.3-rc.1` gets only its exact tag.
   The image is multi-arch (`linux/amd64` and `linux/arm64`), runs as `nonroot` on a distroless base with no shell, and holds one file, `/orcid-mock`.
 - The image sets `HOST=0.0.0.0` and `PORT=9700`, since the container's network is the boundary.
@@ -96,11 +164,9 @@ Then it exports `ORCID_API_BASE`, `ORCID_PUB_API_BASE`, and `ORCID_MOCK_URL` (al
 Linux runners only, because the image is a Linux container.
 A composite action has no post step, so the container is not stopped by the action: it lives until the job ends, and `docker rm -f "${{ steps.<id>.outputs.container-id }}"` stops it sooner.
 Reset between tests with `curl -X POST "$ORCID_MOCK_URL/__admin/reset"`.
-The Action needs a published image, so `uses: nemarOrg/orcid-mock@v1` works after the first release, which will be `1.0.0`.
+The Action runs the published image, so the runner must be able to reach `ghcr.io`.
 
 ### As a `services:` container
-
-This also needs the published image, so it works after the first release.
 
 ```yaml
 services:
@@ -116,145 +182,15 @@ The image defines its own health check, `/orcid-mock health`, and a runner waits
 An `options: --health-cmd` is not needed, and none could run the real command: Docker runs that form through `/bin/sh`, which the image does not have.
 A `services:` container starts before your repository is checked out, so it can serve only the bundled starter users; to serve your own file, use [the Action](#as-a-github-action) after `actions/checkout`.
 
-Point your application at it with the same variables you use for the sandbox
-(for NEMAR: `ORCID_API_BASE` and `ORCID_PUB_API_BASE`).
+Point your application at it with the same variables you use for the sandbox (for NEMAR: `ORCID_API_BASE` and `ORCID_PUB_API_BASE`).
 
 ### The Cloudflare Worker entry
 
 `src/worker.ts` and [`wrangler.toml`](wrangler.toml) are a smoke test that the portable layer runs in a real Workers runtime, not a way to host the mock: it serves the starter users from memory, one store per isolate, with nothing durable and no users file.
 `PUBLIC_BASE_URL` must be set as a binding (it is never taken from the request), or every request answers 500 saying so.
 `bun x wrangler deploy --dry-run --outdir dist/worker` bundles it, and `tests/worker.test.ts` runs that bundle in workerd.
-A deployed Worker is reachable from the internet and exposes the unauthenticated admin API, fixture passwords included, so `wrangler.toml` sets `workers_dev = false` and says to put an access gate in front of it before you route it anywhere.
-The hosted mode will run the same app inside a Durable Object per tenant.
-
-## Test helpers
-
-Helpers for tests that need a mock ORCID: a typed client for the admin API and the headless sign-in, a Testcontainers module that starts the image on a port it picks, Playwright fixtures, and a pytest plugin.
-They are separate packages in this repository, [`clients/node`](clients/node) (`@nemarorg/orcid-mock-testing` on npm) and [`clients/python`](clients/python) (`orcid-mock-testing` on the Python Package Index (PyPI), imported as `orcid_mock`), and carry the server's version, so the default image of a helper is the image of its own version ([ADR 0008](.context/decisions/0008-client-helpers.md)).
-Nothing is published until the first release, `1.0.0`.
-
-### The rules every helper follows
-
-- **`ORCID_MOCK_URL`.**
-  When it is set (the [GitHub Action](#as-a-github-action) sets it), the Playwright fixtures, `startOrConnect`, and the pytest fixtures use that running instance, start nothing, and never stop it.
-  Handing them a users file is an error then, because a running instance's users cannot be set from outside: load them where it starts.
-  The container classes themselves (`OrcidMockContainer`) always start a container.
-- **`ORCID_MOCK_IMAGE`.**
-  Otherwise a helper starts a container from this image, and the default is `ghcr.io/nemarorg/orcid-mock:<the helper's version>`.
-  An explicit option (a constructor argument, `withImage`, `--orcid-mock-image`) wins over the variable, which wins over the default.
-- **Starting a container.**
-  The helper picks a free host port, binds the container's port 9700 to it on `127.0.0.1` only, and starts the image with `PUBLIC_BASE_URL=http://localhost:<port>` and `HOST=0.0.0.0`, because the mock never derives its address from the request.
-  It waits for the readiness line on stdout, then for the published port to answer, and copies a users file into the container (mode 0644, so the file's own permissions do not matter).
-  If the start fails, the error carries the tail of the container's output, which is where the server says why it exited.
-  The Docker daemon must be on the machine that runs the tests.
-- **Users files.**
-  A path is read when you pass it (`withUsers` in Node, `with_users` and the constructor in Python), so a missing file fails there with an `OrcidMockStartError` naming it, and a second call replaces the first file.
-- **Proxies.**
-  A proxy named by `HTTP_PROXY` or `ALL_PROXY` must not capture the traffic to a mock on this machine, so the clients ignore those variables: the Python client sets `trust_env=False`, and the Node client talks through `node:http` with an agent of its own, because Bun's `fetch` sends even a request to localhost through `HTTP_PROXY` (checked on Bun 1.4.2) and Node's does when `NODE_USE_ENV_PROXY` is set.
-  Your own code is not covered: an application under test that reaches the mock through a proxy needs `NO_PROXY=localhost`.
-- **Reset.**
-  `reset()` restores the loaded file: users, clients, counters, and the clock, and clears codes, tokens, and sessions.
-  A client registered with `putClient` is dropped too, so register it again after a reset.
-- **Sign-in.**
-  `signIn` is the headless sequence of [the round trip above](#a-headless-round-trip): `GET /oauth/authorize` with `login_as` without following the redirect, the code from `Location`, then `POST /oauth/token`.
-  By default it uses the starter file's public client and `/authenticate`; any non-2xx answer is an `OrcidMockError` carrying the status and body, and a redirect that carries no code (an `error` fragment) is one with status 0.
-
-### Testcontainers for Node
-
-The package ships compiled JavaScript (ES modules) with declarations, so it loads under Node 22 or later and under Bun 1.4 or later.
-`testcontainers` and `@playwright/test` are optional peer dependencies, each needed only by the entry point that uses it.
-
-```bash
-bun add -d @nemarorg/orcid-mock-testing testcontainers
-```
-
-```ts
-import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import {
-  OrcidMockContainer,
-  type StartedOrcidMockContainer,
-} from "@nemarorg/orcid-mock-testing/testcontainers";
-
-let mock: StartedOrcidMockContainer;
-
-beforeAll(async () => {
-  mock = await new OrcidMockContainer()
-    .withUsers("fixtures/users.json") // optional: the starter users otherwise
-    .start();
-}, 120_000);
-afterAll(() => mock.stop());
-beforeEach(() => mock.client.reset());
-
-test("a user can sign in", async () => {
-  const alder = (await mock.client.users())[0];
-  if (!alder) throw new Error("the starter file has users");
-  const token = await mock.client.signIn({ orcid: alder.orcid });
-  expect(token.orcid).toBe(alder.orcid);
-  // Point the application under test at mock.baseUrl.
-});
-```
-
-`OrcidMockClient` (from `@nemarorg/orcid-mock-testing/client`, no dependencies) has `health`, `reset`, `users`, `user`, `createUser`, `putUser`, `deleteUser`, `putClient`, `advanceClock`, and `signIn`.
-`startOrConnect()` from the Testcontainers entry point does what the fixtures below do: it uses `ORCID_MOCK_URL` when that is set and starts a container otherwise.
-
-### Playwright
-
-```ts
-// tests/signin.spec.ts
-import { expect, test } from "@nemarorg/orcid-mock-testing/playwright";
-
-test("signs in with ORCID", async ({ page, orcidMock, signInAs }) => {
-  await orcidMock.client.putClient("APP-MY-APP", {
-    client_secret: "my-secret",
-    redirect_uris: ["http://localhost:5173/auth/callback"],
-  });
-  const alder = (await orcidMock.client.users())[0];
-  if (!alder) throw new Error("the starter file has users");
-
-  await page.goto("http://localhost:5173/login"); // the app redirects to the mock
-  await signInAs(page, alder.orcid); // waits for the consent page, clicks that user's button
-  await expect(page.getByText(alder.orcid)).toBeVisible();
-});
-```
-
-`orcidMock` is worker-scoped (one mock per worker, from `ORCID_MOCK_URL` or a container) and has `baseUrl`, `client`, and `publicBaseUrl()`; `signInAs(page, iD)` waits until the page is on `<address>/oauth/authorize` (the origin and the path, not the query), clicks the button whose accessible name holds the iD, and throws with the mock's answer if it refuses the sign-in (a locked user).
-Set the container's image and users with `test.use({ orcidMockOptions: { image, users } })`.
-`signInAs(page, iD, { baseUrl })` is also exported for a plain Playwright `Page`; `baseUrl` is the address the browser reaches the mock at and the address the mock puts in its own URLs (`PUBLIC_BASE_URL`), which are the same for a container and can differ for a running instance, so pass both as an array then (the fixture does).
-
-- **Both runtimes.**
-  Playwright's runner loads the package under Node and under Bun (`bun --bun x playwright test`); both are tested, with `@playwright/test` 1.63.
-- **A running instance is shared.**
-  Workers get a container each, but with `ORCID_MOCK_URL` every worker talks to the same mock and its state, so set `workers: 1` in `playwright.config.ts` and call `orcidMock.client.reset()` between tests (and register your client again after it).
-- **Popups.**
-  When the application signs in in a popup, pass the popup page: `const popup = await page.waitForEvent("popup"); await signInAs(popup, alder.orcid);`.
-- **An application that must know the mock's address at start-up** (a `webServer` entry in `playwright.config.ts`) cannot wait for a worker's random port: start the mock yourself on a fixed port and set `ORCID_MOCK_URL` to it, as the [GitHub Action](#as-a-github-action) does.
-
-### pytest
-
-```bash
-uv add --dev orcid-mock-testing
-```
-
-The plugin registers itself with pytest on install (the `pytest11` entry point) and needs Python 3.11 or later.
-
-```python
-# tests/test_signin.py
-def test_a_user_can_sign_in(orcid_mock_reset):
-    alder = orcid_mock_reset.users()[0]
-    token = orcid_mock_reset.sign_in(alder["orcid"])
-    assert token["orcid"] == alder["orcid"]
-```
-
-`orcid_mock` is a session-scoped fixture that yields the `OrcidMockClient` (`base_url` is the address to give the application under test); `orcid_mock_reset` is function-scoped, resets before the test, and yields the same client.
-Choose the container with `pytest --orcid-mock-image ghcr.io/nemarorg/orcid-mock:1 --orcid-mock-users fixtures/users.json`.
-Without the plugin, `orcid_mock.container.OrcidMockContainer` is a `testcontainers` `DockerContainer`:
-
-```python
-from orcid_mock.container import OrcidMockContainer
-
-with OrcidMockContainer(users="fixtures/users.json") as mock:
-    token = mock.client.sign_in(mock.client.users()[0]["orcid"])
-```
+A deployed Worker is reachable from the internet and exposes the unauthenticated admin API (every fixture user and client secret, and a reset or rewrite of all state), so `wrangler.toml` sets `workers_dev = false` and says to put an access gate in front of it before you route it anywhere.
+The planned hosted mode runs the same app inside a Durable Object per tenant.
 
 ## Run it from a checkout
 
@@ -300,11 +236,12 @@ Leave `orcid` empty and the mock mints a checksum-valid iD in the `0009-9...` bl
 An iD from any block is accepted if its checksum is right, for example `0000-0002-1825-0097`, ORCID's own fictional demo record.
 Put-codes you leave out are assigned above the largest one in the file.
 The rules a schema cannot express (checksums, duplicate iDs and emails, one primary email, a public or limited email being verified) are checked when the file loads.
-[ADR 0003](.context/decisions/0003-fixture-schema-and-id-minting.md) records the reasoning, including the small risk that a minted iD belongs to someone.
+The Architecture Decision Record (ADR) [0003](.context/decisions/0003-fixture-schema-and-id-minting.md) records the reasoning, including the small risk that a minted iD belongs to someone.
 
 ### The admin API
 
-No authentication and no cross-origin resource sharing (CORS) in MVP1, so keep the server on loopback.
+No authentication and no cross-origin resource sharing (CORS) in MVP1, so keep the server on loopback:
+anyone who can reach it can read every user and client secret and reset or rewrite all state.
 A request that carries an `Origin` header other than the server's own (the origin of `PUBLIC_BASE_URL`) is refused with `403 {"error":"forbidden_origin"}`: browsers always send `Origin` on a cross-origin request, so a web page cannot reset or rewrite a local mock, while `curl` and test clients, which send none, are unaffected.
 Users are read and written in the users-file form, with the minted iD and every put-code filled in, which is how a test learns them.
 A body must be JSON with a JSON `Content-Type`; anything else is `400 {"error":"invalid_request"}`, and a body that fails validation is `400 {"error":"invalid_fixture","issues":[{"path","message"}]}`.
@@ -321,6 +258,136 @@ A body must be JSON with a JSON `Content-Type`; anything else is `400 {"error":"
 | `GET /__admin/clients`, `GET /__admin/clients/{client_id}` | `200` the clients (secret included) in users-file form, or `404` |
 | `PUT /__admin/clients/{client_id}` | upsert a client, so an app under test on a random port can register its `redirect_uri`; `201` or `200` |
 | `POST /__admin/clock` | body `{"advance_seconds": n}` with a finite, non-negative `n`; moves the server's clock forward, so codes, tokens, and sessions expire without sleeping; `200 {"offset_ms": n}` is the new total offset; `reset` zeroes it |
+
+## Test helpers
+
+Helpers for tests that need a mock ORCID: a typed client for the admin API and the headless sign-in, a Testcontainers module that starts the image on a port it picks, Playwright fixtures, and a pytest plugin.
+They are separate packages in this repository, [`clients/node`](clients/node) (`@nemarorg/orcid-mock-testing` on npm) and [`clients/python`](clients/python) (`orcid-mock-testing` on the Python Package Index (PyPI), imported as `orcid_mock`), and carry the server's version, so the default image of a helper is the image of its own version ([ADR 0008](.context/decisions/0008-client-helpers.md)).
+
+### The rules every helper follows
+
+- **`ORCID_MOCK_URL`.**
+  When it is set (the [GitHub Action](#as-a-github-action) sets it), the Playwright fixtures, `startOrConnect`, and the pytest fixtures use that running instance, start nothing, and never stop it.
+  Handing them a users file is an error then, because a running instance's users cannot be set from outside: load them where it starts.
+  The container classes themselves (`OrcidMockContainer`) always start a container.
+- **`ORCID_MOCK_IMAGE`.**
+  Otherwise a helper starts a container from this image, and the default is `ghcr.io/nemarorg/orcid-mock:<the helper's version>`.
+  An explicit option (a constructor argument, `withImage`, `--orcid-mock-image`) wins over the variable, which wins over the default.
+- **Starting a container.**
+  The helper picks a free host port, binds the container's port 9700 to it on `127.0.0.1` only, and starts the image with `PUBLIC_BASE_URL=http://localhost:<port>` and `HOST=0.0.0.0`, because the mock never derives its address from the request.
+  It waits for the readiness line on stdout, then for the published port to answer, and copies a users file into the container (mode 0644, so the file's own permissions do not matter).
+  If the start fails, the error carries the tail of the container's output, which is where the server says why it exited.
+  The Docker daemon must be on the machine that runs the tests.
+- **Users files.**
+  A path is read when you pass it (`withUsers` in Node, `with_users` and the constructor in Python), so a missing file fails there with an `OrcidMockStartError` naming it, and a second call replaces the first file.
+- **Proxies.**
+  A proxy named by `HTTP_PROXY` or `ALL_PROXY` must not capture the traffic to a mock on this machine, so the clients ignore those variables:
+  the Python client sets `trust_env=False`,
+  and the Node client talks through `node:http` with an agent of its own, because Bun's `fetch` sends even a request to localhost through `HTTP_PROXY` (checked on Bun 1.4.2) and Node's does when `NODE_USE_ENV_PROXY` is set.
+  Your own code is not covered: an application under test that reaches the mock through a proxy needs `NO_PROXY=localhost`.
+- **Reset.**
+  `reset()` restores the loaded file: users, clients, counters, and the clock, and clears codes, tokens, and sessions.
+  A client registered with `putClient` is dropped too, so register it again after a reset.
+- **Sign-in.**
+  `signIn` (`sign_in` in Python) is the headless sequence of [the round trip below](#a-headless-round-trip): `GET /oauth/authorize` with `login_as` without following the redirect, the code from `Location`, then `POST /oauth/token`.
+  By default it uses the starter file's public client and `/authenticate`; any non-2xx answer is an `OrcidMockError` carrying the status and body, and a redirect that carries no code (an `error` fragment) is one with status 0.
+
+### Testcontainers for Node
+
+The package ships compiled JavaScript (ES modules) with declarations, so it loads under Node 22 or later and under Bun 1.4 or later.
+`testcontainers` and `@playwright/test` are optional peer dependencies, each needed only by the entry point that uses it.
+
+```bash
+bun add -d @nemarorg/orcid-mock-testing testcontainers
+```
+
+```ts
+import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import {
+  OrcidMockContainer,
+  type StartedOrcidMockContainer,
+} from "@nemarorg/orcid-mock-testing/testcontainers";
+
+let mock: StartedOrcidMockContainer;
+
+beforeAll(async () => {
+  mock = await new OrcidMockContainer()
+    .withUsers("fixtures/users.json") // optional: the starter users otherwise
+    .start();
+}, 120_000);
+afterAll(() => mock.stop());
+beforeEach(() => mock.client.reset());
+
+test("a user can sign in", async () => {
+  const alder = (await mock.client.users())[0];
+  if (!alder) throw new Error("the starter file has users");
+  const token = await mock.client.signIn({ orcid: alder.orcid });
+  expect(token.orcid).toBe(alder.orcid);
+  // Point the application under test at mock.baseUrl.
+});
+```
+
+`OrcidMockClient` (from `@nemarorg/orcid-mock-testing/client`, no dependencies) has `health`, `reset`, `users`, `user`, `createUser`, `putUser`, `deleteUser`, `putClient`, `advanceClock`, `publicBaseUrl`, and `signIn`.
+`startOrConnect()` from the Testcontainers entry point does what the fixtures below do: it uses `ORCID_MOCK_URL` when that is set and starts a container otherwise.
+
+### Playwright
+
+```ts
+// tests/signin.spec.ts
+import { expect, test } from "@nemarorg/orcid-mock-testing/playwright";
+
+test("signs in with ORCID", async ({ page, orcidMock, signInAs }) => {
+  await orcidMock.client.putClient("APP-MY-APP", {
+    client_secret: "my-secret",
+    redirect_uris: ["http://localhost:5173/auth/callback"],
+  });
+  const alder = (await orcidMock.client.users())[0];
+  if (!alder) throw new Error("the starter file has users");
+
+  await page.goto("http://localhost:5173/login"); // the app redirects to the mock
+  await signInAs(page, alder.orcid); // waits for the sign-in page, clicks that user's button
+  await expect(page.getByText(alder.orcid)).toBeVisible();
+});
+```
+
+`orcidMock` is worker-scoped (one mock per worker, from `ORCID_MOCK_URL` or a container) and has `baseUrl`, `client`, and `publicBaseUrl()`; `signInAs(page, iD)` waits until the page is on `<address>/oauth/authorize` (the origin and the path, not the query), clicks the button whose accessible name holds the iD, and throws with the mock's answer if it refuses the sign-in (a locked user).
+Set the container's image and users with `test.use({ orcidMockOptions: { image, users } })`.
+`signInAs(page, iD, { baseUrl })` is also exported for a plain Playwright `Page`; `baseUrl` is the address the browser reaches the mock at and the address the mock puts in its own URLs (`PUBLIC_BASE_URL`), which are the same for a container and can differ for a running instance, so pass both as an array then (the fixture does).
+
+- **Both runtimes.**
+  Playwright's runner loads the package under Node and under Bun (`bun --bun x playwright test`); both are tested, with `@playwright/test` 1.63.
+- **A running instance is shared.**
+  Workers get a container each, but with `ORCID_MOCK_URL` every worker talks to the same mock and its state, so set `workers: 1` in `playwright.config.ts` and call `orcidMock.client.reset()` between tests (and register your client again after it).
+- **Popups.**
+  When the application signs in in a popup, pass the popup page: `const popup = await page.waitForEvent("popup"); await signInAs(popup, alder.orcid);`.
+- **An application that must know the mock's address at start-up** (a `webServer` entry in `playwright.config.ts`) cannot wait for a worker's random port: start the mock yourself on a fixed port and set `ORCID_MOCK_URL` to it, as the [GitHub Action](#as-a-github-action) does.
+
+### pytest
+
+```bash
+uv add --dev orcid-mock-testing
+```
+
+The plugin registers itself with pytest on install (the `pytest11` entry point) and needs Python 3.11 or later.
+
+```python
+# tests/test_signin.py
+def test_a_user_can_sign_in(orcid_mock_reset):
+    alder = orcid_mock_reset.users()[0]
+    token = orcid_mock_reset.sign_in(alder["orcid"])
+    assert token["orcid"] == alder["orcid"]
+```
+
+`orcid_mock` is a session-scoped fixture that yields the `OrcidMockClient` (`base_url` is the address to give the application under test); `orcid_mock_reset` is function-scoped, resets before the test, and yields the same client.
+Choose the container with `pytest --orcid-mock-image ghcr.io/nemarorg/orcid-mock:1 --orcid-mock-users fixtures/users.json`.
+Without the plugin, `orcid_mock.container.OrcidMockContainer` is a `testcontainers` `DockerContainer`:
+
+```python
+from orcid_mock.container import OrcidMockContainer
+
+with OrcidMockContainer(users="fixtures/users.json") as mock:
+    token = mock.client.sign_in(mock.client.users()[0]["orcid"])
+```
 
 ## OAuth
 
@@ -358,8 +425,7 @@ The response has ORCID's keys in ORCID's order:
 `name` is the public display name:
 the credit name if the name is public and there is one, else the given and family names if the name is public, else `""`.
 The code is six characters from `[0-9a-zA-Z]`, works once, and the `state` comes back exactly as sent.
-Helpers that do this in a test are in [`tests/helpers/oauth.ts`](tests/helpers/oauth.ts):
-`authorizeAs`, `exchangeCode`, `obtainToken`, `clientCredentials`, and `refreshTokens`.
+In a test, the [helpers](#test-helpers)' `signIn` (`sign_in` in Python) does these two steps.
 
 ### The sign-in page
 
@@ -392,7 +458,7 @@ Three grants are served:
 `POST /oauth/revoke` takes a `token` (access or refresh) and the same client credentials, revokes the pair, and answers 200 with an empty body.
 `POST /__admin/clock` moves the server's clock to expire codes (ten minutes), sessions (24 hours), and tokens (twenty years) without sleeping.
 
-### Where ORCID is undocumented or unobserved
+### OAuth: where ORCID is undocumented or unobserved
 
 These are orcid-mock's own choices, each marked "orcid-mock choice" where it is implemented:
 
@@ -412,7 +478,7 @@ These are orcid-mock's own choices, each marked "orcid-mock choice" where it is 
 
 ## OpenID Connect
 
-Ask for the `openid` scope and the token response carries an identity (ID) token, signed with a key the server generates the first time it needs one.
+Ask for the `openid` scope and the token response carries an ID token, signed with a key the server generates the first time it needs one.
 `/.well-known/openid-configuration`, `/oauth/jwks`, and `/oauth/userinfo` are the three routes a relying party (an application that signs users in through ORCID) needs to verify it and to read the user.
 All three follow ORCID's CORS filter, so a browser app can call them:
 they echo the request's `Origin` in `Access-Control-Allow-Origin` (and send none when the request has none), send `Access-Control-Allow-Credentials: true`, even on the userinfo 403, and answer a preflight.
@@ -430,7 +496,7 @@ Keeping the document identical to ORCID's, rather than consistent with what the 
 
 ### JWKS
 
-`GET /oauth/jwks` returns the JSON Web Key Set (JWKS) with one RS256 key (RSA with SHA-256, 2048 bits, exponent `AQAB`) in ORCID's compact shape and key order, `{"keys":[{"kty":"RSA","e":"AQAB","use":"sig","kid":"...","n":"..."}]}`, with no `alg` member.
+`GET /oauth/jwks` returns the JWKS with one RS256 key (2048-bit RSA, exponent `AQAB`) in ORCID's compact shape and key order, `{"keys":[{"kty":"RSA","e":"AQAB","use":"sig","kid":"...","n":"..."}]}`, with no `alg` member.
 It is sent with `cache-control: no-cache, no-store, max-age=0, must-revalidate` and `pragma: no-cache`.
 The `kid` reads `orcid-mock-` and 32 lowercase letters and digits, in the pattern of ORCID's `<env>-orcid-org-<32>`.
 The key is generated on the first request that needs it, once per server, and survives `POST /__admin/reset`, so a client that cached the JWKS stays valid; a new process has a new key.
@@ -502,7 +568,7 @@ A name that is not public, and any field that does not exist, is `null`, not lef
 Everything else, including no token, an unknown, revoked, or expired token, a refresh token, and a token without the scope, is ORCID's single answer: `403` with `{"error":"access_denied","error-description":"access_token is invalid"}`.
 The key is hyphenated, unlike the underscore in every other ORCID error body, and there is no `WWW-Authenticate` header.
 
-### Where ORCID is undocumented or unobserved
+### OpenID Connect: where ORCID is undocumented or unobserved
 
 - The 24-hour ID token lifetime, above.
 - The preflight answer copies ORCID's allowed methods and headers.
@@ -572,14 +638,14 @@ ORCID's own root-level resources (`search`, `csv-search`, `expanded-search`, `gr
 Error bodies have ORCID's five keys in order, `response-code`, `developer-message`, `user-message`, `error-code`, `more-info`.
 Every response, errors included, carries `access-control-allow-origin: *`, `cache-control: no-cache, no-store, max-age=0, must-revalidate`, `pragma: no-cache`, `expires: 0`, `x-content-type-options: nosniff`, and `x-frame-options: DENY`.
 
-### Where ORCID is undocumented, unobserved, or cannot be copied
+### Record API: where ORCID is undocumented, unobserved, or cannot be copied
 
 - Every URI is built from `PUBLIC_BASE_URL`: `orcid-identifier.uri` is `PUBLIC_BASE_URL/{iD}`, and `host` is that URL's host, port included, where ORCID writes `https://orcid.org/{iD}` and `orcid.org`.
 - Every item is self-asserted: `source-orcid` is the user, `source-client-id` and the three `assertion-origin-*` keys are null, and `source-name` is the user's public display name, or null when the name is not public.
 - A valid token for another iD, a public client's token, and a client-credentials token get the public view, not an error; ORCID serves `limited` reads from its member host, which was not observed.
 - `history` is orcid-mock's: `WEBSITE`, no `completion-date`, `submission-date` from the name, `last-modified-date` the latest edit of anything, `claimed` from the fixture, and `verified-email` and `verified-primary-email` computed from every email whatever its visibility, as ORCID does; `preferences` is `{"locale": "en"}`.
 - An unclaimed record is always 409 / 9036; ORCID blocks it only while younger than a ten-day claim wait period.
-- Normalization: work, affiliation, and peer-review ids carry `{"value", "transient": true}`; only a DOI is changed (lowercased and reduced to its `10.<registrant>/<suffix>` part, with ORCID's 8001 error when that fails); funding ids carry null, as observed.
+- Normalization: work, affiliation, and peer-review ids carry `{"value", "transient": true}`; only a Digital Object Identifier (DOI) is changed (lowercased and reduced to its `10.<registrant>/<suffix>` part, with ORCID's 8001 error when that fails); funding ids carry null, as observed.
 - Groups merge transitively on external ids that are not `part-of` or `funded-by`, among visible items only, and a merged group stays where its earliest member's group was formed.
   Works are ordered by publication date, title, then type; affiliations by ORCID's start and end date strings; fundings and person-level lists by display index, then creation date; peer reviews by completion date, newest first, with a missing part first because ORCID's database is PostgreSQL (source only).
 - Bulk works returns found works in put-code order, which is what pub.orcid.org returned for a request in another order; the source leaves it to the database.
@@ -624,7 +690,9 @@ The cases are listed at the top of [`conformance/conformance.test.ts`](conforman
 
 The assertions are structural: keys, order, and the kind of each value, never a count or a value, because a fixture and a real record hold different data.
 Where the mock differs from ORCID on purpose, the suite avoids the case or checks only what both satisfy, with a comment naming the decision record:
-it always sends `Accept` (ORCID answers XML to none, the mock a 406, [ADR 0007](.context/decisions/0007-record-api-fidelity-and-deviations.md)), it checks that `orcid-identifier` agrees with itself and not that it names `orcid.org`, and it looks for the 415 sentence inside the body, which ORCID wraps in a web server's error page and the mock sends alone (recorded under [OAuth, where ORCID is undocumented or unobserved](#where-orcid-is-undocumented-or-unobserved)).
+it always sends `Accept` (ORCID answers XML to none, the mock a 406, [ADR 0007](.context/decisions/0007-record-api-fidelity-and-deviations.md)),
+it checks that `orcid-identifier` agrees with itself and not that it names `orcid.org`,
+and it looks for the 415 sentence inside the body, which ORCID wraps in a web server's error page and the mock sends alone (recorded under [OAuth, where ORCID is undocumented or unobserved](#oauth-where-orcid-is-undocumented-or-unobserved)).
 No assertion branches on the target.
 
 The target comes from the environment, and a missing or malformed variable stops the run with one message that names it (never its value):
@@ -659,7 +727,7 @@ kill $!                                                # stop the server
 The starter users' iDs are minted, so the iD is read from the admin API rather than written down.
 The round trip (below) calls `POST /__admin/reset`, which resets the whole mock, so run the suite against a mock you own and not one that holds data you want to keep.
 A container works the same way: start it with [the Action](#as-a-github-action) or `docker run`, and point the two bases at its `PUBLIC_BASE_URL`.
-Every push and pull request does exactly that in the `e2e` job of [`ci.yml`](.github/workflows/ci.yml):
+Every pull request, and every push to `main`, does exactly that in the `e2e` job of [`ci.yml`](.github/workflows/ci.yml):
 it builds the image from the `Dockerfile`, starts it with this repository's Action, and runs the suite against it with `CONFORMANCE_REQUIRE_ITEMS=1`, using the public client and a user chosen by what it holds (a public name and at least one public work, employment, and email) rather than by position.
 
 `bun run conformance` runs `bun test ./conformance`.
@@ -692,111 +760,33 @@ Nothing in CI uses `CONFORMANCE_ANONYMOUS_ONLY`.
 
 The sandbox half runs weekly (Mondays, 05:23 UTC) and on demand from [`conformance.yml`](.github/workflows/conformance.yml), job `sandbox`; a manual run has an input `job` (`sandbox`, `services-smoke`, or `both`, default `sandbox`).
 The job does not require items, and appends the items each read checked to the job summary.
-**The repository owner sets up** the job once:
-
-- Create a GitHub environment named `conformance` (Settings, Environments), with a deployment rule that restricts it to the `main` branch, and store the two secrets there, so no other branch can read them: `ORCID_SANDBOX_CLIENT_ID` and `ORCID_SANDBOX_CLIENT_SECRET`, a client registered under Developer tools at `sandbox.orcid.org`.
-  The job names that environment; repository secrets of the same names work too until it exists.
-- Add the repository variable `ORCID_SANDBOX_PUBLIC_ID`: the iD of a sandbox record with a public name, and ideally some public works and employments, so item shapes are checked too.
-
-Until all three exist, the job prints a `::warning::` naming what is missing, writes the same to the job summary, and succeeds without running, so a skip is visible and not silent.
+The job needs a sandbox client and a public sandbox record, which the repository owner configures once ([`RELEASING.md`](RELEASING.md#owner-checklist-for-100), item 9).
+Until they exist, the job prints a `::warning::` naming what is missing, writes the same to the job summary, and succeeds without running, so a skip is visible and not silent.
 A failing case on the sandbox means the mock is wrong about ORCID or ORCID changed: find out which, and fix the mock or the assertion, never by weakening the check to pass.
 
 ### Sign-in is checked on the mock only
 
 Real ORCID needs a person to sign in (a browser, a password, a consent click), so the sandbox run covers the token endpoint and the record API and cannot cover sign-in.
 [`conformance/round-trip.test.ts`](conformance/round-trip.test.ts) covers it on the mock, as the definition of done for a brand-new sign-up with no browser, and is skipped with a message when `CONFORMANCE_TARGET` is not `mock`.
-It registers a client and creates a user through the admin API, signs in with `login_as`, exchanges the code for an ID token, verifies the token against the discovery document's `jwks_uri` (RS256 pinned, with `exp`, `iat`, `sub`, `aud`, and `iss` required), reads the user through userinfo and the record API, calls `POST /__admin/reset`, and checks that the user and the test's client are gone (404, error 9016, and `invalid_client`) while the fixture's own users remain.
+It registers a client and creates a user through the admin API, signs in with `login_as`, exchanges the code for an ID token,
+verifies the token against the discovery document's `jwks_uri` (RS256 pinned, with `exp`, `iat`, `sub`, `aud`, and `iss` required),
+reads the user through userinfo and the record API, calls `POST /__admin/reset`, and checks that the user and the test's client are gone (404, error 9016, and `invalid_client`) while the fixture's own users remain.
 
 ### The services container check
 
 The `services-smoke` job in [`conformance.yml`](.github/workflows/conformance.yml) runs the published image as a `services:` container with no `--health-cmd`.
 Its first step asserts that Docker reports the service container `healthy`, and the next reaches `/__admin/health` once, with no retry.
 What that proves is that the image carries a `HEALTHCHECK` which a real runner accepts and reports healthy; it does not prove that the runner would wait for a slow start.
-It runs only on a manual dispatch (input `job` set to `services-smoke` or `both`, and input `image`, default `ghcr.io/nemarorg/orcid-mock:1`) and can pass only after the first release has published the image and made its package public, so run it once then.
+It runs only on a manual dispatch (input `job` set to `services-smoke` or `both`, and input `image`, default `ghcr.io/nemarorg/orcid-mock:1`) and can pass only against a published image whose package is public.
 
-## Why
+## What comes after MVP1
 
-ORCID's sandbox is shared, cannot be reset from an API, delivers mail only to one throwaway provider, and needs real accounts,
-so nobody can drive a brand-new ORCID sign-up from an automated test.
-No open-source project mocks ORCID's identity layer and its record API together:
-ORCID retired its own mock in 2012, and the generic OAuth and OpenID Connect mocks would still need the whole ORCID surface built on top.
-
-## What it does
-
-- The authorization-code flow with a sign-in page that lists the fixture users, a `login_as` shortcut for headless drivers, ORCID's redirect matching, and an unmodified `state` round trip ([OAuth](#oauth)).
-- The token endpoint with ORCID's non-standard response (`orcid` and `name` alongside the access token), refresh and client-credentials grants, revocation, and ORCID's error bodies, status codes, and key order.
-- OpenID Connect: a discovery document byte-identical to ORCID's apart from the base URL, JWKS, an RS256 ID token whose `sub` is the iD, and userinfo ([OpenID Connect](#openid-connect)).
-- The public v3.0 record reads (search, XML, and the summary and citation variants are not served), projected from the users file with ORCID's wire shapes, per-item visibility, grouping and ordering, `Accept` negotiation, record states, and error codes ([Record API](#record-api)).
-- Checksum-valid iDs (ISO/IEC 7064 MOD 11-2) minted for fixtures, and an admin API to reset the server, add, replace, and remove users, register clients, and move the clock.
-- Four ways to run it (`bunx`, a container, a binary, a GitHub Action) and client helpers for Node (Testcontainers, Playwright) and Python (Testcontainers, pytest).
-
-## What comes after (MVP2)
-
-Member-API writes for works and employments, the hosted multi-tenant service, XML and other representations, webhooks, rate-limit emulation.
-
-## Releasing
-
-For maintainers.
-Nothing is published until a version tag is pushed.
-One version, from `package.json`, numbers the npm package, the image, the binaries, the two [test helpers](#test-helpers), and (as its major) the Action.
-
-1. Bump `version` in `package.json`, `clients/node/package.json`, and `clients/python/pyproject.toml` to the same string, in a pull request, and merge it to `main`.
-   Run `uv lock` in `clients/python` afterwards, since the lockfile records the project's own version: the workflow refuses a stale one (`uv lock --check`).
-   The workflow also refuses a tag that differs from any of the three, and the helpers' tests fail until the three agree.
-   The first release is `1.0.0`: the Action defaults to the image tag `1`, and the workflow refuses a stable release whose major differs from that default in `action.yml`.
-   A prerelease is `1.2.3-rc.1`: it gets only its exact image tag, the `next` tag on npm, a prerelease GitHub Release, and no change to any floating tag.
-   Write it `-alpha.N`, `-beta.N`, or `-rc.N` and nothing else, because the Python helper needs a form that Python Enhancement Proposal (PEP) 440 can spell (`1.2.3-rc.1` is `1.2.3rc1` on PyPI).
-2. Tag the merge commit and push the tag: `git tag v1.2.3 && git push origin v1.2.3`.
-3. The [Release workflow](.github/workflows/release.yml) then works in this order, so that a failure leaves nothing public and a re-run converges:
-   it refuses a tag that differs from `package.json` or is not on `main`, runs lint, type checking, and the tests, and checks the npm token (`bun pm whoami`);
-   it builds every binary once and runs each on a runner of its kind (Linux x64 and arm64, macOS arm64, Windows x64), and builds the helpers' packages (the Node helper's compiled tarball, the Python helper's wheel and source distribution) in jobs that hold no credentials;
-   it builds the image, smoke-tests the amd64 image and runs the arm64 image once, and only then pushes the exact tag `1.2.3`, tests what it pushed, and attests it;
-   it publishes `@nemarorg/orcid-mock` and `@nemarorg/orcid-mock-testing` (the tarball the earlier job built) to npm, each unless that version is already there, and `orcid-mock-testing` to PyPI through trusted publishing (the `pypi` job only uploads the files the earlier job built, and skips a file the index already has);
-   it creates the GitHub Release if it does not exist and uploads the binaries and `SHA256SUMS` (replacing any earlier upload);
-   and last it moves `latest`, `1`, and `1.2`, and the `v1` tag that `uses: nemarOrg/orcid-mock@v1` follows.
-4. Floating tags only move forward: each moves only when the released version is the highest stable version in its scope (`latest` against all, `1` against 1.x.y, `1.2` against 1.2.z), so a patch for an old line never takes `latest`.
-   An exact image tag is never overwritten: if it already exists and was built from another commit, the workflow stops.
-5. After a partial failure, re-run the workflow's failed jobs (or all of them); each step skips what is already done.
-6. To rehearse, run the workflow by hand (Actions, Release, Run workflow) with "dry-run" on, from any branch.
-   It does every build and check, and does not push the image, publish, create the release, or move a tag.
-   A dry run does not use the `release` or `pypi` environments, so it cannot check the npm token or the trusted publisher, and says so.
-7. A real release asks the `release` environment's reviewer twice: before the preflight job (the token check) and before the npm publish, since each job that uses an environment is approved on its own; and it asks the `pypi` environment's reviewers, if it has any, before the PyPI publish.
-
-### One-time setup, by the repository owner
-
-These are repository and registry settings; no workflow or pull request creates them.
-
-- **npm.**
-  The `@nemarorg` scope must exist.
-  Create a granular access token ([npm's documentation](https://docs.npmjs.com/about-access-tokens): classic tokens were revoked in November 2025, so a granular token is the only kind) with read and write permission on `@nemarorg/orcid-mock` and `@nemarorg/orcid-mock-testing`, or on the scope (a package that does not exist yet cannot be named, so a scope-wide token is the simple choice before the first release), and "Bypass 2FA" checked, because nobody is present to enter a one-time password in a workflow.
-  A granular token that can write is capped at 90 days ([GitHub changelog, 5 November 2025](https://github.blog/changelog/2025-11-05-npm-security-update-classic-token-creation-disabled-and-granular-token-changes/)), so put the expiry date in your calendar and replace the secret before it passes; the workflow's `bun pm whoami` check fails the release early, before anything is public, when the token has expired.
-  Be aware that npm's documentation says the ability to publish directly with a bypass-2FA token is scheduled for removal in January 2027, in favor of trusted publishing (OpenID Connect) or stage-only tokens, and that trusted publishing needs the npm command line, not `bun publish` ([oven-sh/bun#22423](https://github.com/oven-sh/bun/issues/22423)).
-  The publish job will need rework before then; [ADR 0005](.context/decisions/0005-distribution-and-release.md) records this.
-- **GitHub environment `release`** (Settings, Environments, New environment).
-  Under "Deployment branches and tags", choose "Selected branches and tags" and add a tag rule `v*.*.*`.
-  Turn on "Required reviewers" and add yourself, so every real release waits for an approval.
-  Under "Environment secrets", add `NPM_TOKEN` with the token (an environment secret, not a repository secret).
-  Only the `preflight` and `npm` jobs use the environment, and only on real runs.
-- **PyPI.**
-  The name `orcid-mock-testing` was free on PyPI on 2026-10-01.
-  The first release creates the project, through a pending trusted publisher, so create that before tagging: sign in at pypi.org, open Your account, Publishing, and add a pending publisher for the project `orcid-mock-testing` with owner `nemarOrg`, repository `orcid-mock`, workflow `release.yml`, and environment `pypi` ([PyPI's documentation](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)).
-  There is no token to create or rotate; the `pypi` job's OpenID Connect identity is the credential.
-  Nothing can check this setup before it is used: a mistyped repository, workflow, or environment name in the pending publisher surfaces only when the `pypi` job runs, which is after the image and the npm packages are public.
-  A re-run converges (the image tag, the npm versions, and the files already published are skipped), so the repair is to fix the publisher on pypi.org and re-run the failed job; but check the four values twice before tagging.
-- **GitHub environment `pypi`** (Settings, Environments, New environment).
-  Under "Deployment branches and tags", choose "Selected branches and tags" and add the tag rule `v*.*.*`, as for `release`; "Required reviewers" is optional, and it needs no secret.
-  The environment's name must match the one in the pending publisher.
-- **Tag ruleset** (Settings, Rules, Rulesets, New ruleset, New tag ruleset).
-  Name it `release tags`, set enforcement to Active, and target tags matching `v*`.
-  Turn on "Restrict creations", "Restrict updates", and "Restrict deletions".
-  Add a bypass for the Repository admin role, so you can push release tags, and for the GitHub Actions app, so the last job can move `v1`.
-  The ruleset stops anyone else from creating, moving, or deleting a `v*` tag, which the Action (`@v1`) and the release workflow trust.
-  Check on the first real release that the `promote` job could push `v1`; if the ruleset blocks it, the app is missing from the bypass list.
-- **Package visibility.**
-  After the first image push, set the `orcid-mock` package to public in the organization's package settings on GitHub, and confirm it is linked to this repository (the image's `org.opencontainers.image.source` label does that).
-  A new package starts private, and neither `docker pull` nor the Action works for anyone else until it is public.
+The second minimum viable product (MVP2) is planned to add member-API writes for works and employments, the hosted multi-tenant service, XML and other representations, webhooks, and rate-limit emulation.
 
 ## Contributing
+
+Report a vulnerability privately, as [`SECURITY.md`](SECURITY.md) describes.
+Maintainers cut releases as [`RELEASING.md`](RELEASING.md) describes.
 
 Bun for JavaScript and TypeScript and `uv` for Python, never `npm`, `npx`, or `pip`.
 Each gate is green before a commit:
@@ -806,6 +796,7 @@ Each gate is green before a commit:
 | the server (repository root) | `bun install`, `bun run lint`, `bun run typecheck`, `bun run test` (which runs only `tests/`; the helpers have their own, and [the conformance suite](#conformance) needs a running server) |
 | the Node helper (`clients/node`) | `bun install`, `bun run lint`, `bun run typecheck`, `bun run build`, `bun run test` (which also builds, packs, and loads the package under Node, so Node 22 or later must be on `PATH`) |
 | the Python helper (`clients/python`) | `uv sync`, `uv run ruff check`, `uv run ruff format --check`, `uv run ty check`, `uv run pytest --cov` |
+| the workflows (`.github/`) | `actionlint .github/workflows/*.yml`, and `uvx zizmor@<version> --offline .github/workflows action.yml` with the version pinned in `ci.yml` (the `check` job runs the second) |
 
 The helpers' tests start a real mock, so they need Docker, a local build of the image, and (for the Node helper's browser tests) Chromium:
 

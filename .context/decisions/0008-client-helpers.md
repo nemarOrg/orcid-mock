@@ -1,4 +1,4 @@
-# ADR 0008: Client helpers, released in lockstep
+# Architecture Decision Record (ADR) 0008: Client helpers, released in lockstep
 
 **Status:** accepted
 **Date:** 2026-10-01 (revised 2026-10-02 after review: the Node helper ships compiled JavaScript)
@@ -52,7 +52,7 @@ A test with a recording proxy proves both.
 - The Node helper has a build step, and its tests need `dist/` (the package test builds it).
 - A Docker daemon on another machine does not work, because the base URL says `localhost`.
 - A mistyped PyPI trusted publisher cannot be checked before it is used, so it surfaces after the image and npm are public; a re-run converges.
-- The first release needs the owner to create the PyPI project and its trusted publisher (the README's "Releasing" section lists the steps), and an npm token that may publish a second package.
+- The first release needs the owner to create the PyPI project and its trusted publisher ([`RELEASING.md`](../../RELEASING.md) lists the steps), and an npm token that may publish a second package.
 
 ## Alternatives considered
 

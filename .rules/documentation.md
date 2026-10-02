@@ -1,5 +1,7 @@
 # Documentation Standards (MkDocs)
 
+**Project note:** this repository has no docs site, so there is no MkDocs or TypeDoc here; the README and `.context/` are its documentation, and the rest of this file is general guidance.
+
 ## Core Philosophy: Write for Your Future Self
 **Good docs** answer questions before they're asked.
 **Think:** What would confuse me in 6 months?

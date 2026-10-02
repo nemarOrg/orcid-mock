@@ -14,18 +14,18 @@ export { expect };
 
 export interface SignInAsOptions {
   /**
-   * Where the consent page is expected, as `<baseUrl>/oauth/authorize`: the address the browser
+   * Where the sign-in page is expected, as `<baseUrl>/oauth/authorize`: the address the browser
    * reaches the mock at, and the address the mock puts in its own URLs (its `PUBLIC_BASE_URL`),
    * which is where the sign-in form posts. They are the same for a container, and can differ for
    * a running instance, so pass both then. Only the origin and the path are compared.
    */
   baseUrl: string | readonly string[];
-  /** How long to wait for the consent page and for the mock to answer. Default 30 seconds. */
+  /** How long to wait for the sign-in page and for the mock to answer. Default 30 seconds. */
   timeoutMs?: number;
 }
 
 /**
- * Waits until `page` is on the mock's consent page, then clicks the button of the user with this
+ * Waits until `page` is on the mock's sign-in page, then clicks the button of the user with this
  * iD (its accessible name is "Given Family (iD)", matched as a substring). Returns once the mock
  * has answered the click; a refusal (a locked or deactivated user) throws with the mock's answer.
  * The redirect back to the application is left for the test's next assertion to wait for.
