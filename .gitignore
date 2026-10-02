@@ -7,3 +7,10 @@ dist/
 coverage/
 *.bun-build
 .wrangler/
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.coverage
+test-results/
+playwright-report/
