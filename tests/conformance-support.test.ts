@@ -3,6 +3,7 @@
 // accepted a bad variable or a checker that passed a reordered body would fail here and not
 // silently weaken the suite.
 import { describe, expect, test } from "bun:test";
+import { createClient, retryDelayMs } from "../conformance/client";
 import { check, recordShapes } from "../conformance/shapes";
 import { loadTarget } from "../conformance/target";
 
@@ -130,5 +131,96 @@ describe("recordShapes", () => {
     expect(check(works, shapes.works)).toEqual([]);
     expect(check(emptyContainer("email", "email"), shapes.email)).toEqual([]);
     expect(check({ ...works, path: "/elsewhere/works" }, shapes.works)).toHaveLength(1);
+  });
+});
+
+describe("retryDelayMs", () => {
+  const NOW = Date.parse("2026-10-02T12:00:00Z");
+
+  test("retries 429, 502, 503, and 504 and nothing else", () => {
+    for (const status of [429, 502, 503, 504]) expect(retryDelayMs(status, null, NOW)).toBe(1000);
+    for (const status of [200, 301, 400, 401, 404, 406, 415, 500, 501]) {
+      expect(retryDelayMs(status, "1", NOW)).toBeNull();
+    }
+  });
+
+  test("honors Retry-After in seconds and as an HTTP date", () => {
+    expect(retryDelayMs(503, "0", NOW)).toBe(0);
+    expect(retryDelayMs(503, "7", NOW)).toBe(7000);
+    expect(retryDelayMs(429, " 3 ", NOW)).toBe(3000);
+    expect(retryDelayMs(503, "Fri, 02 Oct 2026 12:00:05 GMT", NOW)).toBe(5000);
+    expect(retryDelayMs(503, "Fri, 02 Oct 2026 11:00:00 GMT", NOW)).toBe(0);
+  });
+
+  test("caps the wait at 30 seconds and waits one second for a header it cannot read", () => {
+    expect(retryDelayMs(503, "30", NOW)).toBe(30_000);
+    expect(retryDelayMs(503, "3600", NOW)).toBe(30_000);
+    expect(retryDelayMs(503, "Fri, 02 Oct 2026 18:00:00 GMT", NOW)).toBe(30_000);
+    expect(retryDelayMs(503, "soon", NOW)).toBe(1000);
+    expect(retryDelayMs(503, "-5", NOW)).toBe(1000);
+  });
+});
+
+describe("the client", () => {
+  /** A server that answers `statuses` in turn, then 200, and counts what it was asked. */
+  function flakyServer(statuses: number[]) {
+    let requests = 0;
+    const server = Bun.serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch() {
+        const status = statuses[requests] ?? 200;
+        requests += 1;
+        return new Response("{}", { status, headers: { "retry-after": "0" } });
+      },
+    });
+    return {
+      url: `http://127.0.0.1:${server.port}`,
+      count: () => requests,
+      stop: () => server.stop(),
+    };
+  }
+
+  const target = (base: string) =>
+    loadTarget({
+      CONFORMANCE_TARGET: "mock",
+      ORCID_API_BASE: base,
+      ORCID_PUB_API_BASE: base,
+      ORCID_CLIENT_ID: "APP-EXAMPLE",
+      ORCID_CLIENT_SECRET: "wrong-secret-that-must-not-appear",
+      ORCID_PUBLIC_ID: "0000-0002-1825-0097",
+    });
+
+  test("retries a transient failure once and returns the second answer", async () => {
+    const flaky = flakyServer([503]);
+    try {
+      const reply = await createClient(target(flaky.url)).request(`${flaky.url}/x`);
+      expect(reply.status).toBe(200);
+      expect(flaky.count()).toBe(2);
+    } finally {
+      flaky.stop();
+    }
+  });
+
+  test("retries only once, so a persistent failure is reported and not hidden", async () => {
+    const flaky = flakyServer([503, 503, 503]);
+    try {
+      const reply = await createClient(target(flaky.url)).request(`${flaky.url}/x`);
+      expect(reply.status).toBe(503);
+      expect(flaky.count()).toBe(2);
+    } finally {
+      flaky.stop();
+    }
+  });
+
+  test("does not retry an answer that is not transient", async () => {
+    const flaky = flakyServer([404]);
+    try {
+      const reply = await createClient(target(flaky.url)).request(`${flaky.url}/x`);
+      expect(reply.status).toBe(404);
+      expect(flaky.count()).toBe(1);
+    } finally {
+      flaky.stop();
+    }
   });
 });

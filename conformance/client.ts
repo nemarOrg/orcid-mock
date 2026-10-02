@@ -19,13 +19,44 @@ export interface RequestOptions {
 
 const USER_AGENT = "orcid-mock-conformance (+https://github.com/nemarOrg/orcid-mock)";
 
+/** A request that takes longer is a failure; it stays below the 30 seconds Bun gives a test. */
+const REQUEST_TIMEOUT_MS = 20_000;
+
+/** What a service sends for a moment's trouble: too many requests, or a gateway that blinked. */
+const TRANSIENT_STATUSES: ReadonlySet<number> = new Set([429, 502, 503, 504]);
+const DEFAULT_RETRY_WAIT_MS = 1_000;
+const MAX_RETRY_WAIT_MS = 30_000;
+
+/**
+ * How long to wait before trying a reply's request again, or null when the reply is not a
+ * transient failure. `retryAfter` is the `Retry-After` header, either whole seconds or an HTTP
+ * date; the wait is capped at 30 seconds, and a header that is absent or unreadable means one.
+ */
+export function retryDelayMs(
+  status: number,
+  retryAfter: string | null,
+  now: number = Date.now(),
+): number | null {
+  if (!TRANSIENT_STATUSES.has(status)) return null;
+  const header = (retryAfter ?? "").trim();
+  let wait = DEFAULT_RETRY_WAIT_MS;
+  if (/^\d+$/.test(header)) {
+    wait = Number(header) * 1000;
+  } else if (/[a-z]/i.test(header)) {
+    // An HTTP date names a day and a month; a bare number that is not whole seconds is unreadable.
+    const date = Date.parse(header);
+    if (!Number.isNaN(date)) wait = Math.max(0, date - now);
+  }
+  return Math.min(wait, MAX_RETRY_WAIT_MS);
+}
+
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export function createClient(target: Target) {
   let lastRequestAt = 0;
 
   /** One request at a time, at least `requestDelayMs` apart, and a redirect is never followed. */
-  async function request(url: string, options: RequestOptions = {}): Promise<Reply> {
+  async function attempt(url: string, options: RequestOptions): Promise<Reply> {
     const wait = lastRequestAt + target.requestDelayMs - Date.now();
     if (wait > 0) await sleep(wait);
     lastRequestAt = Date.now();
@@ -33,7 +64,7 @@ export function createClient(target: Target) {
     const response = await fetch(url, {
       method: options.method ?? "GET",
       redirect: "manual",
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       // Say who is asking, so a service that sees a weekly run can tell what it is.
       headers: { "user-agent": USER_AGENT, ...options.headers },
       ...(options.body === undefined ? {} : { body: options.body }),
@@ -46,6 +77,21 @@ export function createClient(target: Target) {
       // Not JSON: the 415 page, an empty body.
     }
     return { status: response.status, headers: response.headers, text, json };
+  }
+
+  /**
+   * `attempt`, and once more after a transient failure (429, 502, 503, or 504, honoring
+   * `Retry-After`), so one blink of a shared service does not fail a run. Says so when it does.
+   */
+  async function request(url: string, options: RequestOptions = {}): Promise<Reply> {
+    const first = await attempt(url, options);
+    const wait = retryDelayMs(first.status, first.headers.get("retry-after"));
+    if (wait === null) return first;
+    console.warn(
+      `${options.method ?? "GET"} ${new URL(url).pathname} answered ${first.status}; retrying once in ${wait} ms`,
+    );
+    await sleep(wait);
+    return attempt(url, options);
   }
 
   const tokenUrl = `${target.apiBase}/oauth/token`;
@@ -115,7 +161,6 @@ export function createClient(target: Target) {
   return {
     request,
     tokenUrl,
-    recordUrl,
     tokenRequest,
     clientCredentials,
     clientCredentialsToken,
