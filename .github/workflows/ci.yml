@@ -462,19 +462,31 @@ jobs:
       - name: Run the conformance suite against the mock
         env:
           CONFORMANCE_TARGET: mock
-          # The starter fixture's public client; its secret is published in the README.
-          ORCID_CLIENT_ID: APP-ORCIDMOCK000001
-          ORCID_CLIENT_SECRET: orcid-mock-secret
+          # A run that read an empty works, employments, or email container fails, so it cannot
+          # pass while checking nothing.
+          CONFORMANCE_REQUIRE_ITEMS: "1"
         run: |
           set -euo pipefail
           # ORCID_API_BASE and ORCID_PUB_API_BASE were exported by the Action.
           echo "ORCID_API_BASE=${ORCID_API_BASE}"
           echo "ORCID_PUB_API_BASE=${ORCID_PUB_API_BASE}"
-          # The starter users' iDs are minted, so ask the mock for a user with a public name.
-          ORCID_PUBLIC_ID="$(curl --fail --silent "${ORCID_API_BASE}/__admin/users" \
-            | jq -er '[.[] | select(.name.visibility == "public")][0].orcid')"
-          export ORCID_PUBLIC_ID
+          admin() { curl --fail --silent --max-time 5 "${ORCID_API_BASE}/__admin/$1"; }
+          # The starter users' iDs are minted, so pick the user by what the suite needs from it:
+          # a public name and at least one public work, employment, and email.
+          ORCID_PUBLIC_ID="$(admin users | jq -er '
+            [.[] | select(.name.visibility == "public"
+              and any(.works[]?; .visibility == "public")
+              and any(.employments[]?; .visibility == "public")
+              and any(.emails[]?; .visibility == "public"))][0].orcid')"
+          # The public client, read from the mock; its secret is masked, so a pattern copied from
+          # here never prints a secret.
+          client="$(admin clients | jq -ec '[.[] | select(.member != true)][0]')"
+          ORCID_CLIENT_ID="$(jq -er .client_id <<< "${client}")"
+          ORCID_CLIENT_SECRET="$(jq -er .client_secret <<< "${client}")"
+          echo "::add-mask::${ORCID_CLIENT_SECRET}"
+          export ORCID_PUBLIC_ID ORCID_CLIENT_ID ORCID_CLIENT_SECRET
           echo "ORCID_PUBLIC_ID=${ORCID_PUBLIC_ID}"
+          echo "ORCID_CLIENT_ID=${ORCID_CLIENT_ID}"
           bun run conformance
       - name: Container logs
         if: failure()
