@@ -124,6 +124,39 @@ describe("methods", () => {
     expectHeaders(head);
   });
 
+  test("HEAD carries the Content-Length of the body a GET sends, not 0 (observed)", async () => {
+    const paths = [
+      EMAIL,
+      "/v3.0/0000-0000-0000-0000/email",
+      `/v3.0/${IDS.carberry}/bogus`,
+      "/v3.0/",
+      `/v3.0/${IDS.deprecated}/email`,
+    ];
+    for (const path of paths) {
+      for (const accept of ["application/json", "application/vnd.orcid+json", "text/csv"]) {
+        const get = await getRecord(server, path, { accept });
+        const head = await getRecord(server, path, { accept, method: "HEAD" });
+        expect([path, accept, head.headers.get("content-length")]).toEqual([
+          path,
+          accept,
+          String(new TextEncoder().encode(get.text).length),
+        ]);
+        expect(head.text).toBe("");
+      }
+    }
+    // The empty container, byte for byte: 74 compact and 91 pretty.
+    expect((await getRecord(server, EMAIL, { method: "HEAD" })).headers.get("content-length")).toBe(
+      "74",
+    );
+  });
+
+  test("HEAD with a bad token carries the 401's length", async () => {
+    const get = await getRecord(server, EMAIL, { token: "bad" });
+    const head = await getRecord(server, EMAIL, { token: "bad", method: "HEAD" });
+    expect(head.status).toBe(401);
+    expect(head.headers.get("content-length")).toBe(String(get.text.length));
+  });
+
   test("HEAD on an error is the error's status and headers", async () => {
     const head = await getRecord(server, "/v3.0/0000-0000-0000-0000/email", { method: "HEAD" });
     expect(head.status).toBe(404);

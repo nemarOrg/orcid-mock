@@ -46,8 +46,18 @@ const RECORD_HEADERS: Record<string, string> = {
   "x-frame-options": "DENY",
 };
 
-function applyRecordHeaders(response: Response): Response {
+/**
+ * The headers above, plus, for HEAD, the `Content-Length` of the body a GET would have sent
+ * (observed on pub.orcid.org/v3.0 on 2026-10-02: a HEAD answered 74 for a 74-byte body, 219 for
+ * an error, 445 for a 406). Hono serves HEAD from the GET handler and drops the body afterwards,
+ * so the length is taken here, while it is still there.
+ */
+async function finish(c: RecordContext, response: Response): Promise<Response> {
   for (const [name, value] of Object.entries(RECORD_HEADERS)) response.headers.set(name, value);
+  if (c.req.method === "HEAD") {
+    const length = (await response.clone().arrayBuffer()).byteLength;
+    response.headers.set("content-length", String(length));
+  }
   return response;
 }
 
@@ -59,11 +69,10 @@ function applyRecordHeaders(response: Response): Response {
 export const recordMiddleware: MiddlewareHandler<RecordEnv> = async (c, next) => {
   const { store } = c.get("deps");
   const bearer = await resolveRecordBearer(c, store);
-  if (bearer.kind === "invalid")
-    return applyRecordHeaders(invalidTokenResponse(c, bearer.presented));
+  if (bearer.kind === "invalid") return finish(c, invalidTokenResponse(c, bearer.presented));
   c.set("token", bearer.kind === "ok" ? bearer.token : null);
   await next();
-  applyRecordHeaders(c.res);
+  await finish(c, c.res);
 };
 
 /**
