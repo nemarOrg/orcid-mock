@@ -49,17 +49,44 @@ function rejection(c: Context<AppEnv>, prepared: Exclude<PrepareResult, { ok: tr
     : adminError(c, 400, "invalid_fixture", prepared.issues);
 }
 
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+
+// `host` or `[ipv6]`, then an optional `:port`; nothing else (no userinfo, path, or list).
+const HOST_HEADER = /^(\[[0-9a-f:.]+\]|[^\s:[\]/?#@\\,]+)(?::[0-9]*)?$/i;
+
+/**
+ * The hostname of a `Host` header value, lowercased, or null when the value is not a host and an
+ * optional port. A bare `::1` has no port to strip, so it is its own hostname.
+ */
+function hostnameOf(host: string | undefined): string | null {
+  if (host === undefined) return null;
+  if (host === "::1") return host;
+  const match = HOST_HEADER.exec(host);
+  return match?.[1] === undefined ? null : match[1].toLowerCase();
+}
+
 export function adminRoutes(): Hono<AppEnv> {
   const admin = new Hono<AppEnv>();
 
-  // orcid-mock's own rule, not ORCID's: the admin API has no authentication, so a web page must
-  // not be able to reset or rewrite a local mock. Browsers always send `Origin` on a cross-origin
-  // request, and curl and test clients send none, so refusing a foreign `Origin` closes the hole
-  // without getting in the way of either.
+  // orcid-mock's own rules, not ORCID's: the admin API has no authentication, so a web page must
+  // not be able to reset, rewrite, or read a local mock.
+  // The `Origin` rule: browsers always send `Origin` on a cross-origin request, and curl and test
+  // clients send none, so refusing a foreign `Origin` closes the hole without getting in the way
+  // of either.
+  // The `Host` rule: a DNS-rebinding page is same-origin to the browser, which sends no `Origin`
+  // on a GET, so the rule above lets it read every user. Its `Host` is the attacker's name,
+  // though, so only a loopback name or the hostname of PUBLIC_BASE_URL (what callers outside this
+  // machine, such as another container, use to reach the mock) is served. Fail closed: a missing
+  // or malformed `Host` is refused.
   admin.use("*", async (c, next) => {
+    const base = new URL(c.get("deps").config.publicBaseUrl);
     const origin = c.req.header("origin");
-    if (origin !== undefined && origin !== new URL(c.get("deps").config.publicBaseUrl).origin) {
+    if (origin !== undefined && origin !== base.origin) {
       return adminError(c, 403, "forbidden_origin");
+    }
+    const hostname = hostnameOf(c.req.header("host"));
+    if (hostname === null || !(LOOPBACK_HOSTNAMES.has(hostname) || hostname === base.hostname)) {
+      return adminError(c, 403, "forbidden_host");
     }
     await next();
   });
