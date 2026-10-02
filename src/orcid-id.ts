@@ -37,11 +37,13 @@ export function formatOrcidId(base15: string): string {
 
 /**
  * The first five digits of every minted iD, so minted iDs read `0009-9ddd-dddd-ddd` plus a check.
- * ORCID assigns at random from 0000-0001-5000-0007 to 0000-0003-5000-0001 and from
- * 0009-0000-0000-0000 to 0009-0010-0000-0000; numbers outside those ranges are ISNI space
+ * ORCID's support page says it assigns iDs at random from 0000-0001-5000-0007 to
+ * 0000-0003-5000-0001 and from 0009-0000-0000-0000 to 0009-0010-0000-0000, and that those blocks
+ * avoid numbers ISNI assigns in other ways
  * (https://support.orcid.org/hc/en-us/articles/360006897674-Structure-of-the-ORCID-Identifier).
- * `0009-9...` sits inside ORCID's `0009` prefix and above its documented range, so a minted iD
- * is never a real person's today (ADR 0002 records the trade-off).
+ * `0009-9...` is above the documented `0009` range. Whether ISNI or ORCID has allocated anything
+ * there is unknown, so a minted iD might be somebody's; the residual collision risk is accepted
+ * for a test tool (ADR 0003 records the trade-off).
  */
 export const MINT_PREFIX = "00099";
 
