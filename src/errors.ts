@@ -45,17 +45,18 @@ export interface OrcidApiErrorSpec {
   userMessage: string;
 }
 
-// ORCID's troubleshooting link, the same in every error body
-// (ORCID-Source orcid-core/.../OrcidCoreExceptionMapper.java).
+// ORCID's troubleshooting link, the same in every error body: the `apiError.<code>.moreInfo` keys
+// in ORCID/ORCID-Source orcid-core/src/main/resources/i18n/api_en.properties.
 const MORE_INFO = "https://members.orcid.org/api/resources/troubleshooting";
 
 /**
- * ORCID's v3.0 error body, keys in this fixed order:
- * `response-code`, `developer-message`, `user-message`, `error-code`, `more-info`
- * (ORCID-Source orcid-core/.../OrcidCoreExceptionMapper.java, messages in
- * orcid-core/src/main/resources/i18n/api_en.properties).
- * `contentType` is the negotiated type; real ORCID sends no Content-Type at all on 9001
- * (observed 2026-10-01), so leaving it out sends none.
+ * ORCID's v3.0 error body, keys in this fixed order, as observed on pub.orcid.org/v3.0 on
+ * 2026-10-01: `response-code`, `developer-message`, `user-message`, `error-code`, `more-info`.
+ * ORCID builds it in ORCID/ORCID-Source
+ * orcid-core/src/main/java/org/orcid/core/exception/OrcidCoreExceptionMapper.java, from the
+ * `apiError.<code>.*` keys in orcid-core/src/main/resources/i18n/api_en.properties.
+ * `contentType` is the negotiated type; real ORCID sends no Content-Type at all on a 9001
+ * (observed on pub.orcid.org/v3.0 on 2026-10-01), so leaving it out sends none.
  */
 export function orcidApiError(
   c: Context,
@@ -96,7 +97,12 @@ function headerlessBody(
   });
 }
 
-/** The 9001 body ORCID sends for anything it cannot route or negotiate; `detail` varies. */
+/**
+ * The 9001 body ORCID sends for anything it cannot route or negotiate; `detail` varies
+ * (`HTTP 404 Not Found`, `HTTP 406 Not Acceptable`, `HTTP 405 Method Not Allowed`).
+ * Text: `apiError.9001.developerMessage` and `.userMessage` in api_en.properties, then
+ * ` Full validation error: <detail>` appended by OrcidCoreExceptionMapper.
+ */
 export function unroutedError(status: ErrorStatus, detail: string): OrcidApiErrorSpec {
   return {
     status,
@@ -111,21 +117,26 @@ export function unroutedError(status: ErrorStatus, detail: string): OrcidApiErro
 }
 
 /**
- * The canonical record-API errors phase 4 serves; each string is the observed or source-derived
- * text from the record-API research (section 1.4).
- * Observed on pub.orcid.org on 2026-10-01 unless marked "source".
+ * The canonical record-API errors phase 4 serves. Each message is the `apiError.<code>` entry in
+ * ORCID/ORCID-Source orcid-core/src/main/resources/i18n/api_en.properties, with the
+ * ` Full validation error: ...` suffix OrcidCoreExceptionMapper appends where there is one.
+ * All were observed on pub.orcid.org/v3.0 on 2026-10-01 unless marked "source only".
  */
 export const ORCID_API_ERRORS = {
-  /** 9001, unrouted path: `Full validation error: HTTP 404 Not Found`. */
+  /** 9001 (`apiError.9001`), an unrouted path: `Full validation error: HTTP 404 Not Found`. */
   unrouted: unroutedError(404, "HTTP 404 Not Found"),
-  /** 9016, unknown or malformed iD, or an unknown put-code. */
+  /** 9016 (`apiError.9016`), an unknown or malformed iD, or an unknown put-code. */
   notFound: {
     status: 404,
     code: 9016,
     developerMessage: "404 Not Found: The resource was not found.",
     userMessage: "The resource was not found.",
   },
-  /** 9039, a single item or a biography that is not public. */
+  /**
+   * 9039 (`apiError.9039`), a biography that is not public (observed); a single item that is not
+   * public is source only (OrcidSecurityManagerImpl, orcid-core/src/main/java/org/orcid/core/
+   * manager/v3/impl/OrcidSecurityManagerImpl.java).
+   */
   notPublic: {
     status: 403,
     code: 9039,
@@ -133,7 +144,11 @@ export const ORCID_API_ERRORS = {
       "403 Forbidden: The item is not public and cannot be accessed with the Public API.",
     userMessage: "The client application is forbidden to perform the action.",
   },
-  /** 9042, more than 100 put-codes on a bulk read (HTTP 400, not 413). */
+  /**
+   * 9042 (`apiError.9042.userMessage`), more than 100 put-codes on a bulk read: HTTP 400, not
+   * 413. The key has no developerMessage, so the body carries the exception class name and the
+   * validation error, as OrcidCoreExceptionMapper does.
+   */
   tooManyPutCodes: {
     status: 400,
     code: 9042,
@@ -141,21 +156,27 @@ export const ORCID_API_ERRORS = {
       "org.orcid.core.exception.ExceedMaxNumberOfPutCodesException Full validation error: Too many put codes specified: maximum is 100",
     userMessage: "Too many put codes supplied",
   },
-  /** 9044, a deactivated record. */
+  /** 9044 (`apiError.9044`), a deactivated record. */
   deactivated: (orcid: string): OrcidApiErrorSpec => ({
     status: 409,
     code: 9044,
     developerMessage: `409 Conflict: The ORCID record is deactivated and cannot be edited. Full validation error: ${orcid} is deactivated`,
     userMessage: "The ORCID record is deactivated.",
   }),
-  /** 9018, a locked record (source: OrcidSecurityManagerImpl.checkProfile; not observed live). */
+  /**
+   * 9018 (`apiError.9018`), a locked record. Source only: raised by `checkProfile` in
+   * ORCID-Source orcid-core/src/main/java/org/orcid/core/manager/v3/impl/OrcidSecurityManagerImpl.java.
+   */
   locked: (orcid: string): OrcidApiErrorSpec => ({
     status: 409,
     code: 9018,
     developerMessage: `409 Conflict: The ORCID record is locked and cannot be edited. ORCID ${orcid} Full validation error: ${orcid} is locked`,
     userMessage: "The ORCID record is locked.",
   }),
-  /** 9036, an unclaimed record inside the claim wait period (source; not observed live). */
+  /**
+   * 9036 (`apiError.9036`), an unclaimed record inside the claim wait period. Source only, from
+   * the same `checkProfile`.
+   */
   unclaimed: {
     status: 409,
     code: 9036,
@@ -164,8 +185,9 @@ export const ORCID_API_ERRORS = {
       "This record has not been claimed, if this is your record you can claim it at https://orcid.org/resend-claim.",
   },
   /**
-   * 9007, a deprecated record; the response is a 301 whose `Location` points at the primary
-   * record with the same path suffix. The URIs are ORCID's `https://orcid.org/<iD>` form.
+   * 9007 (`apiError.9007`), a deprecated record; the response is a 301 whose `Location` points at
+   * the primary record with the same path suffix. The URIs are ORCID's `https://orcid.org/<iD>`
+   * form.
    */
   deprecated: (primaryUri: string, ownUri: string): OrcidApiErrorSpec => ({
     status: 301,

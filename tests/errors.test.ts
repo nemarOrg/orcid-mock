@@ -27,7 +27,7 @@ describe("an unrouted /v3.0 path answers in ORCID's record-API shape", () => {
     test(`GET ${path}`, async () => {
       const { response, text, json } = await get(path);
       expect(response.status).toBe(404);
-      // Real ORCID sends no Content-Type on a 9001 (record-API research, section 1.4).
+      // Real ORCID sends no Content-Type on a 9001 (observed on pub.orcid.org/v3.0, 2026-10-01).
       expect(response.headers.get("content-type")).toBeNull();
       expect(Object.keys(json)).toEqual([
         "response-code",

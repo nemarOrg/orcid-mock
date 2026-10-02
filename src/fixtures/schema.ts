@@ -34,7 +34,8 @@ export function formatPath(path: ReadonlyArray<PropertyKey>): string {
 
 const ORCID_SHAPE = /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/;
 
-// Years 1900 to 2100 are the bounds of ORCID's v3.0 XSD (common-3.0.xsd, fuzzy-date).
+// Years 1900 to 2100 are the bounds of ORCID's v3.0 XSD: ORCID/orcid-model
+// src/main/resources/common_3.0/common-3.0.xsd, the fuzzy-date types.
 const FUZZY_DATE = /^(?:19\d{2}|20\d{2}|2100)(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?)?$/;
 
 function isRealDate(date: string): boolean {
@@ -269,7 +270,10 @@ function userIssues(user: z.output<typeof UserShape>): RawIssue[] {
   const emails = user.emails ?? [];
   const seen = new Set<string>();
   emails.forEach((email, k) => {
-    // ORCID only allows a verified email to be public (ORCID support, "Email visibility").
+    // ORCID's interface says "Only verified email addresses can be displayed publicly or shared
+    // with trusted parties" (`manage.email.only_verified` in ORCID/ORCID-Source
+    // orcid-core/src/main/resources/i18n/messages_en.properties). The mock enforces the public
+    // half of that rule only: orcid-mock's choice, since ORCID's API docs state no such rule.
     if (email.visibility === "public" && !email.verified) {
       issues.push({
         path: ["emails", k, "visibility"],

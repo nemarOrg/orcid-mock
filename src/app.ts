@@ -65,8 +65,10 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     deps.log.error("unhandled_error", { method: c.req.method, path: c.req.path, error: err });
     switch (errorFamily(c.req.path)) {
       case "record":
-        // 9008 is ORCID's catch-all and its user message is verbatim; the 500 status and the
-        // developer message are orcid-mock's choice, since ORCID's wire text is unobserved.
+        // 9008 is ORCID's catch-all and its user message is `apiError.9008.userMessage` in
+        // ORCID-Source orcid-core/src/main/resources/i18n/api_en.properties; that key has no
+        // developerMessage, so the 500 status and the developer message here are orcid-mock's
+        // choice (ORCID's wire text for a 9008 is unobserved).
         return orcidApiError(
           c,
           {
