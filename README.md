@@ -90,7 +90,8 @@ bunx @nemarorg/orcid-mock fixture --out users.json     # write the starter users
 bunx @nemarorg/orcid-mock --users users.json           # serve your own file
 ```
 
-The package also exports `createApp` from `@nemarorg/orcid-mock` and `createMockApp` (a users file in, an app and its store out) from `@nemarorg/orcid-mock/bootstrap`, both portable (Web APIs only, for a Worker or any `fetch` host), `startServer` from `@nemarorg/orcid-mock/server` (Bun only), and the users-file JSON Schema and example as `@nemarorg/orcid-mock/fixtures/users.schema.json` and `.../users.example.json`.
+The package also exports `createApp` from `@nemarorg/orcid-mock` and `createMockApp` (a users file in, an app and its store out) from `@nemarorg/orcid-mock/bootstrap`, both portable (Web APIs only, for a Worker or any `fetch` host),
+`startServer` from `@nemarorg/orcid-mock/server` (Bun only), and the users-file JSON Schema and example as `@nemarorg/orcid-mock/fixtures/users.schema.json` and `.../users.example.json`.
 
 ### As a container
 
@@ -280,7 +281,9 @@ They are separate packages in this repository, [`clients/node`](clients/node) (`
 - **Users files.**
   A path is read when you pass it (`withUsers` in Node, `with_users` and the constructor in Python), so a missing file fails there with an `OrcidMockStartError` naming it, and a second call replaces the first file.
 - **Proxies.**
-  A proxy named by `HTTP_PROXY` or `ALL_PROXY` must not capture the traffic to a mock on this machine, so the clients ignore those variables: the Python client sets `trust_env=False`, and the Node client talks through `node:http` with an agent of its own, because Bun's `fetch` sends even a request to localhost through `HTTP_PROXY` (checked on Bun 1.4.2) and Node's does when `NODE_USE_ENV_PROXY` is set.
+  A proxy named by `HTTP_PROXY` or `ALL_PROXY` must not capture the traffic to a mock on this machine, so the clients ignore those variables:
+  the Python client sets `trust_env=False`,
+  and the Node client talks through `node:http` with an agent of its own, because Bun's `fetch` sends even a request to localhost through `HTTP_PROXY` (checked on Bun 1.4.2) and Node's does when `NODE_USE_ENV_PROXY` is set.
   Your own code is not covered: an application under test that reaches the mock through a proxy needs `NO_PROXY=localhost`.
 - **Reset.**
   `reset()` restores the loaded file: users, clients, counters, and the clock, and clears codes, tokens, and sessions.
@@ -687,7 +690,9 @@ The cases are listed at the top of [`conformance/conformance.test.ts`](conforman
 
 The assertions are structural: keys, order, and the kind of each value, never a count or a value, because a fixture and a real record hold different data.
 Where the mock differs from ORCID on purpose, the suite avoids the case or checks only what both satisfy, with a comment naming the decision record:
-it always sends `Accept` (ORCID answers XML to none, the mock a 406, [ADR 0007](.context/decisions/0007-record-api-fidelity-and-deviations.md)), it checks that `orcid-identifier` agrees with itself and not that it names `orcid.org`, and it looks for the 415 sentence inside the body, which ORCID wraps in a web server's error page and the mock sends alone (recorded under [OAuth, where ORCID is undocumented or unobserved](#oauth-where-orcid-is-undocumented-or-unobserved)).
+it always sends `Accept` (ORCID answers XML to none, the mock a 406, [ADR 0007](.context/decisions/0007-record-api-fidelity-and-deviations.md)),
+it checks that `orcid-identifier` agrees with itself and not that it names `orcid.org`,
+and it looks for the 415 sentence inside the body, which ORCID wraps in a web server's error page and the mock sends alone (recorded under [OAuth, where ORCID is undocumented or unobserved](#oauth-where-orcid-is-undocumented-or-unobserved)).
 No assertion branches on the target.
 
 The target comes from the environment, and a missing or malformed variable stops the run with one message that names it (never its value):
@@ -763,7 +768,9 @@ A failing case on the sandbox means the mock is wrong about ORCID or ORCID chang
 
 Real ORCID needs a person to sign in (a browser, a password, a consent click), so the sandbox run covers the token endpoint and the record API and cannot cover sign-in.
 [`conformance/round-trip.test.ts`](conformance/round-trip.test.ts) covers it on the mock, as the definition of done for a brand-new sign-up with no browser, and is skipped with a message when `CONFORMANCE_TARGET` is not `mock`.
-It registers a client and creates a user through the admin API, signs in with `login_as`, exchanges the code for an ID token, verifies the token against the discovery document's `jwks_uri` (RS256 pinned, with `exp`, `iat`, `sub`, `aud`, and `iss` required), reads the user through userinfo and the record API, calls `POST /__admin/reset`, and checks that the user and the test's client are gone (404, error 9016, and `invalid_client`) while the fixture's own users remain.
+It registers a client and creates a user through the admin API, signs in with `login_as`, exchanges the code for an ID token,
+verifies the token against the discovery document's `jwks_uri` (RS256 pinned, with `exp`, `iat`, `sub`, `aud`, and `iss` required),
+reads the user through userinfo and the record API, calls `POST /__admin/reset`, and checks that the user and the test's client are gone (404, error 9016, and `invalid_client`) while the fixture's own users remain.
 
 ### The services container check
 
