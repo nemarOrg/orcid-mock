@@ -1,9 +1,9 @@
-// Bearer-token resolution for the record API's `/read-limited` reads, and the two pieces the
-// OpenID Connect userinfo endpoint shares with it: `readBearerHeader` reads the header and
-// `checkAccessToken` is the one validity rule. Userinfo also takes a token from a form field or
-// the query string, so it calls those two itself and answers every failure with its own 403
-// shape; the record API goes through `resolveBearer` and answers `invalid` with
-// `invalidTokenResponse`.
+// Bearer-token reading, shared by the record API's `/read-limited` reads (src/record/bearer.ts) and
+// the OpenID Connect userinfo endpoint: `readBearerHeader` reads the header and `checkAccessToken`
+// is the one validity rule. Both callers also take a token from somewhere else (the record API from
+// an `access_token` query parameter, userinfo from a form field or the query string), so each calls
+// those two itself and answers a failure its own way: the record API with `invalidTokenResponse`,
+// userinfo with its own 403 shape.
 import type { Context } from "hono";
 import type { AppEnv } from "../app";
 import { serverNowMs } from "../clock";
@@ -60,12 +60,6 @@ export function parseBearerHeader(header: string | undefined): string | null {
   if (split === -1 || trimmed.slice(0, split).toLowerCase() !== "bearer") return null;
   const token = trimmed.slice(split).trim();
   return token === "" ? null : token;
-}
-
-/** The header route: `none` without a bearer header, else `checkAccessToken` on what it holds. */
-export async function resolveBearer(c: Context<AppEnv>, store: Store): Promise<BearerResult> {
-  const presented = readBearerHeader(c);
-  return presented === null ? { kind: "none" } : checkAccessToken(store, presented);
 }
 
 /**

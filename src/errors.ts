@@ -5,6 +5,7 @@ import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { Issue } from "./fixtures/schema";
 import { escapeHtml } from "./html";
+import { type Json, prettyJson } from "./record/json";
 
 export type ErrorStatus = ContentfulStatusCode;
 
@@ -93,13 +94,15 @@ const MORE_INFO = "https://members.orcid.org/api/resources/troubleshooting";
  * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/exception/OrcidCoreExceptionMapper.java#L221-L238
  * `contentType` is the negotiated type; real ORCID sends no Content-Type at all on a 9001
  * (observed on pub.orcid.org/v3.0 on 2026-10-01), so leaving it out sends none.
+ * `pretty` writes the Jackson-pretty form, which errors take when the client asked for an ORCID
+ * JSON type (observed: a 404 for `Accept: application/vnd.orcid+json` was pretty-printed).
  */
 export function orcidApiError(
   c: Context,
   spec: OrcidApiErrorSpec,
-  opts: { contentType?: string; headers?: Record<string, string> } = {},
+  opts: { contentType?: string; headers?: Record<string, string>; pretty?: boolean } = {},
 ): Response {
-  const body = {
+  const body: Json = {
     "response-code": spec.status,
     "developer-message": spec.developerMessage,
     "user-message": spec.userMessage,
@@ -109,7 +112,10 @@ export function orcidApiError(
   const headers: Record<string, string> = { ...opts.headers };
   if (opts.contentType !== undefined) headers["Content-Type"] = opts.contentType;
   return c.body(
-    headerlessBody(JSON.stringify(body), opts.contentType !== undefined),
+    headerlessBody(
+      opts.pretty ? prettyJson(body) : JSON.stringify(body),
+      opts.contentType !== undefined,
+    ),
     spec.status,
     headers,
   );
@@ -154,6 +160,9 @@ export function unroutedError(status: ErrorStatus, detail: string): OrcidApiErro
   };
 }
 
+// The literal placeholder ORCID leaves in a message when it has no value for it (observed).
+const CLIENT_NAME_PLACEHOLDER = ["$", "{clientName}"].join("");
+
 /**
  * The canonical record-API errors phase 4 serves. Each message is the `apiError.<code>` entry in
  * api_en.properties, with the ` Full validation error: ...` suffix `getDeveloperMessage` appends
@@ -178,7 +187,7 @@ export const ORCID_API_ERRORS = {
    * 9039 (`apiError.9039`), a biography that is not public (observed); a single item that is not
    * public is source only, thrown by `checkIsPublic`:
    * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/resources/i18n/api_en.properties#L122-L123
-   * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-api-common/src/main/java/org/orcid/api/publicV3/server/security/impl/PublicAPISecurityManagerV3Impl.java#L38-L44
+   * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-api-common/src/main/java/org/orcid/api/publicV3/server/security/impl/PublicAPISecurityManagerV3Impl.java#L48-L52
    */
   notPublic: {
     status: 403,
@@ -250,4 +259,83 @@ export const ORCID_API_ERRORS = {
     developerMessage: `301 Moved Permanently: This account is deprecated. Please refer to account: ${primaryUri}. ORCID ${ownUri}`,
     userMessage: `This account is deprecated. Please refer to account: ${primaryUri}.`,
   }),
+  /**
+   * 9001 with `HTTP 406 Not Acceptable`: an `Accept` header that names no type ORCID produces
+   * (`text/csv`, `text/html`, `text/*`, `application/ld+json`), observed with no Content-Type.
+   */
+  notAcceptable: unroutedError(406, "HTTP 406 Not Acceptable"),
+  /** 9001 with `HTTP 405 Method Not Allowed`: any method but GET, HEAD, and OPTIONS (observed). */
+  methodNotAllowed: unroutedError(405, "HTTP 405 Method Not Allowed"),
+  /**
+   * 9001 with the `NumberFormatException` a non-numeric put-code on a single-item path raises
+   * (observed for `/work/abc`): JAX-RS answers 404 when a path parameter does not convert, and
+   * the exception is the cause.
+   */
+  unroutedPutCode: (raw: string): OrcidApiErrorSpec =>
+    unroutedError(
+      404,
+      `HTTP 404 Not Found (java.lang.NumberFormatException: For input string: ${JSON.stringify(raw)})`,
+    ),
+  /**
+   * 9041 (`apiError.9041`), a record with no biography at all. Source only: `checkIsPublic`
+   * throws it for a null biography, and a 404 code gets no `Full validation error` suffix:
+   * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/resources/i18n/api_en.properties#L128-L129
+   * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-api-common/src/main/java/org/orcid/api/publicV3/server/security/impl/PublicAPISecurityManagerV3Impl.java#L55-L58
+   */
+  noBiography: {
+    status: 404,
+    code: 9041,
+    developerMessage: "404 Not Found: Biography for the given record is null.",
+    userMessage: "There is no biography for the given record.",
+  },
+  /**
+   * 9006 (`apiError.9006`), an element of a bulk put-code list that is not a number. The
+   * `NumberFormatException` is an `IllegalArgumentException`, which maps to 400 / 9006, and its
+   * message is `For input string: "<element>"` (observed for `abc`, `1.5`, and an empty element):
+   * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/resources/i18n/api_en.properties#L24-L25
+   * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/manager/v3/read_only/impl/WorkManagerReadOnlyImpl.java#L384-L387
+   */
+  badPutCode: (raw: string): OrcidApiErrorSpec => ({
+    status: 400,
+    code: 9006,
+    developerMessage: `The client application sent a bad request to ORCID. Full validation error: For input string: ${JSON.stringify(raw)}`,
+    userMessage: "The client application sent a bad request to ORCID.",
+  }),
+  /**
+   * 9034 (`apiError.9034`), one bulk element whose put-code is not one of the record's (observed:
+   * an unknown put-code, another record's, a repeated one, and `007`, which reads as 7). ORCID
+   * fills `${clientName}` with the calling client's name; an anonymous reader has none, so the
+   * placeholder stays in the text (observed):
+   * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/resources/i18n/api_en.properties#L107-L108
+   * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/manager/v3/read_only/impl/WorkManagerReadOnlyImpl.java#L400-L403
+   * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/exception/OrcidCoreExceptionMapper.java#L225-L229
+   */
+  invalidPutCode: (putCode: string, clientName: string | null): OrcidApiErrorSpec => ({
+    status: 400,
+    code: 9034,
+    developerMessage: `400 Bad Request: The put code provided is not valid. Full validation error: '${putCode}' is not a valid put code`,
+    userMessage: `There was an error when updating the record. Please try again. If the error persists, please contact ${clientName ?? CLIENT_NAME_PLACEHOLDER} for assistance.`,
+  }),
 } satisfies Record<string, OrcidApiErrorSpec | ((...args: never[]) => OrcidApiErrorSpec)>;
+
+/**
+ * orcid-mock's own 406 / 9001 for a request real ORCID would answer with XML: an `Accept` header
+ * that is missing, a wildcard, or names an XML type. orcid-mock serves JSON only until XML
+ * exists, and a 406 surfaces a client that depends on a default instead of hiding it behind a
+ * response it cannot parse. The status and the 9001 shape are the standard 406; the developer
+ * message is orcid-mock's.
+ */
+export function jsonOnlyError(accept: string | null | undefined): OrcidApiErrorSpec {
+  const sent =
+    accept === null || accept === undefined || accept.trim() === ""
+      ? "no Accept header"
+      : `Accept: ${accept}`;
+  return {
+    status: 406,
+    code: 9001,
+    developerMessage:
+      `406 Not Acceptable: orcid-mock serves JSON only, and real ORCID would answer this request (${sent}) with XML. ` +
+      "Send Accept: application/json, application/orcid+json, or application/vnd.orcid+json.",
+    userMessage: "ORCID could not process the data, because they were invalid.",
+  };
+}

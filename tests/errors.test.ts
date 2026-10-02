@@ -17,11 +17,10 @@ async function get(path: string, init?: RequestInit) {
   return { response, text, json: JSON.parse(text) as Record<string, unknown> };
 }
 
-// Left to phase 4's record router, which owns /v3.0: real ORCID answers GET /v3.0/ with 406 / 9001
-// and a wrong method on a read path (POST) with 405 / 9001, both with no Content-Type. Until then
-// every /v3.0 path, whatever the method, is the 404 / 9001 below.
+// The record router owns /v3.0 (tests/record-routing.test.ts covers its routes, methods, and
+// headers): a path that is no read path answers 404 / 9001 whatever the method.
 describe("an unrouted /v3.0 path answers in ORCID's record-API shape", () => {
-  for (const path of ["/v3.0/x", "/v3.0", "/v3.0/", "/v3.0/0000-0002-1825-0097/record"]) {
+  for (const path of ["/v3.0/x/y/z", "/v3.0", "/v3.0/x/bogus"]) {
     test(`GET ${path}`, async () => {
       const { response, text, json } = await get(path);
       expect(response.status).toBe(404);
@@ -51,7 +50,7 @@ describe("an unrouted /v3.0 path answers in ORCID's record-API shape", () => {
   }
 
   test("a method that has no route answers the same way", async () => {
-    const { response, json } = await get("/v3.0/anything", { method: "POST" });
+    const { response, json } = await get("/v3.0/anything/bogus", { method: "POST" });
     expect(response.status).toBe(404);
     expect(json["error-code"]).toBe(9001);
   });
