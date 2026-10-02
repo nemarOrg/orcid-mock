@@ -12,6 +12,17 @@
   "bin": {
     "orcid-mock": "src/main.ts"
   },
+  "exports": {
+    ".": "./src/app.ts",
+    "./server": "./src/server.ts"
+  },
+  "files": [
+    "src/",
+    "fixtures/users.schema.json",
+    "fixtures/users.example.json",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "lint": "biome ci .",
     "format": "biome check --write .",
@@ -21,9 +32,16 @@
     "example": "bun scripts/write-example.ts",
     "build:binaries": "bun scripts/build-binaries.ts"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/nemarOrg/orcid-mock"
+  },
+  "homepage": "https://github.com/nemarOrg/orcid-mock#readme",
+  "bugs": {
+    "url": "https://github.com/nemarOrg/orcid-mock/issues"
   },
   "keywords": [
     "orcid",
