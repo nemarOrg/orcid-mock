@@ -1,4 +1,4 @@
-# ADR 0006: OpenID Connect choices
+# Architecture Decision Record (ADR) 0006: OpenID Connect choices
 
 **Status:** accepted
 **Date:** 2026-10-01

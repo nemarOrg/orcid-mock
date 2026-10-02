@@ -1,6 +1,6 @@
-# ADR 0005: Distribution and release
+# Architecture Decision Record (ADR) 0005: Distribution and release
 
-**Status:** accepted
+**Status:** accepted; amended by [ADR 0008](0008-client-helpers.md), which added the Python Package Index (PyPI) as a channel, published through trusted publishing from a `pypi` environment, and made one version number cover five artifacts
 **Date:** 2026-10-01
 **Owner:** Seyed Yahya Shirazi
 
@@ -36,7 +36,7 @@ The image and the binaries carry GitHub build provenance attestations, and the p
 
 **The Worker entry is a portability smoke test, not a hosted mode.**
 `src/worker.ts` serves the starter users from memory in one store per isolate, takes its base URL only from the `PUBLIC_BASE_URL` binding, and is bundled and run in workerd by a test.
-The hosted mode (MVP2) runs the same app inside a Durable Object per tenant.
+The hosted mode, in the second minimum viable product (MVP2), runs the same app inside a Durable Object per tenant.
 
 ## Consequences
 
@@ -48,7 +48,19 @@ The hosted mode (MVP2) runs the same app inside a Durable Object per tenant.
   Before then the publish job must change, either by adding the npm command line for that one step (an exception to the Bun-only rule, to be decided then) or by a stage-only token with a manual approval, or by `bun publish` gaining OpenID Connect support.
 - The binaries are not code-signed beyond macOS's ad hoc signature; a browser download on macOS may need its quarantine flag cleared.
 - A granular npm token lasts at most 90 days, so a token that has expired fails the release at preflight, which is the intended place to find out.
-- Repository settings (the `release` environment, the tag ruleset, package visibility) are manual and owned by the owner; the README lists the exact steps.
+- Repository settings (the `release` environment, the tag ruleset, package visibility) are manual and owned by the owner; [`RELEASING.md`](../../RELEASING.md) lists the exact steps.
+
+## Amendments
+
+- **2026-10-02: all eight binaries are executed.**
+  The decision above has the release run each binary on a runner of its kind, which held for four of the eight when it was written.
+  The smoke job now executes all eight, each asked for its version and to mint an iD: the two musl builds in `alpine` containers on the Linux runner of the same architecture, the Windows arm64 build on `windows-11-arm`, and the darwin x64 build on `macos-15-intel`.
+  Only the linux x64 binary is also started as a server; the other seven are not served in CI.
+  `macos-15-intel` is the last x86_64 macOS image GitHub offers, and GitHub ends it in August 2027, after which nothing can execute the darwin x64 binary in CI.
+- **2026-10-02: the build-time runtime download is an accepted risk.**
+  `bun build --compile --target` downloads each target's Bun runtime while it builds, over HTTPS, and nothing compares the download with a checksum.
+  The risk is accepted: the build job holds no credentials, every binary is executed before anything is published, and the attestations tie each published file to the workflow run that built it (they do not prove that the embedded runtime is the one Bun published).
+  If that stops being enough, `bun build --compile-executable-path` takes a runtime that the build script has downloaded and checked itself, in place of Bun's own download.
 
 ## Alternatives considered
 

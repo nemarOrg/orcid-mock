@@ -1,4 +1,4 @@
-# ADR 0007: Record API fidelity and deviations
+# Architecture Decision Record (ADR) 0007: Record API fidelity and deviations
 
 **Status:** accepted
 **Date:** 2026-10-01
@@ -7,7 +7,7 @@
 ## Context
 
 A client written against the Open Researcher and Contributor ID (ORCID) public API at `pub.orcid.org/v3.0` must work unchanged against this mock, so the record API copies what ORCID's source and live responses show, down to key order, `null` versus empty, and the type of `display-index`.
-Some of ORCID's behavior cannot be copied: it answers XML to a missing or wildcard `Accept` header and orcid-mock has no XML yet; it writes `orcid.org` into every URI where this project derives every absolute URL from `PUBLIC_BASE_URL` (ADR 0001); and it serves `/read-limited` reads from a member host (`api.orcid.org`) that was not observed.
+Some of ORCID's behavior cannot be copied: it answers Extensible Markup Language (XML) to a missing or wildcard `Accept` header and orcid-mock has no XML yet; it writes `orcid.org` into every URI where this project derives every absolute URL from `PUBLIC_BASE_URL` (ADR 0001); and it serves `/read-limited` reads from a member host (`api.orcid.org`) that was not observed.
 Where ORCID's rule is a `HashSet` order or an unobserved case, the mock needs a stated rule.
 
 ## Decision
@@ -32,7 +32,7 @@ Person-level items and fundings are ordered by `displayIndex desc, dateCreated a
 Grouping is among visible items only, by ORCID's group id, merged transitively.
 
 **Normalization is minimal.**
-Work, affiliation, and peer-review ids carry `{ value, transient: true }`; only DOIs are changed (lowercased, reduced to the `10.<registrant>/<suffix>` part, with ORCID's 8001 error when that fails); funding ids carry null, as observed.
+Work, affiliation, and peer-review ids carry `{ value, transient: true }`; only Digital Object Identifiers (DOIs) are changed (lowercased, reduced to the `10.<registrant>/<suffix>` part, with ORCID's 8001 error when that fails); funding ids carry null, as observed.
 
 ## Consequences
 
@@ -43,7 +43,7 @@ Work, affiliation, and peer-review ids carry `{ value, transient: true }`; only 
 
 ## Alternatives considered
 
-- **Answering XML for a wildcard `Accept`:** faithful, but needs an XML writer for every shape; the 406 is the honest stand-in until MVP2.
+- **Answering XML for a wildcard `Accept`:** faithful, but needs an XML writer for every shape; the 406 is the honest stand-in until the second minimum viable product (MVP2).
 - **Answering JSON for a wildcard `Accept`:** hides a client bug that real ORCID would expose as unparseable XML.
 - **`orcid.org` in every URI:** matches the wire, but breaks the rule that nothing absolute is hard-coded and gives a client under test no way to follow a link back to the mock.
 - **403 for a token on another iD:** unobserved; the public view is the safer reading of "limited is visible only to the record's own member".

@@ -1,4 +1,4 @@
-# ADR 0002: Portable layer, enforcement gates, and state in the Store
+# Architecture Decision Record (ADR) 0002: Portable layer, enforcement gates, and state in the Store
 
 **Status:** accepted
 **Date:** 2026-10-01
@@ -19,12 +19,12 @@ It uses the standard `fetch` types, `crypto`, `structuredClone`, and `URL`, and 
 We do not turn on `nodejs_compat`.
 Bun-only code is `src/server.ts` and `src/main.ts`, which bind the socket, read files, parse the command line, and handle signals.
 
-**Three gates enforce it, all in CI.**
+**Three gates enforce it, all in continuous integration (CI).**
 `tsconfig.portable.json` type-checks every file under `src/` except those two with `types: []` and `lib: ["ES2023", "WebWorker"]`, so any Bun or Node name is a compile error, and a new portable file is covered the day it is added.
 Biome's `noRestrictedImports` and `noRestrictedGlobals` forbid the same names across `src/**` except the two Bun files.
 A tripwire test replaces `crypto.getRandomValues`, `crypto.randomUUID`, `fetch`, and `Function` with versions that throw, imports every portable module in a child process, and fails on any call, which is what Workers do at module scope; a second case proves the trap is armed.
 A `bun build --target=browser` gate was checked and rejected: it silently stubs `node:fs` and passes `Bun.*` through, so it passes code that Workers would reject.
-A real-runtime smoke test (a Worker entry, `wrangler deploy --dry-run`, one Miniflare request) is phase 5's job.
+The real-runtime smoke test is `tests/worker.test.ts`: it bundles the Worker entry (`src/worker.ts`) with `wrangler deploy --dry-run` and sends requests to the bundle in workerd through Miniflare.
 
 **All mutable state lives in the `Store`, and one `Store` is one tenant.**
 No module or process variable holds state, and no `Store` method takes a tenant id.
@@ -34,7 +34,7 @@ Every check-then-write is one `Store` method (`consumeCode`, `rotateRefresh`, `p
 ## Consequences
 
 - One build serves every channel, and a Node or Bun call that sneaks into the portable layer fails lint and type checking before it fails in production.
-- A failure that none of the gates sees (a Web API Workers lacks, say) still waits for the phase 5 smoke test.
+- A failure that none of the gates sees (a Web API Workers lacks, say) is caught by that smoke test, which runs in the same CI job.
 - A router mounted at the root (`oidcRoutes()`) must declare full paths and never use wildcard middleware, or that middleware would run for the record API too; a comment on the router and on the mounts says so.
 - The hosted mode needs a second `Store` and a tenant router, and nothing else in the routes changes.
 

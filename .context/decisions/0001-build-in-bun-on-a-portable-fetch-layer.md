@@ -1,4 +1,4 @@
-# ADR 0001: Build the mock in Bun on a portable fetch layer, in memory
+# Architecture Decision Record (ADR) 0001: Build the mock in Bun on a portable fetch layer, in memory
 
 **Status:** accepted
 **Date:** 2026-09-08
@@ -6,10 +6,10 @@
 
 ## Context
 
-NEMAR needs to drive a brand-new Open Researcher and Contributor ID (ORCID) sign-up from automated tests, and other ORCID integrators have the same gap.
+The Neuroelectromagnetic Data Archive and Tools Resource (NEMAR) needs to drive a brand-new Open Researcher and Contributor ID (ORCID) sign-up from automated tests, and other ORCID integrators have the same gap.
 ORCID's sandbox is shared, cannot be reset from an API, and needs real accounts.
-No open-source project mocks ORCID's identity layer and its record API together; the generic OAuth and OpenID Connect mocks that exist (navikt/mock-oauth2-server, axa-group/oauth2-mock-server, panva/node-oidc-provider, Dex, Keycloak, Soluto/oidc-server-mock) would still leave the ORCID-specific surface to write and would add a JVM, a .NET runtime, or a Duende license.
-The same code must run as a local process, a CI service container, a self-hosted Cloudflare Worker, and a multi-tenant hosted service.
+No open-source project mocks ORCID's identity layer and its record API together; the generic OAuth and OpenID Connect mocks that exist (navikt/mock-oauth2-server, axa-group/oauth2-mock-server, panva/node-oidc-provider, Dex, Keycloak, Soluto/oidc-server-mock) would still leave the ORCID-specific surface to write and would add a Java Virtual Machine, a .NET runtime, or a Duende license.
+The same code must run as a local process, a continuous integration (CI) service container, a self-hosted Cloudflare Worker, and a multi-tenant hosted service.
 
 ## Decision
 
@@ -24,6 +24,6 @@ Write the server in Bun and TypeScript with Hono on the standard `fetch` interfa
 
 ## Alternatives considered
 
-- Adopt a generic OIDC mock and stub the record API beside it: two runtimes or two processes, ORCID's non-standard token fields still hand-built, issuer derived from `Host` in at least one of them.
+- Adopt a generic OpenID Connect mock and stub the record API beside it: two runtimes or two processes, ORCID's non-standard token fields still hand-built, issuer derived from `Host` in at least one of them.
 - Prism or WireMock fed ORCID's swagger: static examples with no OAuth semantics and no visibility rules.
 - Use the real ORCID sandbox in CI: shared state, no reset, mail only to one throwaway provider, and real accounts per run.

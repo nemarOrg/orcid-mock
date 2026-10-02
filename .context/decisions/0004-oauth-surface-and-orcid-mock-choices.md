@@ -1,4 +1,4 @@
-# ADR 0004: OAuth surface and orcid-mock choices
+# Architecture Decision Record (ADR) 0004: OAuth surface and orcid-mock choices
 
 **Status:** accepted
 **Date:** 2026-10-01
