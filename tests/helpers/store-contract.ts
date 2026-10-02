@@ -112,7 +112,7 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
       test("insertUser creates, then conflicts without changing the stored user", async () => {
         const store = await fresh();
         const original = await firstUser(store);
-        expect(await store.insertUser({ ...original, password: "changed" })).toBe("conflict");
+        expect(await store.insertUser({ ...original, locked: true })).toBe("conflict");
         expect(await store.getUser(original.orcid)).toEqual(original);
 
         const created = { ...original, orcid: "0000-0002-1825-0097" };
@@ -125,11 +125,11 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
         const store = await fresh();
         const before = await store.listUsers();
         const original = before[0] as StoredUser;
-        const replacement = { ...original, password: "replaced" };
+        const replacement = { ...original, locked: true };
         expect(await store.upsertUser(replacement)).toBe("replaced");
         const after = await store.listUsers();
         expect(after.map((user) => user.orcid)).toEqual(before.map((user) => user.orcid));
-        expect(after[0]?.password).toBe("replaced");
+        expect(after[0]?.locked).toBe(true);
 
         const added = { ...original, orcid: "0000-0002-1825-0097" };
         expect(await store.upsertUser(added)).toBe("created");
@@ -445,7 +445,7 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
         const users = await store.listUsers();
 
         await store.deleteUser((users[0] as StoredUser).orcid);
-        await store.upsertUser({ ...(users[1] as StoredUser), password: "changed" });
+        await store.upsertUser({ ...(users[1] as StoredUser), locked: true });
         await store.insertUser({ ...(users[2] as StoredUser), orcid: "0000-0002-1825-0097" });
         await store.upsertClient(client("APP-EXTRA"));
         await store.upsertClient(client("APP-ORCIDMOCK000001", { client_secret: "changed" }));
@@ -478,7 +478,7 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
         await store.deleteUser((users[0] as StoredUser).orcid);
         await store.reset();
         (await firstUser(store)).name.given_names = "MUTATED";
-        await store.upsertUser({ ...(await firstUser(store)), password: "changed" });
+        await store.upsertUser({ ...(await firstUser(store)), locked: true });
         await store.reset();
         expect(await store.listUsers()).toEqual(snapshot.users);
       });

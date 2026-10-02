@@ -25,7 +25,6 @@
   "users": [
     {
       "orcid": "",
-      "password": "test",
       "name": {
         "given_names": "Alder",
         "family_name": "Fennimore",
@@ -271,7 +270,6 @@
     },
     {
       "orcid": "",
-      "password": "test",
       "name": {
         "given_names": "Sennet",
         "family_name": null,
@@ -289,7 +287,6 @@
     },
     {
       "orcid": "",
-      "password": "test",
       "locked": true,
       "name": {
         "given_names": "Briar",

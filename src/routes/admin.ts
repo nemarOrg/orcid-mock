@@ -11,6 +11,7 @@ import {
   zodIssues,
 } from "../fixtures/load";
 import { FixtureClient } from "../fixtures/schema";
+import { ClockRangeError } from "../store/types";
 
 type JsonBody = { ok: true; value: unknown } | { ok: false; response: Response };
 
@@ -121,6 +122,32 @@ export function adminRoutes(): Hono<AppEnv> {
   admin.delete("/users/:orcid", async (c) => {
     const removed = await c.get("deps").store.deleteUser(c.req.param("orcid"));
     return removed ? c.body(null, 204) : adminError(c, 404, "not_found");
+  });
+
+  // Moves the server's clock forward so a test can expire a code or a token without sleeping.
+  // The offset only governs validity checks; emitted timestamps stay wall time (src/clock.ts).
+  // `reset` zeroes it. orcid-mock's own endpoint, with no ORCID counterpart.
+  admin.post("/clock", async (c) => {
+    const { store } = c.get("deps");
+    const body = await readJson(c);
+    if (!body.ok) return body.response;
+    const seconds = isRecord(body.value) ? body.value.advance_seconds : undefined;
+    if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) {
+      return adminError(c, 400, "invalid_request", [
+        { path: "advance_seconds", message: "Expected a finite, non-negative number of seconds" },
+      ]);
+    }
+    try {
+      return c.json({ offset_ms: await store.advanceClock(seconds) });
+    } catch (error) {
+      // An advance that would carry the clock past the end of the Date range.
+      if (error instanceof ClockRangeError) {
+        return adminError(c, 400, "invalid_request", [
+          { path: "advance_seconds", message: error.message },
+        ]);
+      }
+      throw error;
+    }
   });
 
   admin.get("/clients", async (c) => c.json(await c.get("deps").store.listClients()));
