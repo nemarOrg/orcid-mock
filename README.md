@@ -9,7 +9,97 @@ The server starts, loads and validates a users file, serves the admin API (healt
 OAuth, OpenID Connect, and the record API arrive in the next phases.
 See [`.context/plan.md`](.context/plan.md) for the roadmap and [`.context/research.md`](.context/research.md) for the findings behind it.
 
-## Run it
+## Install and run
+
+One codebase, four ways to run it, in order of how much you control.
+All four take the same settings (a users file, `PUBLIC_BASE_URL`, and the admin API), described under [Run it from a checkout](#run-it-from-a-checkout).
+
+### With `bunx`
+
+Bun 1.4 or later is required: the package ships TypeScript and starts with `#!/usr/bin/env bun`, so Node cannot run it.
+
+```bash
+bunx @nemarorg/orcid-mock                              # serve the starter users on http://127.0.0.1:9700
+bunx @nemarorg/orcid-mock fixture --out users.json     # write the starter users file to edit
+bunx @nemarorg/orcid-mock --users users.json           # serve your own file
+```
+
+The package also exports `createApp` from `@nemarorg/orcid-mock` (portable, Web APIs only, for a Worker or any `fetch` host) and `startServer` from `@nemarorg/orcid-mock/server` (Bun only).
+
+### As a container
+
+```bash
+docker run --rm -p 9700:9700 \
+  -e PUBLIC_BASE_URL=http://localhost:9700 \
+  -e USERS_FILE=/fixtures/users.json \
+  -v "$PWD/users.json:/fixtures/users.json:ro" \
+  ghcr.io/nemarorg/orcid-mock:latest
+```
+
+- **Set `PUBLIC_BASE_URL`.**
+  Inside a container the default would be `http://127.0.0.1:9700`, which is not an address a caller outside the container can use, and every URL the mock emits (the issuer, redirects, links) is built from it.
+  Set it to the address your application uses to reach the mock.
+- Tags: `1.2.3`, `1.2`, `1`, and `latest`; a prerelease such as `1.2.3-rc.1` gets only its exact tag.
+  The image is multi-arch (`linux/amd64` and `linux/arm64`), runs as `nonroot` on a distroless base with no shell, and holds one file, `/orcid-mock`.
+- The image sets `HOST=0.0.0.0` and `PORT=9700`, since the container's network is the boundary.
+  Its health check runs `/orcid-mock health` (there is no `curl`, and no shell for `docker run --health-cmd`); it checks port 9700, so override the check if you change `PORT`.
+- Without `USERS_FILE` it serves the bundled starter users.
+  A mounted users file must be readable by user `nonroot` (uid 65532).
+- [`docker-compose.yml`](docker-compose.yml) is a ready example: `docker compose up --wait`.
+
+### As a binary
+
+Each GitHub Release attaches one file per platform and a `SHA256SUMS` file: `orcid-mock-linux-x64`, `orcid-mock-linux-arm64`, `orcid-mock-linux-x64-musl`, `orcid-mock-linux-arm64-musl`, `orcid-mock-darwin-x64`, `orcid-mock-darwin-arm64`, `orcid-mock-windows-x64.exe`, and `orcid-mock-windows-arm64.exe`.
+Nothing needs installing to run one; it embeds the Bun runtime and the starter users.
+
+```bash
+base=https://github.com/nemarOrg/orcid-mock/releases/latest/download
+curl -fsSLO "$base/orcid-mock-linux-x64" -O "$base/SHA256SUMS"
+grep ' orcid-mock-linux-x64$' SHA256SUMS | sha256sum -c -     # macOS: shasum -a 256 -c -
+chmod +x orcid-mock-linux-x64
+./orcid-mock-linux-x64 --users users.json
+```
+
+- The `-musl` builds are for Alpine, which needs `apk add libstdc++ libgcc` first.
+- A binary does not read `.env` or `bunfig.toml` from the directory it runs in.
+- The binaries are not code-signed beyond macOS's ad hoc signature, so a macOS browser download may need `xattr -d com.apple.quarantine <file>`, and Windows SmartScreen may ask once.
+  Each release also carries a build provenance attestation: `gh attestation verify orcid-mock-linux-x64 --repo nemarOrg/orcid-mock`.
+
+### As a GitHub Action
+
+```yaml
+steps:
+  - uses: actions/checkout@v4
+  - uses: nemarOrg/orcid-mock@v1
+    with:
+      users-file: ci/orcid-users.json   # optional; the bundled starter users when omitted
+  - run: bun test                       # ORCID_API_BASE, ORCID_PUB_API_BASE, and ORCID_MOCK_URL are set
+```
+
+The step runs the image and waits (up to 60 seconds) for it to report healthy; if it does not, the step prints the container logs and fails.
+Then it exports `ORCID_API_BASE`, `ORCID_PUB_API_BASE`, and `ORCID_MOCK_URL` (all the same base URL) to the rest of the job, and sets the same values as step outputs (`orcid-api-base`, `orcid-pub-api-base`, `orcid-mock-url`) along with `container-id`.
+
+| Input | Default | Meaning |
+|---|---|---|
+| `version` | `latest` | Image tag to run: `1`, `1.2`, `1.2.3`, or `latest`. |
+| `users-file` | none | Path in your workspace to a users file, mounted read-only and readable by every user; the starter users when empty. |
+| `port` | `9700` | Port published on the runner's loopback interface. |
+| `public-base-url` | `http://localhost:<port>` | The URL your application uses to reach the mock; it becomes the issuer and the base of every absolute URL. |
+| `image` | `ghcr.io/nemarorg/orcid-mock` | Image repository without a tag, for running a locally built image. |
+
+Linux runners only, because the image is a Linux container.
+A composite action has no post step, so the container is not stopped by the action: it lives until the job ends, and `docker rm -f "${{ steps.<id>.outputs.container-id }}"` stops it sooner.
+Reset between tests with `curl -X POST "$ORCID_MOCK_URL/__admin/reset"`.
+The Action needs a published image, so `uses: nemarOrg/orcid-mock@v1` works after the first release.
+
+### The Cloudflare Worker entry
+
+`src/worker.ts` and [`wrangler.toml`](wrangler.toml) are a smoke test that the portable layer runs in a real Workers runtime, not a way to host the mock: it serves the starter users from memory, one store per isolate, with nothing durable and no users file.
+`PUBLIC_BASE_URL` must be set as a binding (it is never taken from the request), or every request answers 500 saying so.
+`bun x wrangler deploy --dry-run --outdir dist/worker` bundles it, and `tests/worker.test.ts` runs that bundle in workerd.
+The hosted mode will run the same app inside a Durable Object per tenant.
+
+## Run it from a checkout
 
 Bun only; there is nothing to build.
 
@@ -34,7 +124,7 @@ An invalid value, an unreadable users file, or a users file that fails validatio
 |---|---|---|---|
 | `PUBLIC_BASE_URL` | `--base-url` | `http://{host}:{port}` | Absolute `http` or `https` URL, with no query, fragment, or credentials; trailing slashes are stripped and a path prefix is kept. Every absolute URL the mock emits derives from it, never from the `Host` header. |
 | `PORT` | `--port` | `9700` | `0` picks a free port; the readiness line reports the one it bound. |
-| `HOST` | `--host` | `127.0.0.1` | Interface to bind. The admin API is unauthenticated, so the default is loopback; `0.0.0.0` exposes it, passwords included, to the network, and the container image will set it only because the container's network is the boundary. |
+| `HOST` | `--host` | `127.0.0.1` | Interface to bind. The admin API is unauthenticated, so the default is loopback; `0.0.0.0` exposes it, passwords included, to the network, and the container image sets it only because the container's network is the boundary. |
 | `USERS_FILE` | `--users` | the bundled starter | Path to a users file. |
 | `LOG_LEVEL` | `--log-level` | `info` | `debug`, `info`, `warn`, or `error`. |
 
@@ -100,16 +190,42 @@ Member-API writes for works and employments, the hosted multi-tenant service, XM
 ```yaml
 services:
   orcid:
-    image: ghcr.io/nemarorg/orcid-mock:latest
+    image: ghcr.io/nemarorg/orcid-mock:1
     ports: ["9700:9700"]
     env:
       PUBLIC_BASE_URL: http://localhost:9700
-      USERS_FILE: /fixtures/users.json
-    options: --health-cmd "wget -qO- http://localhost:9700/__admin/health" --health-interval 5s --health-retries 10
 ```
+
+The image defines its own health check, `/orcid-mock health`, and a runner waits for a service container's health check before the first step.
+An `options: --health-cmd` is not needed, and none could run the real command: Docker runs that form through `/bin/sh`, which the image does not have.
+A `services:` container starts before your repository is checked out, so it can serve only the bundled starter users; to serve your own file, use [the Action](#as-a-github-action) after `actions/checkout`.
 
 Point your application at it with the same variables you use for the sandbox
 (for NEMAR: `ORCID_API_BASE` and `ORCID_PUB_API_BASE`).
+
+## Releasing
+
+For maintainers.
+Nothing is published until a version tag is pushed.
+
+1. Bump `version` in `package.json` in a pull request and merge it to `main`.
+   A prerelease is `1.2.3-rc.1`: it gets only its exact image tag, the `next` tag on npm, and no change to the floating tags.
+2. Tag the merge commit and push the tag: `git tag v1.2.3 && git push origin v1.2.3`.
+3. The [Release workflow](.github/workflows/release.yml) refuses a tag that differs from `package.json` or is not on `main`, runs lint, type checking, and the tests, and then:
+   builds the binaries and attaches them with `SHA256SUMS` to a GitHub Release with generated notes;
+   builds and pushes the multi-arch image to `ghcr.io/nemarorg/orcid-mock` as `1.2.3`, `1.2`, `1`, and `latest`, with a build provenance attestation;
+   publishes `@nemarorg/orcid-mock` to npm;
+   and moves the `v1` tag that `uses: nemarOrg/orcid-mock@v1` follows.
+4. To rehearse, run the workflow by hand (Actions, Release, Run workflow) with "dry-run" on, from any branch.
+   It does every build and check, and does not push the image, publish, create the release, or move a tag.
+
+Before the first release, once:
+
+- The `@nemarorg` scope must exist on npm, and the repository needs an `NPM_TOKEN` secret holding an npm automation token that may publish to it.
+  The workflow fails with a message naming the secret when it is missing, in a dry run too.
+  `bun publish` cannot attach npm's provenance statement, so the package has none; the image and the binaries carry GitHub attestations instead.
+- After the first image push, set the `orcid-mock` package's visibility to public in the organization's package settings on GitHub.
+  A new package starts private, and neither `docker pull` nor the Action works for anyone else until it is public.
 
 ## License
 
