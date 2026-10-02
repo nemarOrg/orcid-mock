@@ -10,7 +10,7 @@ export type JsonObject = { [key: string]: Json };
  * capitals (`\u001F`), so the digits are uppercased. The pattern walks escape sequences left to
  * right, so the `\\` of an escaped backslash is consumed with its pair and a literal `u001f`
  * after it is left alone.
- * https://github.com/FasterXML/jackson-core/blob/13b67c80342b3292fb5dc5cd340b6fafa2b37db0/src/main/java/com/fasterxml/jackson/core/io/CharTypes.java
+ * https://github.com/FasterXML/jackson-core/blob/13b67c80342b3292fb5dc5cd340b6fafa2b37db0/src/main/java/com/fasterxml/jackson/core/io/CharTypes.java#L7-L8
  */
 function jacksonEscapes(json: string): string {
   return json.replace(/\\(?:u00([0-9a-f]{2})|[\s\S])/g, (sequence, hex?: string) =>

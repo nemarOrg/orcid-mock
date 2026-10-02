@@ -430,7 +430,7 @@ Every response, errors included, carries `access-control-allow-origin: *`, `cach
 - An unclaimed record is always 409 / 9036; ORCID blocks it only while younger than a ten-day claim wait period.
 - Normalization: work, affiliation, and peer-review ids carry `{"value", "transient": true}`; only a DOI is changed (lowercased and reduced to its `10.<registrant>/<suffix>` part, with ORCID's 8001 error when that fails); funding ids carry null, as observed.
 - Groups merge transitively on external ids that are not `part-of` or `funded-by`, among visible items only, and a merged group stays where its earliest member's group was formed.
-  Works are ordered by publication date, title, then type; affiliations by ORCID's start and end date strings; fundings and person-level lists by display index, then creation date; peer reviews by completion date, newest first.
+  Works are ordered by publication date, title, then type; affiliations by ORCID's start and end date strings; fundings and person-level lists by display index, then creation date; peer reviews by completion date, newest first, with a missing part first because ORCID's database is PostgreSQL (source only).
   ORCID's source orders fundings and peer reviews this way; the works rule was only a guess.
 - Bulk works returns found works in put-code order, which is what pub.orcid.org returned for a request in another order; the source leaves it to the database.
   In a 9034 message, `${clientName}` is filled with the reader's client name when the token has one (source only) and left as is for an anonymous reader (observed).

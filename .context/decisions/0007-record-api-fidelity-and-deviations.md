@@ -15,7 +15,8 @@ Where ORCID's rule is a `HashSet` order or an unobserved case, the mock needs a 
 **JSON only, and a 406 where ORCID would answer XML.**
 `application/json` is compact, and `application/orcid+json` and `application/vnd.orcid+json` are Jackson-pretty-printed, each echoed in `Content-Type` as the client wrote it.
 A missing `Accept` header, a wildcard, an XML type, or a q-value that prefers XML answers 406 / 9001 with a developer message that says orcid-mock serves JSON only and what to send, so a client that depends on ORCID's default fails here instead of receiving a body it cannot parse.
-Every other unsupported type is ORCID's own 406 / 9001 with no `Content-Type`.
+Every other unsupported type is ORCID's own 406 / 9001 with no `Content-Type`, and a header that does not parse is ORCID's 400 with an HTML page.
+Ranges are ordered as ORCID's server does (client quality, then its own per-type weights, then specificity, then position), checked against 700 random headers sent to `pub.orcid.org` on 2026-10-01; the one divergence is a structured suffix in capitals (`+Json`), where ORCID answers a 500 and orcid-mock a 406.
 
 **Every URI comes from `PUBLIC_BASE_URL`; every item is self-asserted.**
 `orcid-identifier.uri` is `PUBLIC_BASE_URL/<iD>` and `host` is that URL's host, port included; a deprecated record's `Location` and its 9007 text use the same base.
@@ -27,7 +28,7 @@ A token that is not valid is a 401 on every `/v3.0` path.
 `private` is never served.
 
 **Ordering follows ORCID's source where it was read.**
-Person-level items and fundings are ordered by `displayIndex desc, dateCreated asc`, works and affiliations by ORCID's comparators and date strings, and peer reviews by completion date, newest first; the brief's suggestion to reuse the works rule for fundings and peer reviews gave way to the source.
+Person-level items and fundings are ordered by `displayIndex desc, dateCreated asc`, works and affiliations by ORCID's comparators and date strings, and peer reviews by completion date, newest first, with a missing part first as PostgreSQL sorts it; the brief's suggestion to reuse the works rule for fundings and peer reviews gave way to the source.
 Grouping is among visible items only, by ORCID's group id, merged transitively.
 
 **Normalization is minimal.**
