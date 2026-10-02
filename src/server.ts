@@ -1,0 +1,101 @@
+// The Bun entry: loads the users file, builds the store and the app, and binds a real socket.
+// The readiness line and signal handling live in main.ts so tests can start servers quietly.
+
+import { createApp } from "./app";
+import { ConfigError, parsePublicBaseUrl } from "./config";
+import { FixtureError, parseUsersFile } from "./fixtures/load";
+import { STARTER_USERS_FILE } from "./fixtures/starter";
+import type { LogLevel } from "./log";
+import { createLogger, silentLogger } from "./log";
+import { MemoryStore } from "./store/memory";
+
+export interface StartOptions {
+  /** 0 picks a free port. Default 9700. */
+  port?: number;
+  /** Default 127.0.0.1, since the admin API is unauthenticated. */
+  host?: string;
+  /** Path to a users file; null or absent serves the bundled starter. */
+  usersFile?: string | null;
+  /** A users file already parsed from JSON, which tests use; wins over `usersFile`. */
+  users?: unknown;
+  /** Default: http://{host}:{boundPort}, with a wildcard host reported as 127.0.0.1. */
+  publicBaseUrl?: string | null;
+  logLevel?: LogLevel;
+  /** Writes no log lines. */
+  quiet?: boolean;
+}
+
+export interface RunningServer {
+  /** The public base URL the mock puts in every absolute URL it emits. */
+  url: string;
+  /** The port actually bound. */
+  port: number;
+  stop(): Promise<void>;
+}
+
+async function readUsers(opts: StartOptions): Promise<unknown> {
+  if (opts.users !== undefined) return opts.users;
+  if (opts.usersFile == null) return STARTER_USERS_FILE;
+  const file = Bun.file(opts.usersFile);
+  if (!(await file.exists())) {
+    throw new ConfigError(`USERS_FILE: no such file ${JSON.stringify(opts.usersFile)}`);
+  }
+  try {
+    return JSON.parse(await file.text());
+  } catch {
+    throw new FixtureError(
+      [{ path: "", message: "not valid JSON" }],
+      `users file ${opts.usersFile}`,
+    );
+  }
+}
+
+/** http://{host}:{port}, mapping a wildcard host to loopback and bracketing an IPv6 literal. */
+function boundUrl(host: string, port: number): string {
+  const wildcard = host === "0.0.0.0" || host === "::";
+  const name = wildcard ? "127.0.0.1" : host;
+  return `http://${name.includes(":") && !name.startsWith("[") ? `[${name}]` : name}:${port}`;
+}
+
+export async function startServer(opts: StartOptions = {}): Promise<RunningServer> {
+  const host = opts.host ?? "127.0.0.1";
+  const log = opts.quiet ? silentLogger : createLogger(opts.logLevel ?? "info");
+
+  const input = await readUsers(opts);
+  const loaded = parseUsersFile(input, Date.now());
+  if (!loaded.ok) {
+    throw new FixtureError(
+      loaded.issues,
+      opts.usersFile ? `users file ${opts.usersFile}` : "users file",
+    );
+  }
+  const explicitUrl = opts.publicBaseUrl ? parsePublicBaseUrl(opts.publicBaseUrl) : null;
+
+  const store = new MemoryStore();
+  await store.setBaseline(loaded.snapshot);
+
+  // Bun starts accepting as soon as it binds, but the app needs the bound port for its base URL,
+  // and nothing awaits between the bind and the assignment below.
+  let app: ReturnType<typeof createApp> | undefined;
+  const server = Bun.serve({
+    port: opts.port ?? 9700,
+    hostname: host,
+    fetch: (request) => app?.fetch(request) ?? new Response("starting", { status: 503 }),
+  });
+  const port = server.port ?? 0;
+  const url = explicitUrl ?? boundUrl(host, port);
+  app = createApp({
+    config: { publicBaseUrl: url, logLevel: opts.logLevel ?? "info" },
+    store,
+    log,
+  });
+
+  log.info("server_started", {
+    url,
+    port,
+    host,
+    users: loaded.snapshot.users.length,
+    clients: loaded.snapshot.clients.length,
+  });
+  return { url, port, stop: () => server.stop(true) };
+}

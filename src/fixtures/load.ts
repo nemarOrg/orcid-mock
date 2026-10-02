@@ -17,6 +17,19 @@ import {
 /** The first put-code assigned when no fixture put-code is higher. */
 export const MIN_PUT_CODE = 1000;
 
+/** A users file that failed validation; the message lists every issue, one per line. */
+export class FixtureError extends Error {
+  override name = "FixtureError";
+  constructor(
+    readonly issues: ReadonlyArray<Issue>,
+    source = "users file",
+  ) {
+    super(
+      `Invalid ${source}:\n${issues.map((issue) => `  ${issue.path === "" ? "(root)" : issue.path}: ${issue.message}`).join("\n")}`,
+    );
+  }
+}
+
 export type LoadResult = { ok: true; snapshot: Snapshot } | { ok: false; issues: Issue[] };
 
 export function zodIssues(error: {
