@@ -1,41 +1,302 @@
 {
-  "$schema": "https://github.com/nemarOrg/orcid-mock/blob/main/fixtures/users.schema.json",
+  "$schema": "./users.schema.json",
   "clients": [
-    { "client_id": "APP-MOCKCLIENT000001", "client_secret": "mock-secret", "redirect_uris": ["http://localhost:4321/auth/orcid/callback"], "member": false }
+    {
+      "client_id": "APP-ORCIDMOCK000001",
+      "client_secret": "orcid-mock-secret",
+      "name": "orcid-mock public client",
+      "redirect_uris": [
+        "http://localhost:3000/callback",
+        "http://127.0.0.1:3000/callback"
+      ],
+      "member": false
+    },
+    {
+      "client_id": "APP-ORCIDMOCK000002",
+      "client_secret": "orcid-mock-secret",
+      "name": "orcid-mock member client",
+      "redirect_uris": [
+        "http://localhost:3000/callback",
+        "http://127.0.0.1:3000/callback"
+      ],
+      "member": true
+    }
   ],
   "users": [
     {
       "orcid": "",
       "password": "test",
-      "name": { "given_names": "Ada", "family_name": "Lovelace", "credit_name": null, "visibility": "public" },
-      "emails": [
-        { "email": "ada@example.test", "primary": true, "verified": true, "visibility": "private" }
+      "name": {
+        "given_names": "Alder",
+        "family_name": "Fennimore",
+        "credit_name": "A. Fennimore",
+        "visibility": "public"
+      },
+      "other_names": [
+        {
+          "content": "A. L. Fennimore",
+          "visibility": "public"
+        },
+        {
+          "content": "Alder Fennimore-Hale",
+          "visibility": "limited"
+        }
       ],
-      "biography": { "value": "First programmer.", "visibility": "public" },
+      "biography": {
+        "content": "A fictional researcher who exists only to exercise orcid-mock.",
+        "visibility": "public"
+      },
+      "emails": [
+        {
+          "email": "alder.fennimore@example.test",
+          "primary": true,
+          "verified": true,
+          "visibility": "public"
+        },
+        {
+          "email": "alder.private@example.test",
+          "primary": false,
+          "verified": true,
+          "visibility": "private"
+        }
+      ],
+      "addresses": [
+        {
+          "country": "NZ",
+          "visibility": "public"
+        }
+      ],
+      "keywords": [
+        {
+          "content": "electroencephalography",
+          "visibility": "public"
+        },
+        {
+          "content": "research data standards",
+          "visibility": "public"
+        },
+        {
+          "content": "unpublished idea",
+          "visibility": "private"
+        }
+      ],
+      "external_identifiers": [
+        {
+          "external_id_type": "Scopus Author ID",
+          "external_id_value": "55500000001",
+          "external_id_url": "https://example.test/scopus/55500000001",
+          "external_id_relationship": "self",
+          "visibility": "public"
+        }
+      ],
+      "researcher_urls": [
+        {
+          "url_name": "Lab website",
+          "url": "https://example.test/fennimore",
+          "visibility": "public"
+        }
+      ],
       "employments": [
-        { "put_code": 1001, "organization": "Analytical Engine Society", "department": "Computation", "role_title": "Mathematician", "start_date": "1843-01", "end_date": null, "visibility": "public" }
+        {
+          "department_name": "Neuroinformatics",
+          "role_title": "Research Scientist",
+          "start_date": "2019-09",
+          "end_date": null,
+          "organization": {
+            "name": "Example Institute for Brain Data",
+            "address": {
+              "city": "Wellington",
+              "region": "Wellington",
+              "country": "NZ"
+            },
+            "disambiguated_organization": {
+              "disambiguated_organization_identifier": "https://ror.org/00test0000",
+              "disambiguation_source": "ROR"
+            }
+          },
+          "url": "https://example.test/institute",
+          "visibility": "public"
+        }
+      ],
+      "educations": [
+        {
+          "department_name": "Department of Cognitive Science",
+          "role_title": "Doctor of Philosophy",
+          "start_date": "2012-02",
+          "end_date": "2016-12-15",
+          "organization": {
+            "name": "Example University of Wellington",
+            "address": {
+              "city": "Wellington",
+              "country": "NZ"
+            }
+          },
+          "visibility": "public"
+        }
+      ],
+      "qualifications": [
+        {
+          "role_title": "Certified Data Steward",
+          "start_date": "2021",
+          "organization": {
+            "name": "Example Institute for Brain Data",
+            "address": {
+              "city": "Wellington",
+              "region": "Wellington",
+              "country": "NZ"
+            },
+            "disambiguated_organization": {
+              "disambiguated_organization_identifier": "https://ror.org/00test0000",
+              "disambiguation_source": "ROR"
+            }
+          },
+          "visibility": "public"
+        }
       ],
       "works": [
-        { "put_code": 2001, "title": "Notes on the Analytical Engine", "type": "journal-article", "publication_date": "1843", "external_ids": [{ "type": "doi", "value": "10.5555/example.1843" }], "visibility": "public" }
+        {
+          "title": "A Fictional Study of Fictional Signals",
+          "subtitle": "Evidence from an invented dataset",
+          "journal_title": "Journal of Imaginary Neuroscience",
+          "short_description": "A journal article that shares its DOI with the preprint below.",
+          "type": "journal-article",
+          "publication_date": "2022-03-14",
+          "external_ids": [
+            {
+              "external_id_type": "doi",
+              "external_id_value": "10.5555/orcid-mock.0001",
+              "external_id_url": "https://doi.org/10.5555/orcid-mock.0001",
+              "external_id_relationship": "self"
+            }
+          ],
+          "url": "https://doi.org/10.5555/orcid-mock.0001",
+          "contributors": [
+            {
+              "credit_name": "Alder Fennimore",
+              "contributor_sequence": "first",
+              "contributor_role": "author"
+            },
+            {
+              "contributor_orcid": "0000-0002-1825-0097",
+              "credit_name": "Josiah Carberry",
+              "contributor_sequence": "additional",
+              "contributor_role": "author"
+            }
+          ],
+          "language_code": "en",
+          "country": "NZ",
+          "visibility": "public"
+        },
+        {
+          "title": "A Fictional Study of Fictional Signals",
+          "journal_title": "Preprint Server of Imaginary Results",
+          "type": "preprint",
+          "publication_date": "2021-11",
+          "external_ids": [
+            {
+              "external_id_type": "doi",
+              "external_id_value": "10.5555/orcid-mock.0001",
+              "external_id_url": "https://doi.org/10.5555/orcid-mock.0001",
+              "external_id_relationship": "self"
+            }
+          ],
+          "visibility": "public"
+        },
+        {
+          "title": "Pilot recordings (shared with trusted parties)",
+          "type": "data-set",
+          "publication_date": "2020",
+          "external_ids": [
+            {
+              "external_id_type": "doi",
+              "external_id_value": "10.5555/orcid-mock.0002",
+              "external_id_relationship": "self"
+            }
+          ],
+          "visibility": "limited"
+        }
+      ],
+      "fundings": [
+        {
+          "title": "Fictional Signals Initiative",
+          "type": "grant",
+          "start_date": "2020-01",
+          "end_date": "2023-12",
+          "organization": {
+            "name": "Example Science Foundation",
+            "address": {
+              "city": "Auckland",
+              "country": "NZ"
+            }
+          },
+          "external_ids": [
+            {
+              "external_id_type": "grant_number",
+              "external_id_value": "EXF-2020-001",
+              "external_id_relationship": "self"
+            }
+          ],
+          "visibility": "public"
+        },
+        {
+          "title": "Confidential fellowship",
+          "type": "award",
+          "start_date": "2024",
+          "organization": {
+            "name": "Example Science Foundation",
+            "address": {
+              "city": "Auckland",
+              "country": "NZ"
+            }
+          },
+          "visibility": "private"
+        }
+      ],
+      "peer_reviews": [
+        {
+          "reviewer_role": "reviewer",
+          "review_type": "review",
+          "review_group_id": "issn:0000-0000",
+          "completion_date": "2023-06-01",
+          "convening_organization": {
+            "name": "Journal of Imaginary Neuroscience",
+            "address": {
+              "city": "Wellington",
+              "country": "NZ"
+            }
+          },
+          "visibility": "public"
+        }
       ]
     },
     {
-      "orcid": "0009-0009-0000-0012",
+      "orcid": "",
       "password": "test",
-      "name": { "given_names": "Grace", "family_name": null, "credit_name": null, "visibility": "public" },
+      "name": {
+        "given_names": "Sennet",
+        "family_name": null,
+        "credit_name": null,
+        "visibility": "public"
+      },
       "emails": [
-        { "email": "grace@example.test", "primary": true, "verified": false, "visibility": "private" }
-      ],
-      "employments": [],
-      "works": []
+        {
+          "email": "sennet@example.test",
+          "primary": true,
+          "verified": false,
+          "visibility": "private"
+        }
+      ]
     },
     {
-      "orcid": "0009-0009-0000-0020",
+      "orcid": "",
       "password": "test",
-      "name": { "given_names": "Private", "family_name": "Person", "credit_name": null, "visibility": "private" },
-      "emails": [],
-      "employments": [],
-      "works": []
+      "locked": true,
+      "name": {
+        "given_names": "Briar",
+        "family_name": "Ashgrove",
+        "credit_name": null,
+        "visibility": "private"
+      }
     }
   ]
 }

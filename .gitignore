@@ -4,3 +4,4 @@ dist/
 .env.*
 .claude/*.local.md
 .DS_Store
+coverage/
