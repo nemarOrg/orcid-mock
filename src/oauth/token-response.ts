@@ -1,6 +1,7 @@
 // The JSON body of a successful token response. One function builds it for every grant, so an
 // `id_token` is added in exactly one place.
 import type { AppDeps } from "../app";
+import { signIdToken } from "../oidc/id-token";
 import type { StoredUser, TokenRecord } from "../store/types";
 import { publicDisplayName } from "./display-name";
 import { formatScopes } from "./scopes";
@@ -60,9 +61,14 @@ export interface TokenResponseBody {
  * key:
  * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-api-web/tutorial/read_public.md#L29
  *
- * This is the one place an `id_token` is added: after `orcid`, when `openid` is among the
- * token's scopes and `grant` is "authorization_code"; the refresh path and client credentials
- * carry none. `input.deps` is here for the store and the public base URL.
+ * This is the one place an `id_token` is added: last, after `orcid`, when the grant is
+ * "authorization_code" and the token's scopes include `openid`. The refresh path and client
+ * credentials carry none (ORCID's legacy implementation, removed upstream, added it only when
+ * the scope held `openid` and did not add it on refresh:
+ * https://github.com/ORCID/ORCID-Source/blob/7eeb1e7709760f328f5d3f72ebf2629f0a5d54c9/orcid-core/src/main/java/org/orcid/core/oauth/openid/OpenIDConnectTokenEnhancer.java#L66-L71
+ * and the token-response example with `openid` puts `id_token` after `orcid`:
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-web/ORCID_AUTH_WITH_OPENID_CONNECT.md#L45).
+ * `input.deps` is here for the store and the public base URL.
  */
 export async function buildTokenResponse(input: TokenResponseInput): Promise<TokenResponseBody> {
   const { token, user } = input;
@@ -73,7 +79,18 @@ export async function buildTokenResponse(input: TokenResponseInput): Promise<Tok
     expires_in: EXPIRES_IN_SECONDS,
     scope: formatScopes(token.scopes),
   };
-  return user === null
-    ? { ...common, orcid: null }
-    : { ...common, name: publicDisplayName(user), orcid: user.orcid };
+  if (user === null) return { ...common, orcid: null };
+  const body = { ...common, name: publicDisplayName(user), orcid: user.orcid };
+  if (input.grant !== "authorization_code" || !token.scopes.includes("openid")) return body;
+  const id_token = await signIdToken({
+    store: input.deps.store,
+    issuer: input.deps.config.publicBaseUrl,
+    clientId: token.client_id,
+    user,
+    accessToken: token.access_token,
+    authTimeMs: input.auth_time_ms,
+    amr: input.amr,
+    nonce: input.nonce,
+  });
+  return { ...body, id_token };
 }

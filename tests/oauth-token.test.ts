@@ -109,11 +109,10 @@ describe("the headless round trip", () => {
     expect(token).not.toHaveProperty("id_token");
   });
 
-  // TRIPWIRE: nothing issues an id_token yet, so an openid grant has none. Whoever adds ID tokens
-  // replaces this assertion with the real expectations (see buildTokenResponse).
-  test("an openid grant has no id_token yet", async () => {
+  // The id_token itself is verified in tests/oidc.test.ts; here only its place in the response.
+  test("an openid grant adds an id_token after orcid", async () => {
     const token = await obtainToken(server, { orcid: ids.alder, scope: "openid" });
-    expect(Object.keys(token)).toEqual(CODE_KEYS);
+    expect(Object.keys(token)).toEqual([...CODE_KEYS, "id_token"]);
   });
 
   test("name follows the public display name rule", async () => {
