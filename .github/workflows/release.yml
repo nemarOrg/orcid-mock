@@ -321,11 +321,14 @@ jobs:
           fi
           test -f "dist/orcid_mock_testing-${normalized}-py3-none-any.whl"
           test -f "dist/orcid_mock_testing-${normalized}.tar.gz"
-          test "$(find dist -type f | wc -l)" -eq 2
+          # uv build also writes dist/.gitignore, so count only the distribution files.
+          test "$(find dist -type f \( -name '*.whl' -o -name '*.tar.gz' \) | wc -l)" -eq 2
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: python-dist
-          path: clients/python/dist/*
+          path: |
+            clients/python/dist/*.whl
+            clients/python/dist/*.tar.gz
           if-no-files-found: error
           retention-days: 30
 
