@@ -174,7 +174,7 @@ A body must be JSON with a JSON `Content-Type`; anything else is `400 {"error":"
 
 ## OAuth
 
-`/oauth/authorize`, `/oauth/token`, and `/oauth/revoke` follow ORCID's OAuth 2.0 authorization-code flow (OpenID Connect arrives in the next phase).
+`/oauth/authorize`, `/oauth/token`, and `/oauth/revoke` follow ORCID's OAuth 2.0 authorization-code flow; [OpenID Connect](#openid-connect) builds on it.
 The starter file registers two clients with the secret `orcid-mock-secret` and the redirect URIs `http://localhost:3000/callback` and `http://127.0.0.1:3000/callback`:
 `APP-ORCIDMOCK000001`, a public client, and `APP-ORCIDMOCK000002`, a member client that may also ask for `/read-limited`.
 Register your own with `PUT /__admin/clients/{client_id}`.
@@ -259,6 +259,104 @@ These are orcid-mock's own choices, each marked "orcid-mock choice" where it is 
 - The 415 body is the sentence alone, without the web server's error page around it.
 - A redirect URI is refused if it holds a character a header cannot carry (percent-encode it), and `%2e` counts as a dot segment, because a browser resolves it as one.
 - When several parameters are missing, only the order of `response_type` before `client_id` was observed; the order of the others is orcid-mock's.
+
+## OpenID Connect
+
+Ask for the `openid` scope and the token response carries an identity (ID) token, signed with a key the server generates the first time it needs one.
+`/.well-known/openid-configuration`, `/oauth/jwks`, and `/oauth/userinfo` are the three routes a relying party (an application that signs users in through ORCID) needs to verify it and to read the user.
+All three set `Access-Control-Allow-Origin: *` and answer a cross-origin resource sharing (CORS) preflight, so a browser app can call them; no other route does.
+
+### Discovery
+
+`GET /.well-known/openid-configuration` is ORCID's document byte for byte: the same fields in the same order, pretty-printed the way ORCID's Java server prints them (`"key" : value`, two-space indent, `[ "a", "b" ]` arrays on one line), with `https://orcid.org` replaced by `PUBLIC_BASE_URL`.
+`issuer` is that URL exactly, with no trailing slash, and every endpoint is built from it, so a path prefix is kept.
+Nothing is read from the `Host` header.
+
+The document advertises the `id_token` and `id_token token` response types and the `implicit` grant, as ORCID's does, but this mock implements only the code flow.
+The authorize endpoint answers those response types with `redirect_uri#error=unsupported_response_type`.
+Keeping the document identical to ORCID's, rather than consistent with what the mock serves, is deliberate: a client that configures itself from it should see what it would see against ORCID.
+
+### JWKS
+
+`GET /oauth/jwks` returns the JSON Web Key Set (JWKS) with one RS256 key (RSA with SHA-256, 2048 bits, exponent `AQAB`) in ORCID's compact shape and key order, `{"keys":[{"kty":"RSA","e":"AQAB","use":"sig","kid":"...","n":"..."}]}`, with no `alg` member.
+It is sent with `cache-control: no-cache, no-store, max-age=0, must-revalidate` and `pragma: no-cache`.
+The `kid` reads `orcid-mock-` and 32 lowercase letters and digits, in the pattern of ORCID's `<env>-orcid-org-<32>`.
+The key is generated on the first request that needs it, once per server, and survives `POST /__admin/reset`, so a client that cached the JWKS stays valid; a new process has a new key.
+
+### The ID token
+
+`POST /oauth/token` with `grant_type=authorization_code` adds `id_token` to the response when the granted scope includes `openid`, as the last key, after `orcid`.
+A refresh and a client-credentials grant never carry one.
+
+```bash
+CODE=$(curl -si "$BASE/oauth/authorize?client_id=APP-ORCIDMOCK000002&response_type=code&scope=openid&nonce=n1&redirect_uri=http://localhost:3000/callback&login_as=$ORCID" | sed -n 's/^[Ll]ocation:.*[?&]code=\([0-9A-Za-z]*\).*/\1/p')
+curl -s -X POST $BASE/oauth/token \
+  -d grant_type=authorization_code -d code=$CODE \
+  -d client_id=APP-ORCIDMOCK000002 -d client_secret=orcid-mock-secret \
+  --data-urlencode redirect_uri=http://localhost:3000/callback
+# {"access_token":"...","token_type":"bearer","refresh_token":"...","expires_in":631138518,"scope":"openid","name":"A. Fennimore","orcid":"0009-9814-3544-3504","id_token":"eyJraWQi..."}
+```
+
+Any library for JSON Object Signing and Encryption (JOSE) verifies it against the published key:
+
+```ts
+import { createRemoteJWKSet, jwtVerify } from "jose";
+
+const jwks = createRemoteJWKSet(new URL(`${BASE}/oauth/jwks`));
+const { payload } = await jwtVerify(idToken, jwks, {
+  issuer: BASE, // PUBLIC_BASE_URL
+  audience: "APP-ORCIDMOCK000002",
+});
+```
+
+The protected header is exactly `{"kid": ..., "alg": "RS256"}`, with no `typ`, as in ORCID's examples.
+The claims are written in this order:
+
+| Claim | Value |
+|---|---|
+| `aud` | The client id, as a string (not an array). |
+| `sub` | The bare iD. |
+| `auth_time` | When the user signed in, in seconds. |
+| `amr` | The string `pwd`, and only for a member client; ORCID returns it to the Member API only. |
+| `iss` | `PUBLIC_BASE_URL`, equal to the discovery `issuer`. |
+| `exp`, `iat` | Seconds; `exp` is `iat` plus 24 hours. |
+| `nonce` | The authorize request's `nonce`, and only when it had one. |
+| `jti` | A random universally unique identifier (UUID). |
+| `at_hash` | The base64url of the left half of the access token's SHA-256. |
+| `given_name`, `family_name`, `name` | The fields of a public name that exist (`name` is the credit name); none at all when the name is `limited` or `private`. |
+
+There is no `email`, `email_verified`, or `locale`.
+`iat`, `exp`, and `auth_time` are wall-clock time: `POST /__admin/clock` moves only what the server checks (codes, sessions, tokens), never what it emits, so a client library comparing them with its own clock accepts the token.
+
+**The 24-hour lifetime is orcid-mock's choice.**
+ORCID's own sources disagree: its 2017 example expires after 600 seconds, its 2019 token-delegation example after about twenty years (as long as an access token), and its 2020 text and the removed legacy implementation after 24 hours.
+What ORCID's current authorization server issues was not observed.
+A day outlasts any test run and is still a real, finite lifetime.
+
+### Userinfo
+
+`GET /oauth/userinfo` reads `Authorization: Bearer <access token>`.
+`POST /oauth/userinfo` reads an `access_token` form field first and then the header, and a form token that is no good does not hide a good header, as in ORCID's controller.
+The token must be a live access token with the `/authenticate` or the `openid` scope; `/read-limited` and `/read-public` tokens do not qualify.
+
+```json
+{"id":"http://127.0.0.1:9700/0009-9814-3544-3504","sub":"0009-9814-3544-3504","name":"A. Fennimore","family_name":"Fennimore","given_name":"Alder"}
+```
+
+`id` is the iD under `PUBLIC_BASE_URL`, `sub` the bare iD.
+A name that is not public, and any field that does not exist, is `null`, not left out.
+Everything else, including no token, an unknown, revoked, or expired token, a refresh token, and a token without the scope, is ORCID's single answer: `403` with `{"error":"access_denied","error-description":"access_token is invalid"}`.
+The key is hyphenated, unlike the underscore in every other ORCID error body, and there is no `WWW-Authenticate` header.
+
+### Where ORCID is undocumented or unobserved
+
+- The 24-hour ID token lifetime, above.
+- ORCID's CORS filter echoes the request's `Origin` and adds `Access-Control-Allow-Credentials: true`; this mock sends `*` and no credentials flag.
+  The preflight answer copies ORCID's allowed methods and headers.
+- No success response of ORCID's 2026 authorization server was captured, so the ID token's claims follow its documentation and its removed legacy implementation, and the userinfo body, with `id` and the nulls, follows ORCID's source.
+- The JWKS content type was not captured; it uses the one ORCID's other OpenID Connect routes send.
+- A userinfo token whose user was deleted answers 403, as an unknown token does.
+- The CORS header is also on the userinfo 403, so a browser app can read the error.
 
 ## Why
 
