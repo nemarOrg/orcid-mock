@@ -69,7 +69,7 @@ chmod +x orcid-mock-linux-x64
 
 ```yaml
 steps:
-  - uses: actions/checkout@v4
+  - uses: actions/checkout@v7
   - uses: nemarOrg/orcid-mock@v1
     with:
       users-file: ci/orcid-users.json   # optional; the bundled starter users when omitted
