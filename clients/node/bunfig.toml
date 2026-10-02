@@ -1,0 +1,4 @@
+[install]
+# Refuse package versions published less than seven days ago, so a freshly compromised release
+# cannot reach a developer machine or CI before the community has had time to catch it.
+minimumReleaseAge = 604800
