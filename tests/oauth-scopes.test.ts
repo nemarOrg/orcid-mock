@@ -1,7 +1,7 @@
 // Pure functions with no I/O, tested directly with real inputs.
 import { describe, expect, test } from "bun:test";
 import { serverNowMs } from "../src/clock";
-import { formatScopes, KNOWN_SCOPES, parseScopes } from "../src/oauth/scopes";
+import { formatScopes, KNOWN_SCOPES, parseScopes, scopeTokens } from "../src/oauth/scopes";
 import { MemoryStore } from "../src/store/memory";
 
 describe("parseScopes", () => {
@@ -40,6 +40,17 @@ describe("parseScopes", () => {
     for (const raw of [undefined, null, "", "   "]) {
       expect(parseScopes(raw)).toEqual({ scopes: [], unknown: [] });
     }
+  });
+});
+
+describe("scopeTokens", () => {
+  test("keeps every distinct token, known or not, in request order", () => {
+    expect(scopeTokens(" /webhook  openid /webhook\t/read-public ")).toEqual([
+      "/webhook",
+      "openid",
+      "/read-public",
+    ]);
+    expect(scopeTokens("")).toEqual([]);
   });
 });
 

@@ -52,3 +52,8 @@ export function parseScopes(raw: string | null | undefined): ParsedScopes {
 export function formatScopes(scopes: Iterable<ScopeName>): string {
   return [...scopes].join(" ");
 }
+
+/** The distinct whitespace-separated tokens of a scope parameter, known or not, in order. */
+export function scopeTokens(raw: string): string[] {
+  return [...new Set(raw.split(/\s+/).filter((token) => token !== ""))];
+}

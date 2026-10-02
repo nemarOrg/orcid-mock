@@ -171,3 +171,136 @@ export function submitForm(form: ParsedForm, extra: Array<[string, string]> = []
     body: new URLSearchParams(fields),
   });
 }
+
+/** What a token-endpoint call answered: the raw text is kept for key-order assertions. */
+export interface TokenReply {
+  status: number;
+  headers: Headers;
+  /** The exact body bytes, as text. */
+  text: string;
+  /** The parsed JSON body, or null when the body is empty or not JSON. */
+  json: Record<string, unknown> | null;
+}
+
+/** A successful token response; `name` is absent for client credentials. */
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  refresh_token: string;
+  expires_in: number;
+  scope: string;
+  name?: string;
+  orcid: string | null;
+  id_token?: string;
+}
+
+/** `Authorization: Basic ...` for a client. */
+export function basicAuth(ref: ClientRef = "public"): string {
+  const client = resolveClient(ref);
+  return `Basic ${btoa(`${client.client_id}:${client.client_secret}`)}`;
+}
+
+/** A form-encoded POST; undefined fields are left out. */
+export async function postForm(
+  server: TestServer,
+  path: string,
+  fields: Record<string, string | undefined>,
+  headers: Record<string, string> = {},
+): Promise<TokenReply> {
+  const body = new URLSearchParams();
+  for (const [name, value] of Object.entries(fields)) {
+    if (value !== undefined) body.set(name, value);
+  }
+  const response = await fetch(`${server.baseUrl}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded", ...headers },
+    body,
+  });
+  const text = await response.text();
+  let json: Record<string, unknown> | null = null;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (parsed !== null && typeof parsed === "object") json = parsed as Record<string, unknown>;
+  } catch {
+    // Not JSON: the 415 page and an empty body.
+  }
+  return { status: response.status, headers: response.headers, text, json };
+}
+
+/** `client_id` and `client_secret` form fields for a client. */
+export function clientFields(ref: ClientRef = "public"): Record<string, string> {
+  const client = resolveClient(ref);
+  return { client_id: client.client_id, client_secret: client.client_secret };
+}
+
+/** POST /oauth/token with the client's credentials in the form; `fields` may override them. */
+export function tokenRequest(
+  server: TestServer,
+  fields: Record<string, string | undefined>,
+  client: ClientRef = "public",
+  headers: Record<string, string> = {},
+): Promise<TokenReply> {
+  return postForm(server, "/oauth/token", { ...clientFields(client), ...fields }, headers);
+}
+
+/** Exchanges an authorization code; the redirect URI defaults to the client's registered one. */
+export function exchangeCode(
+  server: TestServer,
+  opts: { code: string; client?: ClientRef; redirectUri?: string | null },
+): Promise<TokenReply> {
+  const client = resolveClient(opts.client);
+  return tokenRequest(
+    server,
+    {
+      grant_type: "authorization_code",
+      code: opts.code,
+      redirect_uri:
+        opts.redirectUri === null ? undefined : (opts.redirectUri ?? client.redirectUri),
+    },
+    client,
+  );
+}
+
+/** Signs `orcid` in with `login_as` and exchanges the code; throws unless the answer is a 200. */
+export async function obtainToken(
+  server: TestServer,
+  opts: {
+    orcid: string;
+    scope: string;
+    client?: ClientRef;
+    state?: string;
+    nonce?: string;
+    redirectUri?: string;
+  },
+): Promise<TokenResponse> {
+  const { code } = await authorizeAs(server, opts);
+  const reply = await exchangeCode(server, {
+    code,
+    ...(opts.client === undefined ? {} : { client: opts.client }),
+    ...(opts.redirectUri === undefined ? {} : { redirectUri: opts.redirectUri }),
+  });
+  if (reply.status !== 200 || reply.json === null) {
+    throw new Error(`token exchange answered ${reply.status}: ${reply.text}`);
+  }
+  return reply.json as unknown as TokenResponse;
+}
+
+/** The client-credentials grant; `scope` defaults to none, which ORCID treats as /read-public. */
+export function clientCredentials(
+  server: TestServer,
+  opts: { client?: ClientRef; scope?: string } = {},
+): Promise<TokenReply> {
+  return tokenRequest(server, { grant_type: "client_credentials", scope: opts.scope }, opts.client);
+}
+
+/** The refresh-token grant; `extra` carries `scope` or `revoke_old`. */
+export function refreshTokens(
+  server: TestServer,
+  opts: { refreshToken: string; client?: ClientRef; extra?: Record<string, string | undefined> },
+): Promise<TokenReply> {
+  return tokenRequest(
+    server,
+    { grant_type: "refresh_token", refresh_token: opts.refreshToken, ...opts.extra },
+    opts.client,
+  );
+}
