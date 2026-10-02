@@ -400,6 +400,46 @@ describe("what NEMAR reads: /personal-details name", () => {
   });
 });
 
+// ---- Blank strings ---------------------------------------------------------------------------
+
+describe("a string of only whitespace is absent, as ORCID treats it", () => {
+  const B = IDS.blankNames;
+
+  test("family and credit names are null, and the source name is the given name alone", async () => {
+    const reply = await getRecord(server, `/v3.0/${B}/personal-details`);
+    const name = (reply.json as { name: Record<string, unknown> }).name;
+    expect(name["given-names"]).toEqual({ value: "Blank" });
+    expect(name["family-name"]).toBeNull();
+    expect(name["credit-name"]).toBeNull();
+    const urls = await getRecord(server, `/v3.0/${B}/researcher-urls`);
+    const item = (urls.json as { "researcher-url": Array<Record<string, unknown>> })[
+      "researcher-url"
+    ][0];
+    expect(item?.["url-name"]).toBeNull();
+    const source = item?.source as Record<string, unknown>;
+    expect(source["source-name"]).toEqual({ value: "Blank" });
+  });
+
+  test("an affiliation's department and role are null", async () => {
+    const reply = await getRecord(server, `/v3.0/${B}/employment/7201`);
+    const body = reply.json as Record<string, unknown>;
+    expect(body["department-name"]).toBeNull();
+    expect(body["role-title"]).toBeNull();
+  });
+
+  test("a work's subtitle, journal title, and short description are null", async () => {
+    const reply = await getRecord(server, `/v3.0/${B}/work/7301`);
+    const body = reply.json as {
+      title: { subtitle: unknown };
+      "journal-title": unknown;
+      "short-description": unknown;
+    };
+    expect(body.title.subtitle).toBeNull();
+    expect(body["journal-title"]).toBeNull();
+    expect(body["short-description"]).toBeNull();
+  });
+});
+
 // ---- Biography -------------------------------------------------------------------------------
 
 describe("/biography", () => {
@@ -528,6 +568,23 @@ describe("a single person-level item", () => {
           "more-info": "https://members.orcid.org/api/resources/troubleshooting",
         });
       }
+    }
+  });
+
+  test("a put-code is a signed 64-bit integer: the largest is read, one more is not", async () => {
+    const cases: Array<[string, number, number]> = [
+      ["9223372036854775807", 404, 9016],
+      ["9223372036854775808", 400, 9006],
+      ["-9223372036854775808", 404, 9016],
+      ["-9223372036854775809", 400, 9006],
+    ];
+    for (const [raw, status, code] of cases) {
+      const reply = await getRecord(server, `/v3.0/${C}/other-names/${raw}`);
+      expect([raw, reply.status, (reply.json as { "error-code": number })["error-code"]]).toEqual([
+        raw,
+        status,
+        code,
+      ]);
     }
   });
 

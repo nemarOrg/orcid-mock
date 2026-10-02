@@ -35,6 +35,10 @@ export const IDS = {
   allPrivate: "0009-9903-5930-8005",
   /** A name and a biography that are limited: hidden from the public, seen by a limited reader. */
   limitedName: "0009-9209-8665-4122",
+  /** Works stored out of put-code order, so a bulk read shows which order it answers in. */
+  outOfOrder: "0009-9290-6596-352X",
+  /** Strings that hold only whitespace, which ORCID treats as absent. */
+  blankNames: "0009-9156-2486-6877",
 } as const;
 
 type FixtureUser = UsersFileInput["users"][number];
@@ -67,10 +71,15 @@ const JOURNAL_BODY = {
   address: { city: "London", region: "England", country: "GB" },
 } as const;
 
-const doi = (value: string, relationship: "self" | "part-of" | "version-of" = "self") => ({
+const doi = (
+  value: string,
+  relationship: "self" | "part-of" | "version-of" = "self",
+  url?: string,
+) => ({
   external_id_type: "doi",
   external_id_value: value,
   external_id_relationship: relationship,
+  ...(url === undefined ? {} : { external_id_url: url }),
 });
 
 const carberry: FixtureUser = {
@@ -563,7 +572,8 @@ const workId = (value: string) => ({
  * 3205+3206+3207 (2019, one group by a bridge), 3208+3209 (2018, version-of ids group), 3210
  * (2017, no ids), 3213 (2016, whose hidden twin 3214 is not part of it), 3218 and 3217 (2015, by
  * type), 3220 and 3219 (2014, by title), 3222+3223 (2013, a DOI with a URL prefix groups with the
- * bare one), 3224 (2012, a DOI that does not normalize), and 3221 (no date). 3211+3212 are hidden
+ * bare one), 3224 (2012, a DOI that does not normalize), 3225 (2011, two spellings of one id),
+ * and 3221 (no date). 3211+3212 are hidden
  * and gone.
  */
 const grouping: FixtureUser = {
@@ -660,6 +670,14 @@ const grouping: FixtureUser = {
     }),
     work(3223, "Xi, bare", { publication_date: "2013", external_ids: [doi("10.5555/url.prefix")] }),
     work(3224, "Omicron", { publication_date: "2012", external_ids: [doi("work:doi")] }),
+    // Two ids of one work that are the same group id: the group keeps the first.
+    work(3225, "Pi", {
+      publication_date: "2011",
+      external_ids: [
+        doi("10.5555/Dup.One", "self", "https://example.test/first"),
+        doi("10.5555/dup.one", "self", "https://example.test/second"),
+      ],
+    }),
   ],
   fundings: [
     {
@@ -757,6 +775,44 @@ const limitedName: FixtureUser = {
   biography: { content: "A limited biography.", visibility: "limited" },
 };
 
+const outOfOrder: FixtureUser = {
+  orcid: IDS.outOfOrder,
+  name: { given_names: "Ordo", family_name: "Sequence", credit_name: null, visibility: "public" },
+  works: [
+    { put_code: 7003, title: "Third stored first", type: "other", visibility: "public" },
+    { put_code: 7001, title: "First stored second", type: "other", visibility: "public" },
+    { put_code: 7002, title: "Second stored third", type: "other", visibility: "public" },
+  ],
+};
+
+const blankNames: FixtureUser = {
+  orcid: IDS.blankNames,
+  name: { given_names: "Blank", family_name: "   ", credit_name: " ", visibility: "public" },
+  researcher_urls: [
+    { put_code: 7101, url_name: "  ", url: "https://example.test/blank", visibility: "public" },
+  ],
+  employments: [
+    {
+      put_code: 7201,
+      department_name: "  ",
+      role_title: " ",
+      organization: HARTWELL,
+      visibility: "public",
+    },
+  ],
+  works: [
+    {
+      put_code: 7301,
+      title: "A work with blank parts",
+      subtitle: "   ",
+      journal_title: " ",
+      short_description: "  ",
+      type: "other",
+      visibility: "public",
+    },
+  ],
+};
+
 const primary: FixtureUser = {
   orcid: IDS.primary,
   name: { given_names: "Primrose", family_name: "Aldous", credit_name: null, visibility: "public" },
@@ -836,6 +892,8 @@ export const RECORD_USERS_FILE: UsersFileInput = {
     bioPrivate,
     allPrivate,
     limitedName,
+    outOfOrder,
+    blankNames,
     grouping,
     primary,
     deprecated,

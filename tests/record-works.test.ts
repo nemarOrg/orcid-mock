@@ -348,6 +348,7 @@ describe("grouping and ordering of works", () => {
       [3219],
       [3222, 3223],
       [3224],
+      [3225],
       [3221],
     ]);
   });
@@ -409,6 +410,15 @@ describe("grouping and ordering of works", () => {
         "external-id-url": null,
         "external-id-relationship": "self",
       },
+    ]);
+  });
+
+  test("two spellings of one group id in a work make one key, the first", async () => {
+    const group = groupsOf(await getRecord(server, `/v3.0/${G}/works`)).find(
+      (g) => g["work-summary"][0]?.["put-code"] === 3225,
+    );
+    expect(group?.["external-ids"]["external-id"]).toEqual([
+      extId("doi", "10.5555/Dup.One", "self", "10.5555/dup.one", "https://example.test/first"),
     ]);
   });
 
@@ -502,6 +512,42 @@ describe("the bulk read", () => {
     expect(error["user-message"]).toBe(
       "There was an error when updating the record. Please try again. If the error persists, please contact orcid-mock member client for assistance.",
     );
+  });
+
+  test("found works are in put-code order whatever the order stored or requested", async () => {
+    // The fixture stores 7003, 7001, 7002; ORCID's database returns them by id (observed: a
+    // request for 19980729,9543020 came back 9543020 first).
+    const O = IDS.outOfOrder;
+    for (const codes of ["7001,7002,7003", "7003,7002,7001", "7002,7003,7001", "7003,7001,7002"]) {
+      expect([codes, kinds(await getRecord(server, `/v3.0/${O}/works/${codes}`))]).toEqual([
+        codes,
+        ["work:7001", "work:7002", "work:7003"],
+      ]);
+    }
+  });
+
+  test("a repeated put-code is found once, and the later occurrence is the error", async () => {
+    // ORCID finds each work once and removes the first occurrence of its put-code from the
+    // request; whatever is left is reported in request order (source, and observed on
+    // pub.orcid.org on 2026-10-02: 9543020,1,19980729,9543020,2 gave two works, then errors for
+    // 1, 9543020, and 2). A mock that removed the last occurrence would list 5501 first.
+    const reply = await getRecord(server, `${PATH}/5501,1,5503,5501,2`);
+    expect(kinds(reply)).toEqual([
+      "work:5501",
+      "work:5503",
+      "error:9034",
+      "error:9034",
+      "error:9034",
+    ]);
+    const named = body(reply)
+      .slice(2)
+      .map(
+        (element) =>
+          /'(\d+)' is not/.exec(
+            String((element.error as { "developer-message": string })["developer-message"]),
+          )?.[1],
+      );
+    expect(named).toEqual(["1", "5501", "2"]);
   });
 
   test("a leading zero or a sign is read as the number: 007 asks for put-code 7", async () => {
