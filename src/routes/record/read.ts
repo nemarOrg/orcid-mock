@@ -171,33 +171,39 @@ export function readRoute(
     });
   };
 
-  const options = (c: RecordContext): Response => {
-    // Observed on pub.orcid.org/v3.0 on 2026-10-01: 200, an empty body, `Allow: HEAD,GET,OPTIONS`,
-    // and a `Content-Type` that follows `Accept` (JSON echoed; XML, and so a missing `Accept`,
-    // `application/vnd.orcid+xml;qs=0.5;charset=UTF-8`). A CORS preflight, which carries
-    // `Access-Control-Request-Method`, also gets the two `Access-Control-Allow-*` headers.
-    const negotiation = negotiate(c.req.header("accept"));
-    if (negotiation.kind === "malformed") return malformedAccept(c);
-    const headers: Record<string, string> = {
-      "Content-Type":
-        negotiation.kind === "json"
-          ? negotiation.negotiated.contentType
-          : "application/vnd.orcid+xml;qs=0.5;charset=UTF-8",
-      Allow: "HEAD,GET,OPTIONS",
-    };
-    if (c.req.header("access-control-request-method") !== undefined) {
-      headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE";
-      headers["Access-Control-Allow-Headers"] = "X-Requested-With,Origin,Content-Type, Accept";
-    }
-    return c.body(null, 200, headers);
-  };
-
-  const methodNotAllowed = (c: RecordContext): Response =>
-    orcidApiError(c, ORCID_API_ERRORS.methodNotAllowed);
-
   for (const path of paths) {
     app.get(path, read);
-    app.options(path, options);
-    app.all(path, methodNotAllowed);
+    app.options(path, optionsResponse);
+    app.all(path, methodNotAllowedResponse);
   }
+}
+
+/**
+ * `OPTIONS`: 200 with an empty body and `Allow: HEAD,GET,OPTIONS`, whatever the iD (observed on
+ * pub.orcid.org/v3.0 on 2026-10-01, also for an unknown iD and for `/v3.0/`). The `Content-Type`
+ * follows `Accept`: JSON is echoed, and XML, so a missing `Accept`, is
+ * `application/vnd.orcid+xml;qs=0.5;charset=UTF-8`. A CORS preflight, which carries
+ * `Access-Control-Request-Method`, also gets the two `Access-Control-Allow-*` lists. An `Accept`
+ * header that does not parse is the 400 page, as on a GET.
+ */
+export function optionsResponse(c: RecordContext): Response {
+  const negotiation = negotiate(c.req.header("accept"));
+  if (negotiation.kind === "malformed") return malformedAccept(c);
+  const headers: Record<string, string> = {
+    "Content-Type":
+      negotiation.kind === "json"
+        ? negotiation.negotiated.contentType
+        : "application/vnd.orcid+xml;qs=0.5;charset=UTF-8",
+    Allow: "HEAD,GET,OPTIONS",
+  };
+  if (c.req.header("access-control-request-method") !== undefined) {
+    headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE";
+    headers["Access-Control-Allow-Headers"] = "X-Requested-With,Origin,Content-Type, Accept";
+  }
+  return c.body(null, 200, headers);
+}
+
+/** Any other method on a read path: 405 / 9001 with no Content-Type (observed). */
+export function methodNotAllowedResponse(c: RecordContext): Response {
+  return orcidApiError(c, ORCID_API_ERRORS.methodNotAllowed);
 }

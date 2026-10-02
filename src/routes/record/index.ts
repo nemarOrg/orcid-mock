@@ -23,7 +23,14 @@ import { parseJavaLong } from "../../record/putcode";
 import { record as recordBody } from "../../record/record";
 import type { ItemLookup } from "../../record/wire";
 import { bulkWorks, workItem, works } from "../../record/works";
-import { type ReadContext, type RecordEnv, readRoute, recordMiddleware } from "./read";
+import {
+  methodNotAllowedResponse,
+  optionsResponse,
+  type ReadContext,
+  type RecordEnv,
+  readRoute,
+  recordMiddleware,
+} from "./read";
 
 /** `/:id<tail>` and the same with a trailing slash, which ORCID serves for every read path. */
 function withSlash(tail: string): string[] {
@@ -152,15 +159,23 @@ export function recordRoutes(): Hono<RecordEnv> {
     { existsOnly: true },
   );
 
-  // Anything else under /v3.0: `GET /v3.0/` is a 406 and every other unrouted path a 404, both
-  // 9001 with no Content-Type (observed on pub.orcid.org/v3.0 on 2026-10-01). Hono's `route()`
-  // drops a sub-app's notFound, so this catch-all keeps the response headers on these too.
-  // `/v3.0/` is a resource of ORCID's, so an `Accept` header that does not parse is a 400 there
-  // as on every read path, while an unrouted path is a 404 before any header is read (observed).
+  // Anything else under /v3.0: every other unrouted path is a 404 / 9001 with no Content-Type
+  // (observed on pub.orcid.org/v3.0 on 2026-10-01), a 404 before any header is read. Hono's
+  // `route()` drops a sub-app's notFound, so this catch-all keeps the response headers on it too.
+  // `/v3.0/` is a resource of ORCID's: GET is a 406 / 9001 (a 400 page for an `Accept` that does
+  // not parse), OPTIONS is a 200, and any other method is a 405.
   record.all("*", (c) => {
     if (c.req.path !== "/v3.0/") return orcidApiError(c, ORCID_API_ERRORS.unrouted);
-    if (negotiate(c.req.header("accept")).kind === "malformed") return malformedAccept(c);
-    return orcidApiError(c, ORCID_API_ERRORS.notAcceptable);
+    switch (c.req.method) {
+      case "GET":
+      case "HEAD":
+        if (negotiate(c.req.header("accept")).kind === "malformed") return malformedAccept(c);
+        return orcidApiError(c, ORCID_API_ERRORS.notAcceptable);
+      case "OPTIONS":
+        return optionsResponse(c);
+      default:
+        return methodNotAllowedResponse(c);
+    }
   });
   return record;
 }

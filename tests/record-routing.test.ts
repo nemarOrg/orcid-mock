@@ -52,6 +52,19 @@ describe("paths that are not read paths", () => {
     expectHeaders(reply);
   });
 
+  test("/v3.0/ is a resource: OPTIONS is a 200, HEAD a 406, and any other method a 405", async () => {
+    const options = await getRecord(server, "/v3.0/", { method: "OPTIONS" });
+    expect(options.status).toBe(200);
+    expect(options.text).toBe("");
+    expect(options.headers.get("allow")).toBe("HEAD,GET,OPTIONS");
+    expect(options.headers.get("content-type")).toBe("application/json;charset=UTF-8");
+    expectHeaders(options);
+    expect((await getRecord(server, "/v3.0/", { method: "HEAD" })).status).toBe(406);
+    for (const method of ["POST", "PUT", "DELETE"]) {
+      expect9001(await getRecord(server, "/v3.0/", { method }), 405, "HTTP 405 Method Not Allowed");
+    }
+  });
+
   test("GET /v3.0/ is a 406 whatever Accept says", async () => {
     for (const accept of ["application/vnd.orcid+json", "text/csv", "*/*"]) {
       expect9001(await getRecord(server, "/v3.0/", { accept }), 406, "HTTP 406 Not Acceptable");
@@ -144,6 +157,13 @@ describe("methods", () => {
       "X-Requested-With,Origin,Content-Type, Accept",
     );
     expect(reply.headers.get("access-control-allow-origin")).toBe("*");
+  });
+
+  test("OPTIONS does not look at the record: an unknown or locked iD is still a 200", async () => {
+    for (const orcid of ["0000-0000-0000-0000", IDS.locked, IDS.deprecated]) {
+      const reply = await getRecord(server, `/v3.0/${orcid}/email`, { method: "OPTIONS" });
+      expect([orcid, reply.status]).toEqual([orcid, 200]);
+    }
   });
 
   test("OPTIONS on an unrouted path is the 404", async () => {
