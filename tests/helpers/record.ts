@@ -56,18 +56,20 @@ export async function getRecord(
 
 /**
  * A request with exactly the headers given: `fetch` always adds a wildcard `Accept` header, so a
- * request with no `Accept` header at all needs a socket. Speaks HTTP/1.1 with `Connection: close`.
+ * request with no `Accept` header at all needs a socket, and so does a `Host` header that is not
+ * the server's own (`host`). Speaks HTTP/1.1 with `Connection: close`.
  */
 export async function rawRequest(
   server: Reachable,
   method: string,
   path: string,
   headers: Record<string, string> = {},
+  host?: string,
 ): Promise<RecordReply> {
   const url = new URL(server.baseUrl);
   const lines = [
     `${method} ${path} HTTP/1.1`,
-    `Host: ${url.host}`,
+    `Host: ${host ?? url.host}`,
     "Connection: close",
     ...Object.entries(headers).map(([name, value]) => `${name}: ${value}`),
     "",

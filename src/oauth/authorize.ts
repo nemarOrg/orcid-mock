@@ -8,6 +8,7 @@
 import type { Context } from "hono";
 import type { AppEnv } from "../app";
 import { JSON_LATIN1, oauthError } from "../errors";
+import { requestTarget } from "../request-target";
 import type { ScopeName, StoredClient, StoredUser } from "../store/types";
 import { type Checked, fail } from "./checked";
 import { issueCode } from "./codes";
@@ -210,7 +211,9 @@ function codeRedirect(request: AuthorizeRequest, code: string): string {
 
 export async function authorizeGet(c: Ctx): Promise<Response> {
   const { store, config } = c.get("deps");
-  const checked = await checkRequest(c, new URL(c.req.url).searchParams);
+  // The query comes from the raw URL text: `new URL(c.req.url)` parses the `Host` header and throws
+  // on a malformed one, which would make a valid request a 500.
+  const checked = await checkRequest(c, new URLSearchParams(requestTarget(c.req.url).search));
   if (!checked.ok) return checked.response;
   const { request } = checked;
 

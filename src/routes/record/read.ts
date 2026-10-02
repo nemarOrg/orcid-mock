@@ -18,6 +18,7 @@ import { parseJavaLong } from "../../record/putcode";
 import { type Blocked, blockedBy, existsOnly } from "../../record/status";
 import { type Viewer, viewerFor } from "../../record/viewer";
 import type { ItemLookup } from "../../record/wire";
+import { requestTarget } from "../../request-target";
 import type { StoredUser, TokenRecord } from "../../store/types";
 
 export type RecordEnv = {
@@ -125,9 +126,12 @@ function blockedSpec(
     case "deactivated":
       return { spec: ORCID_API_ERRORS.deactivated(orcid) };
     case "deprecated": {
-      // `/v3.0/<iD>` and what follows it, such as `/email` or a trailing slash.
-      const suffix = new URL(c.req.url).pathname
-        .split("/")
+      // `/v3.0/<iD>` and what follows it, such as `/email` or a trailing slash. The raw path is
+      // used, still percent-encoded: `c.req.path` is decoded, and a decoded control character or
+      // space does not belong in a header, while `new URL(c.req.url)` would throw on a malformed
+      // `Host`.
+      const suffix = requestTarget(c.req.url)
+        .path.split("/")
         .slice(3)
         .map((segment) => `/${segment}`)
         .join("");
