@@ -59,6 +59,7 @@ interface WorkerRequestInit {
 }
 interface WorkerResponse {
   status: number;
+  headers: { get(name: string): string | null };
   json(): Promise<unknown>;
 }
 
@@ -141,6 +142,34 @@ describe("the bundled Worker in workerd", () => {
       "error-code": 9001,
       "more-info": "https://members.orcid.org/api/resources/troubleshooting",
     });
+  });
+
+  test("a record read runs in workerd: personal-details, with URIs from the binding", async () => {
+    const users = (await (await get("/__admin/users")).json()) as Array<{
+      orcid: string;
+      name: { given_names: string };
+    }>;
+    const alder = users.find((user) => user.name.given_names === "Alder");
+    expect(alder).toBeDefined();
+    const response = await get(`/v3.0/${alder?.orcid}/personal-details`, {
+      headers: { accept: "application/json" },
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/json;charset=UTF-8");
+    expect(response.headers.get("cache-control")).toBe(
+      "no-cache, no-store, max-age=0, must-revalidate",
+    );
+    const body = (await response.json()) as {
+      name: { "given-names": { value: string }; "family-name": { value: string } };
+      "other-names": { "other-name": Array<{ source: { "source-orcid": { uri: string } } }> };
+    };
+    expect(body.name["given-names"].value).toBe("Alder");
+    expect(body.name["family-name"].value).toBe("Fennimore");
+    expect(body["other-names"]["other-name"][0]?.source["source-orcid"].uri).toBe(
+      `${PUBLIC_BASE_URL}/${alder?.orcid}`,
+    );
+    // No Accept header means XML at ORCID, which orcid-mock answers with its documented 406.
+    expect((await get(`/v3.0/${alder?.orcid}/personal-details`)).status).toBe(406);
   });
 
   test("state lives in the isolate's store across requests, and reset clears it", async () => {
