@@ -1,8 +1,8 @@
 // `startOrConnect`: use a running orcid-mock when `ORCID_MOCK_URL` names one, and start a
 // container otherwise. It lives apart from `testcontainers.ts` so that a run against a running
 // instance never loads the `testcontainers` package (an optional peer dependency).
-import { OrcidMockClient } from "./client";
-import { urlFromEnv } from "./shared";
+import { OrcidMockClient } from "./client.js";
+import { urlFromEnv } from "./shared.js";
 
 /** A users file: the path of one on disk, or the parsed object (`{ clients, users }`). */
 export type UsersInput = string | Record<string, unknown>;
@@ -49,7 +49,7 @@ export async function startOrConnect(options: StartOrConnectOptions = {}): Promi
     return { baseUrl: client.baseUrl, client, mode: "url", stop: async () => {} };
   }
 
-  const { OrcidMockContainer } = await import("./testcontainers");
+  const { OrcidMockContainer } = await import("./testcontainers.js");
   const container = new OrcidMockContainer(options.image);
   if (options.users !== undefined) container.withUsers(options.users);
   const started = await container.start();

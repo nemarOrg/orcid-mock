@@ -15,11 +15,11 @@ import {
   type StartedTestContainer,
   Wait,
 } from "testcontainers";
-import { OrcidMockClient } from "./client";
-import { CONTAINER_PORT, CONTAINER_USERS_PATH, resolveImage } from "./shared";
-import type { UsersInput } from "./start";
+import { OrcidMockClient } from "./client.js";
+import { CONTAINER_PORT, CONTAINER_USERS_PATH, resolveImage } from "./shared.js";
+import type { UsersInput } from "./start.js";
 
-export type { UsersInput } from "./start";
+export type { UsersInput } from "./start.js";
 
 /** Attempts at picking a free port before giving up; a lost race is the only reason to retry. */
 const PORT_ATTEMPTS = 3;
@@ -213,4 +213,4 @@ async function waitUntilReachable(client: OrcidMockClient): Promise<void> {
   });
 }
 
-export { type OrcidMock, type StartOrConnectOptions, startOrConnect } from "./start";
+export { type OrcidMock, type StartOrConnectOptions, startOrConnect } from "./start.js";

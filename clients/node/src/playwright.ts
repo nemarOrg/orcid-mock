@@ -7,7 +7,7 @@
 //     await signInAs(page, alder.orcid);       // clicks that user's button
 //   });
 import { test as base, expect, type Page } from "@playwright/test";
-import { type OrcidMock, type StartOrConnectOptions, startOrConnect } from "./start";
+import { type OrcidMock, type StartOrConnectOptions, startOrConnect } from "./start.js";
 
 export type { OrcidMock, StartOrConnectOptions };
 export { expect };
