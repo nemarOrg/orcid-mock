@@ -27,7 +27,7 @@ function write(level: LogLevel, event: string, fields: LogFields | undefined): v
   const line: LogFields = { ts: new Date().toISOString(), level, event };
   if (fields) {
     for (const [key, value] of Object.entries(fields)) {
-      if (!(key in line)) line[key] = value;
+      if (!Object.hasOwn(line, key)) line[key] = value;
     }
   }
   try {

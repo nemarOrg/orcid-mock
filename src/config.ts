@@ -53,7 +53,7 @@ function pick(
 
 /**
  * Validates a public base URL: absolute http or https, no query, no fragment, no credentials.
- * Strips one trailing slash; a path prefix is kept and used only when building URLs.
+ * Strips trailing slashes; a path prefix is kept and used only when building URLs.
  */
 export function parsePublicBaseUrl(raw: string, source = "PUBLIC_BASE_URL"): string {
   const shown = JSON.stringify(raw);
@@ -73,7 +73,7 @@ export function parsePublicBaseUrl(raw: string, source = "PUBLIC_BASE_URL"): str
   if (raw.includes("?") || raw.includes("#")) {
     throw new ConfigError(`${source}: must not contain a query or fragment, got ${shown}`);
   }
-  const path = url.pathname.endsWith("/") ? url.pathname.slice(0, -1) : url.pathname;
+  const path = url.pathname.replace(/\/+$/, "");
   return `${url.origin}${path}`;
 }
 

@@ -41,18 +41,28 @@ export interface RunningServer {
 async function readUsers(opts: StartOptions): Promise<unknown> {
   if (opts.users !== undefined) return opts.users;
   if (opts.usersFile == null) return STARTER_USERS_FILE;
-  const file = Bun.file(opts.usersFile);
-  if (!(await file.exists())) {
-    throw new ConfigError(`USERS_FILE: no such file ${JSON.stringify(opts.usersFile)}`);
+  let text: string;
+  try {
+    text = await Bun.file(opts.usersFile).text();
+  } catch (error) {
+    // A missing file or a permission problem is a configuration error, not a bad fixture.
+    throw new ConfigError(
+      `USERS_FILE: cannot read ${JSON.stringify(opts.usersFile)}: ${reason(error)}`,
+    );
   }
   try {
-    return JSON.parse(await file.text());
-  } catch {
+    return JSON.parse(text);
+  } catch (error) {
     throw new FixtureError(
-      [{ path: "", message: "not valid JSON" }],
+      [{ path: "", message: `not valid JSON: ${reason(error)}` }],
       `users file ${opts.usersFile}`,
     );
   }
+}
+
+/** An error's message on one line. */
+function reason(error: unknown): string {
+  return (error instanceof Error ? error.message : String(error)).split("\n")[0] ?? "";
 }
 
 /** http://{host}:{port}, mapping a wildcard host to loopback and bracketing an IPv6 literal. */

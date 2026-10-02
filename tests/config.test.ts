@@ -211,13 +211,25 @@ describe("an invalid users file exits 2 and lists every issue path", () => {
     const path = await tempFile("users.json", "{ not json");
     const result = await spawnCli(["serve", "--users", path]);
     expect(result.exitCode).toBe(2);
-    expect(result.stderr).toContain("not valid JSON");
+    expect(result.stderr).toContain("not valid JSON:");
   });
 
-  test("a file that does not exist names USERS_FILE", async () => {
+  test("a file that does not exist is a configuration error naming USERS_FILE and the reason", async () => {
     const result = await spawnCli(["serve", "--users", "/definitely/not/here.json"]);
     expect(result.exitCode).toBe(2);
-    expect(result.stderr).toContain("USERS_FILE");
+    expect(result.stdout).toBe("");
+    expect(result.stderr.trimEnd().split("\n")).toHaveLength(1);
+    expect(result.stderr).toContain("USERS_FILE: cannot read");
+    expect(result.stderr).toContain("ENOENT");
+  });
+
+  test("a file that cannot be read is the same kind of error", async () => {
+    // A directory exists but cannot be read as a file.
+    const dir = await mkdtemp(join(tmpdir(), "orcid-mock-"));
+    dirs.push(dir);
+    const result = await spawnCli(["serve", "--users", dir]);
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain("USERS_FILE: cannot read");
   });
 });
 
@@ -263,6 +275,8 @@ describe("resolveConfig on real values", () => {
 
   test("PUBLIC_BASE_URL is normalized and validated", () => {
     expect(parsePublicBaseUrl("http://localhost:9700/")).toBe("http://localhost:9700");
+    expect(parsePublicBaseUrl("http://x.test//")).toBe("http://x.test");
+    expect(parsePublicBaseUrl("http://x.test/a///")).toBe("http://x.test/a");
     expect(parsePublicBaseUrl("HTTPS://Orcid.Example.test:443/a/b/")).toBe(
       "https://orcid.example.test/a/b",
     );
