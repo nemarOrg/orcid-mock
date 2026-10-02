@@ -40,7 +40,7 @@ Project-specific rules:
 [`ideas.md`](.context/ideas.md) (later ideas, not commitments), and
 [`decisions/`](.context/decisions/README.md) (Architecture Decision Records; copy `0000-template.md` to add one and index it in the README; never delete an ADR, supersede it).
 
-`fixtures/users.schema.json` is the fixture's JSON Schema, generated from `src/fixtures/schema.ts` by `bun run schema` (a test fails when it is stale), and `fixtures/users.example.json` is the bundled starter from `src/fixtures/starter.ts`, which `orcid-mock fixture` writes.
+`fixtures/users.schema.json` is the fixture's JSON Schema, generated from `src/fixtures/schema.ts` by `bun run schema` (a test fails when it is stale), and `fixtures/users.example.json` is the bundled starter from `src/fixtures/starter.ts`, which `orcid-mock fixture` writes (regenerate the file with `bun run example`).
 
 ## Project memory
 
