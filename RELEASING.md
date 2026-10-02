@@ -84,12 +84,12 @@ Each proposal waits seven days after the release, and each is a pull request to 
 ### What stays manual
 
 Dependabot cannot see these, because they are plain text in files it does not read.
-Its Docker updater reads `FROM image:tag` lines, and the Dockerfile takes its two base images from `ARG` defaults, so it proposes nothing for them; writing the images literally in the `FROM` lines would change that.
+Its Docker updater reads the Dockerfile's two `FROM image:tag@digest` lines and proposes new tags and digests for both base images; an `oven/bun` proposal must still move together with the Bun version (below).
 Prefer a release that is at least seven days old, as the cooldown does, and let CI prove the bump.
 
 | Pin | Where | How to bump |
 |---|---|---|
-| Base images, with their digests | `Dockerfile`: `BUN_IMAGE` (`oven/bun`) and `RUNTIME_IMAGE` (distroless) | Find the new index digest with `docker buildx imagetools inspect <image>:<tag> --format '{{.Manifest.Digest}}'`, and change the tag and the digest together; the `oven/bun` tag follows the Bun version (next row). |
+| Base images, with their digests | `Dockerfile`: the two `FROM` lines (`oven/bun` and distroless); Dependabot proposes these | Find the new index digest with `docker buildx imagetools inspect <image>:<tag> --format '{{.Manifest.Digest}}'`, and change the tag and the digest together; the `oven/bun` tag follows the Bun version (next row). |
 | BuildKit image (`BUILDKIT_IMAGE`), with its digest | `ci.yml`, `release.yml` | The same, for `moby/buildkit:<tag>`, in both files. |
 | QEMU registration image (`BINFMT_IMAGE`), with its digest | `release.yml` | The same, for `tonistiigi/binfmt:<tag>`. |
 | Alpine image (`ALPINE_IMAGE`), with its digest | `smoke-binaries.yml` | The same, for `alpine:<tag>`. |

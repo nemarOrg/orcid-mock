@@ -2,10 +2,10 @@
 # packages (exact versions in package.json and bun.lock) for the server and for the Node helper in
 # clients/node, and Python packages for the Python helper in clients/python (uv.lock).
 #
-# The `docker` entry reads `FROM image:tag` lines, and the Dockerfile takes its two base images from
-# ARG defaults, so it proposes nothing today. Those images, the image digests and tool versions
-# written into the workflows, and the Bun version (which moves together with @types/bun) are bumped
-# by hand: RELEASING.md lists each pin and how.
+# The `docker` entry reads the Dockerfile's two `FROM image:tag@digest` lines and proposes new tags
+# and digests for both base images. The image digests and tool versions written into the workflows,
+# and the Bun version (which moves together with @types/bun and the oven/bun tag) are bumped by hand:
+# RELEASING.md lists each pin and how.
 #
 # Every update waits seven days after its release before Dependabot proposes it, so a compromised
 # release has a week to be caught first. The cooldown applies to version updates only: security
