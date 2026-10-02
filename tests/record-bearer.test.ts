@@ -65,7 +65,7 @@ describe("who sees limited items", () => {
     expect(emailsOf(reply)).toEqual([]);
   });
 
-  test("a public client's token is the public view", async () => {
+  test("a token without /read-limited, which is all a public client can hold, is the public view", async () => {
     const token = await obtainToken(server, {
       orcid: IDS.rich,
       scope: "/authenticate",

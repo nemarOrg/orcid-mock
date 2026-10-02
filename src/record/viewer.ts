@@ -24,11 +24,13 @@ export function canSee(viewer: Viewer, visibility: Visibility): boolean {
 }
 
 /**
- * The viewer for a request: `limited` when the token carries `/read-limited`, was issued to a
- * member client, and belongs to the record's own iD; otherwise `public`.
- * orcid-mock choice for a token that fails the last test (another user's token, or a
- * client-credentials token): the public view, not an error. ORCID's member API host, where
- * `/read-limited` applies, was not observed.
+ * The viewer for a request: `limited` when the token carries `/read-limited` and belongs to the
+ * record's own iD; otherwise `public`. Membership is not checked here: the authorize endpoint
+ * refuses `/read-limited` to a client that is not a member (src/oauth/authorize.ts), so only a
+ * member client's token can carry it.
+ * orcid-mock choice for a token that fails either test (another user's token, a token without
+ * the scope, or a client-credentials token): the public view, not an error. ORCID's member API
+ * host, where `/read-limited` applies, was not observed.
  */
 export function viewerFor(
   token: TokenRecord | null,
@@ -36,6 +38,6 @@ export function viewerFor(
   baseUrl: string,
 ): Viewer {
   const limited =
-    token?.member === true && token.orcid === user.orcid && token.scopes.includes("/read-limited");
+    token !== null && token.orcid === user.orcid && token.scopes.includes("/read-limited");
   return { level: limited ? "limited" : "public", baseUrl };
 }
