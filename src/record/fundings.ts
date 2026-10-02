@@ -62,9 +62,9 @@ function summary(user: StoredUser, viewer: Viewer, funding: StoredFunding): Json
 /**
  * `/fundings`: the visible fundings in the database's order, `displayIndex desc, dateCreated
  * asc`, grouped by external id in that order, so the groups appear in the order their first
- * member does; within a group the summaries are ordered by display index, highest first. The
- * brief for this phase suggested the works' reverse-chronological rule; ORCID's source orders
- * fundings by the query instead, and orcid-mock follows the source:
+ * member does; within a group the summaries are ordered by display index, highest first. ORCID
+ * orders fundings by the query, not by the works' reverse-chronological rule, and orcid-mock
+ * follows the source:
  * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-persistence/src/main/java/org/orcid/persistence/dao/impl/ProfileFundingDaoImpl.java#L255
  * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/manager/v3/read_only/impl/ProfileFundingManagerReadOnlyImpl.java#L115-L156
  * Each group is `{ last-modified-date, external-ids, funding-summary }`.

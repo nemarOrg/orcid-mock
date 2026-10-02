@@ -68,8 +68,8 @@ function groupKey(reviewGroupId: string): JsonObject {
  * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/manager/v3/read_only/impl/PeerReviewManagerReadOnlyImpl.java#L170-L210
  * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/utils/v3/activities/PeerReviewGroupGenerator.java#L17-L55
  * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/version/impl/Api3_0LastModifiedDatesHelper.java#L205-L230
- * The brief suggested the works' ordering rule; ORCID's source orders the list by the query, and
- * orcid-mock follows the source. An outer group with no visible review is gone.
+ * ORCID orders the list by the query, not by the works' ordering rule, and orcid-mock follows the
+ * source. An outer group with no visible review is gone.
  */
 export function peerReviews(user: StoredUser, viewer: Viewer): Built {
   const visible = peerReviewOrder(

@@ -376,7 +376,7 @@ All are `GET`, and `HEAD` and a trailing slash work on each; `{pc}` is a put-cod
 | `/person`, `/personal-details`, `/activities` | A composition of the sections below; each section is byte for byte what its own endpoint serves. |
 | `/email`, `/address`, `/other-names`, `/keywords`, `/external-identifiers`, `/researcher-urls`, `/biography` | Person-level sections. `/email` is `email` and `/address` is `address`, but `person` nests them as `emails` and `addresses`. |
 | `/employments`, `/educations`, `/qualifications`, `/fundings`, `/peer-reviews`, `/works` | Activity sections, grouped. |
-| `/distinctions`, `/invited-positions`, `/memberships`, `/services`, `/research-resources` | Always empty: a fixture has no such sections; their item paths (`/distinction/{pc}` and so on) answer 404 / 9016. |
+| `/distinctions`, `/invited-positions`, `/memberships`, `/services`, `/research-resources` | Always empty: a fixture has no such sections; their item paths (`/distinction/{pc}` and so on) answer 404 / 9016, or 400 / 9006 for the put-code of an employment, education, or qualification. |
 | `/work/{pc}`, `/employment/{pc}`, `/education/{pc}`, `/qualification/{pc}`, `/funding/{pc}`, `/peer-review/{pc}` | One full item. |
 | `/other-names/{pc}`, `/keywords/{pc}`, `/researcher-urls/{pc}`, `/external-identifiers/{pc}`, `/address/{pc}` | One person-level item. |
 | `/works/{pc,pc,...}` | Up to 100 full works: `{"bulk": [{"work": ...}, {"error": ...}]}`. |
@@ -389,7 +389,7 @@ Not served: search, the unversioned redirects, the member API host, XML, the `su
 
 `application/json` is compact, and `application/orcid+json` and `application/vnd.orcid+json` are pretty-printed in Jackson's layout (`"key" : value`, `[ ]` for an empty array).
 The `Content-Type` echoes the type as the client wrote it, with `;charset=UTF-8` added only when it gave no charset (and without any `q` or `qs`); errors follow the same style.
-Ranges are tried by the client's q-value, then specificity, then ORCID's own weight for each type, then the order written, as ORCID does:
+Ranges are tried by the client's q-value, then ORCID's own weight (`qs`) for each type, then specificity, then the order written, as ORCID does:
 `application/json, text/plain, */*` is JSON, and `application/json, application/vnd.orcid+xml` is JSON in either order.
 A header that does not parse (`application/json;q=abc`, a leading comma) is ORCID's 400 with an HTML page, which orcid-mock sends in a minimal form.
 
@@ -431,10 +431,10 @@ Every response, errors included, carries `access-control-allow-origin: *`, `cach
 - Normalization: work, affiliation, and peer-review ids carry `{"value", "transient": true}`; only a DOI is changed (lowercased and reduced to its `10.<registrant>/<suffix>` part, with ORCID's 8001 error when that fails); funding ids carry null, as observed.
 - Groups merge transitively on external ids that are not `part-of` or `funded-by`, among visible items only, and a merged group stays where its earliest member's group was formed.
   Works are ordered by publication date, title, then type; affiliations by ORCID's start and end date strings; fundings and person-level lists by display index, then creation date; peer reviews by completion date, newest first, with a missing part first because ORCID's database is PostgreSQL (source only).
-  ORCID's source orders fundings and peer reviews this way; the works rule was only a guess.
 - Bulk works returns found works in put-code order, which is what pub.orcid.org returned for a request in another order; the source leaves it to the database.
   In a 9034 message, `${clientName}` is filled with the reader's client name when the token has one (source only) and left as is for an anonymous reader (observed).
 - Emails keep the fixture's order, since ORCID's has no `order by`.
+- Source only, because no such record or item could be found to observe: 403 / 9039 for a single hidden item, 404 / 9041 for a record with no biography, 409 / 9018 for a locked record, and 409 / 9036 for an unclaimed one.
 - The parameters of an echoed `Content-Type` keep the order the client wrote, where ORCID's follow a hash map's, and the 400 page for a malformed `Accept` is shorter than Tomcat's.
 - `OPTIONS` answers 200 with `Allow: HEAD,GET,OPTIONS`, and the CORS lists only when the request is a preflight.
 

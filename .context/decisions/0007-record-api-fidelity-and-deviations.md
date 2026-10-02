@@ -28,7 +28,7 @@ A token that is not valid is a 401 on every `/v3.0` path.
 `private` is never served.
 
 **Ordering follows ORCID's source where it was read.**
-Person-level items and fundings are ordered by `displayIndex desc, dateCreated asc`, works and affiliations by ORCID's comparators and date strings, and peer reviews by completion date, newest first, with a missing part first as PostgreSQL sorts it; the brief's suggestion to reuse the works rule for fundings and peer reviews gave way to the source.
+Person-level items and fundings are ordered by `displayIndex desc, dateCreated asc`, works and affiliations by ORCID's comparators and date strings, and peer reviews by completion date, newest first, with a missing part first as PostgreSQL sorts it; fundings and peer reviews do not use the works rule.
 Grouping is among visible items only, by ORCID's group id, merged transitively.
 
 **Normalization is minimal.**
