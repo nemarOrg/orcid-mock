@@ -41,7 +41,7 @@ Adoption in nemar-cli follows the first release, in #17.
 
 ### Phase 2: OAuth 2.0 (#5)
 
-- `GET /oauth/authorize`: validates `client_id`, `response_type=code`, `scope`, and `redirect_uri` (ORCID matches the origin exactly and the path as a prefix); renders a consent page listing fixture users; `login_as=<iD>` (or `prompt=none` with a session) skips it; redirects with `code` and the unmodified `state`; an unknown client or a mismatched `redirect_uri` never redirects.
+- `GET /oauth/authorize`: validates `client_id`, `response_type=code`, `scope`, and `redirect_uri` (ORCID matches the origin exactly and the path as a prefix); renders a sign-in page listing fixture users; `login_as=<iD>` (or `prompt=none` with a session) skips it; redirects with `code` and the unmodified `state`; an unknown client or a mismatched `redirect_uri` never redirects.
 - `POST /oauth/token`, form-encoded only (415 otherwise): `authorization_code` (single use; the ten-minute expiry is this project's choice, ORCID documents none), `refresh_token`, `client_credentials`; the response carries `access_token`, `token_type` (`bearer`), `refresh_token`, `expires_in` (`631138518`, about twenty years), `scope`, `orcid`, and `name` (`orcid` is `null` and `name` is absent for client credentials).
 - `POST /oauth/revoke`; `POST /__admin/clock` to expire codes and tokens without sleeping.
 - Scopes: `/authenticate`, `openid`, `/read-limited`, `/read-public`; unknown scope answers `invalid_scope`.

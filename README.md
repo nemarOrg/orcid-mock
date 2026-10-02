@@ -11,8 +11,9 @@ See [`.context/plan.md`](.context/plan.md) for the roadmap and [`.context/resear
 
 ## Install and run
 
-One codebase, four ways to run it, in order of how much you control.
-All four take the same settings (a users file, `PUBLIC_BASE_URL`, and the admin API), described under [Run it from a checkout](#run-it-from-a-checkout).
+One codebase runs as a `bunx` command, a container, a binary, a GitHub Action, and a `services:` container;
+a sixth section describes the Cloudflare Worker entry, which is a portability check and not a way to host the mock.
+All of them take the same settings (a users file, `PUBLIC_BASE_URL`, and the admin API), described under [Run it from a checkout](#run-it-from-a-checkout).
 
 ### With `bunx`
 
@@ -33,7 +34,7 @@ docker run --rm -p 127.0.0.1:9700:9700 \
   -e PUBLIC_BASE_URL=http://localhost:9700 \
   -e USERS_FILE=/fixtures/users.json \
   -v "$PWD/users.json:/fixtures/users.json:ro" \
-  ghcr.io/nemarorg/orcid-mock:latest
+  ghcr.io/nemarorg/orcid-mock:1
 ```
 
 - **Set `PUBLIC_BASE_URL`.**
@@ -157,7 +158,7 @@ Nothing is published until the first release, `1.0.0`.
   `reset()` restores the loaded file: users, clients, counters, and the clock, and clears codes, tokens, and sessions.
   A client registered with `putClient` is dropped too, so register it again after a reset.
 - **Sign-in.**
-  `signIn` is the headless sequence of [the round trip above](#a-headless-round-trip): `GET /oauth/authorize` with `login_as` without following the redirect, the code from `Location`, then `POST /oauth/token`.
+  `signIn` is the headless sequence of [the round trip below](#a-headless-round-trip): `GET /oauth/authorize` with `login_as` without following the redirect, the code from `Location`, then `POST /oauth/token`.
   By default it uses the starter file's public client and `/authenticate`; any non-2xx answer is an `OrcidMockError` carrying the status and body, and a redirect that carries no code (an `error` fragment) is one with status 0.
 
 ### Testcontainers for Node
@@ -195,7 +196,7 @@ test("a user can sign in", async () => {
 });
 ```
 
-`OrcidMockClient` (from `@nemarorg/orcid-mock-testing/client`, no dependencies) has `health`, `reset`, `users`, `user`, `createUser`, `putUser`, `deleteUser`, `putClient`, `advanceClock`, and `signIn`.
+`OrcidMockClient` (from `@nemarorg/orcid-mock-testing/client`, no dependencies) has `health`, `reset`, `users`, `user`, `createUser`, `putUser`, `deleteUser`, `putClient`, `advanceClock`, `publicBaseUrl`, and `signIn`.
 `startOrConnect()` from the Testcontainers entry point does what the fixtures below do: it uses `ORCID_MOCK_URL` when that is set and starts a container otherwise.
 
 ### Playwright
@@ -213,7 +214,7 @@ test("signs in with ORCID", async ({ page, orcidMock, signInAs }) => {
   if (!alder) throw new Error("the starter file has users");
 
   await page.goto("http://localhost:5173/login"); // the app redirects to the mock
-  await signInAs(page, alder.orcid); // waits for the consent page, clicks that user's button
+  await signInAs(page, alder.orcid); // waits for the sign-in page, clicks that user's button
   await expect(page.getByText(alder.orcid)).toBeVisible();
 });
 ```
@@ -360,8 +361,7 @@ The response has ORCID's keys in ORCID's order:
 `name` is the public display name:
 the credit name if the name is public and there is one, else the given and family names if the name is public, else `""`.
 The code is six characters from `[0-9a-zA-Z]`, works once, and the `state` comes back exactly as sent.
-Helpers that do this in a test are in [`tests/helpers/oauth.ts`](tests/helpers/oauth.ts):
-`authorizeAs`, `exchangeCode`, `obtainToken`, `clientCredentials`, and `refreshTokens`.
+In a test, the [helpers](#test-helpers)' `signIn` does these two steps.
 
 ### The sign-in page
 
@@ -394,7 +394,7 @@ Three grants are served:
 `POST /oauth/revoke` takes a `token` (access or refresh) and the same client credentials, revokes the pair, and answers 200 with an empty body.
 `POST /__admin/clock` moves the server's clock to expire codes (ten minutes), sessions (24 hours), and tokens (twenty years) without sleeping.
 
-### Where ORCID is undocumented or unobserved
+### OAuth: where ORCID is undocumented or unobserved
 
 These are orcid-mock's own choices, each marked "orcid-mock choice" where it is implemented:
 
@@ -504,7 +504,7 @@ A name that is not public, and any field that does not exist, is `null`, not lef
 Everything else, including no token, an unknown, revoked, or expired token, a refresh token, and a token without the scope, is ORCID's single answer: `403` with `{"error":"access_denied","error-description":"access_token is invalid"}`.
 The key is hyphenated, unlike the underscore in every other ORCID error body, and there is no `WWW-Authenticate` header.
 
-### Where ORCID is undocumented or unobserved
+### OpenID Connect: where ORCID is undocumented or unobserved
 
 - The 24-hour ID token lifetime, above.
 - The preflight answer copies ORCID's allowed methods and headers.
@@ -574,7 +574,7 @@ ORCID's own root-level resources (`search`, `csv-search`, `expanded-search`, `gr
 Error bodies have ORCID's five keys in order, `response-code`, `developer-message`, `user-message`, `error-code`, `more-info`.
 Every response, errors included, carries `access-control-allow-origin: *`, `cache-control: no-cache, no-store, max-age=0, must-revalidate`, `pragma: no-cache`, `expires: 0`, `x-content-type-options: nosniff`, and `x-frame-options: DENY`.
 
-### Where ORCID is undocumented, unobserved, or cannot be copied
+### Record API: where ORCID is undocumented, unobserved, or cannot be copied
 
 - Every URI is built from `PUBLIC_BASE_URL`: `orcid-identifier.uri` is `PUBLIC_BASE_URL/{iD}`, and `host` is that URL's host, port included, where ORCID writes `https://orcid.org/{iD}` and `orcid.org`.
 - Every item is self-asserted: `source-orcid` is the user, `source-client-id` and the three `assertion-origin-*` keys are null, and `source-name` is the user's public display name, or null when the name is not public.
@@ -626,7 +626,7 @@ The cases are listed at the top of [`conformance/conformance.test.ts`](conforman
 
 The assertions are structural: keys, order, and the kind of each value, never a count or a value, because a fixture and a real record hold different data.
 Where the mock differs from ORCID on purpose, the suite avoids the case or checks only what both satisfy, with a comment naming the decision record:
-it always sends `Accept` (ORCID answers XML to none, the mock a 406, [ADR 0007](.context/decisions/0007-record-api-fidelity-and-deviations.md)), it checks that `orcid-identifier` agrees with itself and not that it names `orcid.org`, and it looks for the 415 sentence inside the body, which ORCID wraps in a web server's error page and the mock sends alone (recorded under [OAuth, where ORCID is undocumented or unobserved](#where-orcid-is-undocumented-or-unobserved)).
+it always sends `Accept` (ORCID answers XML to none, the mock a 406, [ADR 0007](.context/decisions/0007-record-api-fidelity-and-deviations.md)), it checks that `orcid-identifier` agrees with itself and not that it names `orcid.org`, and it looks for the 415 sentence inside the body, which ORCID wraps in a web server's error page and the mock sends alone (recorded under [OAuth, where ORCID is undocumented or unobserved](#oauth-where-orcid-is-undocumented-or-unobserved)).
 No assertion branches on the target.
 
 The target comes from the environment, and a missing or malformed variable stops the run with one message that names it (never its value):
