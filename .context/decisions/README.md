@@ -25,5 +25,6 @@ Do not write one for routine choices that are obvious from reading the code.
 Add new entries here as you create ADRs:
 
 - [ADR 0001](0001-build-in-bun-on-a-portable-fetch-layer.md): build the mock in Bun on a portable fetch layer, in memory
+- [ADR 0002](0002-portable-layer-and-fixture-schema.md): the portable layer's Web-APIs-only rule and its gates, Zod as the fixture schema source, and the mint block
 
 - ADR 0000 - template (do not edit)
