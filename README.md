@@ -623,7 +623,8 @@ Nothing is published until a version tag is pushed.
 One version, from `package.json`, numbers the npm package, the image, the binaries, the two [test helpers](#test-helpers), and (as its major) the Action.
 
 1. Bump `version` in `package.json`, `clients/node/package.json`, and `clients/python/pyproject.toml` to the same string, in a pull request, and merge it to `main`.
-   The workflow refuses a tag that differs from any of the three, and the helpers' tests fail until the three agree.
+   Run `uv lock` in `clients/python` afterwards, since the lockfile records the project's own version: the workflow refuses a stale one (`uv lock --check`).
+   The workflow also refuses a tag that differs from any of the three, and the helpers' tests fail until the three agree.
    The first release is `1.0.0`: the Action defaults to the image tag `1`, and the workflow refuses a stable release whose major differs from that default in `action.yml`.
    A prerelease is `1.2.3-rc.1`: it gets only its exact image tag, the `next` tag on npm, a prerelease GitHub Release, and no change to any floating tag.
    Write it `-alpha.N`, `-beta.N`, or `-rc.N` and nothing else, because the Python helper needs a form that Python Enhancement Proposal (PEP) 440 can spell (`1.2.3-rc.1` is `1.2.3rc1` on PyPI).

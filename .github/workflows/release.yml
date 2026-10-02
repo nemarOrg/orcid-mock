@@ -153,6 +153,15 @@ jobs:
       - name: The Node helper packs
         working-directory: clients/node
         run: bun pm pack --dry-run
+      # Bumping clients/python/pyproject.toml without `uv lock` leaves uv.lock stale, and the
+      # published files and the lockfile would then disagree about the version.
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.15"
+          enable-cache: false
+      - name: The Python helper's lockfile is current
+        working-directory: clients/python
+        run: uv lock --check
 
   # Before anything is public: is there a token, and does npm accept it? The secret lives in the
   # "release" environment (restricted to v*.*.* tags, with a required reviewer), which a dry run
