@@ -518,6 +518,14 @@ describe("the bulk read", () => {
     expect(empty.text).toBe('{"bulk":[]}');
   });
 
+  test("a trailing slash after the put-codes gives the same body", async () => {
+    const plain = await getRecord(server, `${PATH}/5501,5503`);
+    const slashed = await getRecord(server, `${PATH}/5501,5503/`);
+    expect(slashed.status).toBe(200);
+    expect(slashed.text).toBe(plain.text);
+    expect((await getRecord(server, `${PATH}/abc/`)).status).toBe(400);
+  });
+
   test("works/ with a trailing slash is the section, not an empty bulk", async () => {
     const reply = await getRecord(server, `${PATH}/`);
     expect(reply.status).toBe(200);

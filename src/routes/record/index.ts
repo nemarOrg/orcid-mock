@@ -138,7 +138,8 @@ export function recordRoutes(): Hono<RecordEnv> {
   // deactivated record is read like any other (observed for a deprecated one).
   readRoute(
     record,
-    ["/:id/works/:codes"],
+    // A trailing slash is served here too (observed: `works/{pc}/` answers 200 with the same body).
+    ["/:id/works/:codes", "/:id/works/:codes/"],
     async (r) => {
       // ORCID fills `${clientName}` in a 9034 message with the calling client's name.
       const { store } = r.c.get("deps");

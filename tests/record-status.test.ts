@@ -251,6 +251,7 @@ describe("every read path checks the record's state", () => {
   test("bulk works checks only that the record exists: the states do not apply", async () => {
     for (const orcid of [IDS.deprecated, IDS.unclaimed, IDS.locked, IDS.deactivated]) {
       expect((await getRecord(server, `/v3.0/${orcid}/works/1`)).status).toBe(200);
+      expect((await getRecord(server, `/v3.0/${orcid}/works/1/`)).status).toBe(200);
     }
     expect((await getRecord(server, "/v3.0/0000-0000-0000-0000/works/1")).status).toBe(404);
   });
