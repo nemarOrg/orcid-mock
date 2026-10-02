@@ -6,7 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:tes
 import { createMockApp } from "../src/bootstrap";
 import { STARTER_USERS_FILE } from "../src/fixtures/starter";
 import { silentLogger } from "../src/log";
-import { invalidTokenResponse, resolveBearer } from "../src/oauth/bearer";
+import { checkAccessToken, invalidTokenResponse, resolveBearer } from "../src/oauth/bearer";
 import {
   authorizeAs,
   clientCredentials,
@@ -38,6 +38,14 @@ beforeAll(async () => {
       scopes: token.scopes,
       client: token.client_id,
     });
+  });
+  // The route a form or query-parameter caller would write: the token comes from somewhere other
+  // than the header, and the one validity rule is checkAccessToken.
+  app.get("/probe-param", async (c) => {
+    const result = await checkAccessToken(store, c.req.query("access_token") ?? "");
+    return result.kind === "invalid"
+      ? invalidTokenResponse(c, result.presented)
+      : c.json({ kind: "ok", orcid: result.token.orcid });
   });
   const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: app.fetch });
   baseUrl = `http://127.0.0.1:${server.port}`;
@@ -176,6 +184,38 @@ describe("resolveBearer", () => {
   test("a code is not a token", async () => {
     const { code } = await authorizeAs(reachable(), { orcid: aldersId, scope: "/authenticate" });
     expect((await probe(`Bearer ${code}`)).status).toBe(401);
+  });
+});
+
+describe("checkAccessToken", () => {
+  const probeParam = (token: string) =>
+    fetch(`${baseUrl}/probe-param?access_token=${encodeURIComponent(token)}`);
+
+  test("applies the same rule to a token found outside the header", async () => {
+    const token = await signIn();
+    const ok = await probeParam(token.access_token);
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toEqual({ kind: "ok", orcid: aldersId });
+
+    for (const bad of ["", "unknown", token.refresh_token]) {
+      const response = await probeParam(bad);
+      expect(response.status).toBe(401);
+      expect(await response.json()).toEqual({
+        error: "invalid_token",
+        error_description: `Invalid access token: ${bad}`,
+      });
+    }
+
+    await fetch(`${baseUrl}/oauth/revoke`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: "APP-ORCIDMOCK000001",
+        client_secret: "orcid-mock-secret",
+        token: token.access_token,
+      }),
+    });
+    expect((await probeParam(token.access_token)).status).toBe(401);
   });
 });
 

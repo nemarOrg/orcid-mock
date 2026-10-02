@@ -14,24 +14,43 @@ export type BearerResult =
   | { kind: "invalid"; presented: string }
   | { kind: "ok"; token: TokenRecord };
 
-/**
- * Reads `Authorization: Bearer <token>`: the scheme is case-insensitive and the token is trimmed,
- * as ORCID's userinfo controller strips the "Bearer" or "bearer" prefix and trims
- * (ORCID-Source orcid-web/.../OpenIDController.java, research 5.4). A header with another scheme
- * presents no bearer token. The token is good only if it is a stored access token that is not
- * revoked and not expired at server time (the admin clock counts); a refresh token is not one.
- */
-export async function resolveBearer(c: Context<AppEnv>, store: Store): Promise<BearerResult> {
-  const header = c.req.header("authorization");
-  const match = header === undefined ? null : /^\s*bearer\s+(\S.*?)\s*$/i.exec(header);
-  const presented = match?.[1];
-  if (presented === undefined) return { kind: "none" };
+/** A token that was presented, which `checkAccessToken` judges. */
+export type CheckedAccessToken = Exclude<BearerResult, { kind: "none" }>;
 
+/**
+ * The one rule for whether a presented token is good: it is a stored access token (a refresh
+ * token is not one) that is not revoked and not expired at server time, the admin clock
+ * included. Callers that find the token somewhere other than the header, such as a form field or
+ * an `access_token` query parameter, call this directly.
+ */
+export async function checkAccessToken(
+  store: Store,
+  presented: string,
+): Promise<CheckedAccessToken> {
   const token = await store.getAccessToken(presented);
   if (!token || token.revoked || (await serverNowMs(store)) >= token.expires_at_ms) {
     return { kind: "invalid", presented };
   }
   return { kind: "ok", token };
+}
+
+/**
+ * The token in `Authorization: Bearer <token>`, or null when there is none. The scheme is
+ * case-insensitive and the token is trimmed, as ORCID's userinfo controller strips the "Bearer"
+ * or "bearer" prefix and trims (ORCID-Source
+ * orcid-web/src/main/java/org/orcid/frontend/web/controllers/OpenIDController.java). A header
+ * with another scheme, or a scheme with nothing after it, presents no bearer token.
+ */
+export function readBearerHeader(c: Context<AppEnv>): string | null {
+  const header = c.req.header("authorization");
+  const match = header === undefined ? null : /^\s*bearer\s+(\S.*?)\s*$/i.exec(header);
+  return match?.[1] ?? null;
+}
+
+/** The header route: `none` without a bearer header, else `checkAccessToken` on what it holds. */
+export async function resolveBearer(c: Context<AppEnv>, store: Store): Promise<BearerResult> {
+  const presented = readBearerHeader(c);
+  return presented === null ? { kind: "none" } : checkAccessToken(store, presented);
 }
 
 /**

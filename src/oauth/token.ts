@@ -6,15 +6,19 @@ import type { Context } from "hono";
 import type { AppEnv } from "../app";
 import { serverNowMs } from "../clock";
 import { oauthError } from "../errors";
-import type { ScopeName, Store, StoredClient, StoredUser, TokenRecord } from "../store/types";
+import type { ScopeName, Store, StoredClient, TokenRecord } from "../store/types";
 import { authenticateClient } from "./client-auth";
 import { readForm } from "./form";
 import { parseScopes, scopeTokens } from "./scopes";
-import { buildTokenResponse, type Grant, TOKEN_TTL_SECONDS } from "./token-response";
+import { buildTokenResponse, TOKEN_TTL_SECONDS, type TokenResponseInput } from "./token-response";
 
 type Ctx = Context<AppEnv>;
 
-/** A fresh access and refresh token pair, expiring twenty years from server time. */
+/**
+ * A fresh access and refresh token pair. `expires_at_ms` is server time, which includes the admin
+ * clock offset: it is for validity checks only, and an emitted time such as an `id_token` `exp`
+ * must come from wall time (`Date.now()`), never from it.
+ */
 async function newTokenRecord(
   store: Store,
   init: {
@@ -43,13 +47,8 @@ async function newTokenRecord(
 }
 
 /** A token response: the body from `buildTokenResponse`, uncacheable (RFC 6749 section 5.1). */
-async function tokenJson(
-  c: Ctx,
-  grant: Grant,
-  token: TokenRecord,
-  user: StoredUser | null,
-): Promise<Response> {
-  const body = await buildTokenResponse({ deps: c.get("deps"), grant, token, user });
+async function tokenJson(c: Ctx, input: Omit<TokenResponseInput, "deps">): Promise<Response> {
+  const body = await buildTokenResponse({ deps: c.get("deps"), ...input });
   return c.json(body, 200, { "Cache-Control": "no-store", Pragma: "no-cache" });
 }
 
@@ -120,7 +119,14 @@ async function authorizationCodeGrant(
     nonce: record.nonce,
   });
   await store.putTokens(token);
-  return tokenJson(c, "authorization_code", token, user);
+  return tokenJson(c, {
+    grant: "authorization_code",
+    token,
+    user,
+    amr: record.amr,
+    nonce: record.nonce,
+    auth_time_ms: record.auth_time_ms,
+  });
 }
 
 async function refreshTokenGrant(
@@ -178,7 +184,14 @@ async function refreshTokenGrant(
   const rotated = await store.rotateRefresh(refreshToken, next, revokeOld);
   if (!rotated)
     return oauthError(c, 400, "invalid_grant", `Invalid refresh token: ${refreshToken}`);
-  return tokenJson(c, "refresh_token", rotated, user);
+  return tokenJson(c, {
+    grant: "refresh_token",
+    token: rotated,
+    user,
+    amr: null,
+    nonce: old.nonce,
+    auth_time_ms: old.auth_time_ms,
+  });
 }
 
 async function clientCredentialsGrant(
@@ -204,5 +217,12 @@ async function clientCredentialsGrant(
     nonce: null,
   });
   await store.putTokens(token);
-  return tokenJson(c, "client_credentials", token, null);
+  return tokenJson(c, {
+    grant: "client_credentials",
+    token,
+    user: null,
+    amr: null,
+    nonce: null,
+    auth_time_ms: null,
+  });
 }

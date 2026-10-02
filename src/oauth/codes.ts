@@ -42,9 +42,11 @@ export interface CodeGrant {
 }
 
 /**
- * Stores a code and returns it. `amr` is "pwd" for a member client and absent for a public one,
- * because ORCID returns it only to the Member API (research 5.3, ORCID-Source
- * orcid-web/ORCID_AUTH_WITH_OPENID_CONNECT.md); phase 3 copies it into the ID token.
+ * Stores a code and returns it. `amr` is "pwd" for a member client and null for a public one,
+ * because ORCID returns it only to the Member API (ORCID-Source
+ * orcid-web/ORCID_AUTH_WITH_OPENID_CONNECT.md). It is stored on the code, not on the token
+ * record: the authorization-code grant reads it from the consumed code and passes it to
+ * `buildTokenResponse`, which is where an ID token gets its `amr` claim.
  */
 export async function issueCode(store: Store, grant: CodeGrant): Promise<string> {
   const code = generateCode();
