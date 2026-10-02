@@ -27,6 +27,7 @@ Add new entries here as you create ADRs:
 - [ADR 0001](0001-build-in-bun-on-a-portable-fetch-layer.md): build the mock in Bun on a portable fetch layer, in memory
 - [ADR 0002](0002-portable-layer.md): the portable layer's Web-APIs-only rule, its enforcement gates, and all state in the Store
 - [ADR 0003](0003-fixture-schema-and-id-minting.md): Zod as the fixture schema source, the generated JSON Schema, and the `0009-9` mint block
+- [ADR 0004](0004-oauth-surface-and-orcid-mock-choices.md): the OAuth surface, fragment error redirects, passwordless sign-in, redirect matching, lifetimes, and revoke edge cases
 - [ADR 0005](0005-distribution-and-release.md): four channels at one version, distroless image, cross-compiled binaries, release order, forward-only floating tags, and `bun publish` without provenance
 
 - ADR 0000 - template (do not edit)
