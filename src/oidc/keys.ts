@@ -4,11 +4,11 @@
 // draw random values or generate keys while a module is being evaluated (ADR 0002).
 import type { SigningKey, Store } from "../store/types";
 
+const RSA_IMPORT = { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" } as const;
 const RSA_ALGORITHM = {
-  name: "RSASSA-PKCS1-v1_5",
+  ...RSA_IMPORT,
   modulusLength: 2048,
   publicExponent: new Uint8Array([1, 0, 1]),
-  hash: "SHA-256",
 } as const satisfies RsaHashedKeyGenParams;
 
 const KID_PREFIX = "orcid-mock-";
@@ -67,5 +67,5 @@ export async function getSigningKey(store: Store): Promise<SigningKey> {
 
 /** The private half as a Web Crypto key that can sign, for `jose`. */
 export function importSigningKey(key: SigningKey): Promise<CryptoKey> {
-  return crypto.subtle.importKey("jwk", key.private_jwk, RSA_ALGORITHM, false, ["sign"]);
+  return crypto.subtle.importKey("jwk", key.private_jwk, RSA_IMPORT, false, ["sign"]);
 }
