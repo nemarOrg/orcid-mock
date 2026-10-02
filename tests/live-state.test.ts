@@ -4,7 +4,15 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { IDS, RECORD_USERS_FILE } from "./fixtures/record";
 import { startTestServer, type TestServer } from "./harness";
-import { authorizeAs, CLIENTS, exchangeCode, obtainToken, refreshTokens } from "./helpers/oauth";
+import {
+  authorizeAs,
+  authorizeUrl,
+  CLIENTS,
+  exchangeCode,
+  obtainToken,
+  REDIRECT_URI,
+  refreshTokens,
+} from "./helpers/oauth";
 import { getRecord, type RecordReply } from "./helpers/record";
 
 let server: TestServer;
@@ -171,4 +179,117 @@ describe("a user locked or deactivated after sign-in", () => {
       });
     });
   }
+});
+
+/** `prompt=none` with a session cookie: where the browser is sent. */
+async function silentSignIn(cookie: string): Promise<string> {
+  const response = await fetch(
+    authorizeUrl(server.baseUrl, {
+      client_id: CLIENTS.member.client_id,
+      response_type: "code",
+      scope: "openid",
+      redirect_uri: REDIRECT_URI,
+      prompt: "none",
+    }),
+    { redirect: "manual", headers: { cookie } },
+  );
+  expect(response.status).toBe(302);
+  return response.headers.get("location") ?? "";
+}
+
+describe("a user that is deleted, then created again with the same iD", () => {
+  test("nothing issued to the old user works for the new one", async () => {
+    const original = (await server.admin<Record<string, unknown>>("GET", `/users/${IDS.rich}`))
+      .body;
+    // A token pair, a live session, and a code nobody has exchanged yet.
+    const signedIn = await authorizeAs(server, {
+      orcid: IDS.rich,
+      scope: "openid /read-limited",
+      client: "member",
+    });
+    const token = await exchangeCode(server, { code: signedIn.code, client: "member" });
+    const pending = await authorizeAs(server, {
+      orcid: IDS.rich,
+      scope: "openid /read-limited",
+      client: "member",
+    });
+    const accessToken = String(token.json?.access_token);
+    const refreshToken = String(token.json?.refresh_token);
+    const cookie = signedIn.cookie ?? "";
+    expect(cookie).not.toBe("");
+    expect(emailsOf(await getRecord(server, RICH_EMAIL, { token: accessToken }))).toEqual(
+      WITH_LIMITED,
+    );
+    expect(await silentSignIn(cookie)).toContain("code=");
+
+    expect((await server.admin("DELETE", `/users/${IDS.rich}`)).status).toBe(204);
+    const recreated = await server.admin("POST", "/users", original);
+    expect(recreated.status).toBe(201);
+
+    // The access token is unknown, not merely refused: the record API answers 401, not a view.
+    const read = await getRecord(server, RICH_EMAIL, { token: accessToken });
+    expect(read.status).toBe(401);
+    expect((await userinfo(accessToken)).status).toBe(403);
+    const refreshed = await refreshTokens(server, { refreshToken, client: "member" });
+    expect([refreshed.status, refreshed.json?.error]).toEqual([400, "invalid_grant"]);
+    const exchanged = await exchangeCode(server, { code: pending.code, client: "member" });
+    expect([exchanged.status, exchanged.json?.error]).toEqual([400, "invalid_grant"]);
+    expect(await silentSignIn(cookie)).toBe(`${REDIRECT_URI}#login_required`);
+
+    // The new user starts clean and signs in as usual.
+    const fresh = await obtainToken(server, {
+      orcid: IDS.rich,
+      scope: "openid /read-limited",
+      client: "member",
+    });
+    expect(emailsOf(await getRecord(server, RICH_EMAIL, { token: fresh.access_token }))).toEqual(
+      WITH_LIMITED,
+    );
+  });
+
+  test("another user's tokens and sessions are not touched", async () => {
+    const other = await obtainToken(server, {
+      orcid: IDS.carberry,
+      scope: "openid",
+      client: "member",
+    });
+    await server.admin("DELETE", `/users/${IDS.rich}`);
+    expect((await userinfo(other.access_token)).status).toBe(200);
+  });
+});
+
+describe("a user that is replaced with PUT", () => {
+  test("keeps their tokens, session, and codes: it is the same person, edited", async () => {
+    const signedIn = await authorizeAs(server, {
+      orcid: IDS.rich,
+      scope: "openid /read-limited",
+      client: "member",
+    });
+    const token = await exchangeCode(server, { code: signedIn.code, client: "member" });
+    const pending = await authorizeAs(server, {
+      orcid: IDS.rich,
+      scope: "openid /read-limited",
+      client: "member",
+    });
+    const accessToken = String(token.json?.access_token);
+    const cookie = signedIn.cookie ?? "";
+
+    const current = (await server.admin<Record<string, unknown>>("GET", `/users/${IDS.rich}`)).body;
+    const renamed = { ...current, name: { ...(current.name as object), given_names: "Renamed" } };
+    expect((await server.admin("PUT", `/users/${IDS.rich}`, renamed)).status).toBe(200);
+
+    const info = await userinfo(accessToken);
+    expect(info.status).toBe(200);
+    expect(((await info.json()) as { given_name: string }).given_name).toBe("Renamed");
+    expect(emailsOf(await getRecord(server, RICH_EMAIL, { token: accessToken }))).toEqual(
+      WITH_LIMITED,
+    );
+    expect(await silentSignIn(cookie)).toContain("code=");
+    const refreshed = await refreshTokens(server, {
+      refreshToken: String(token.json?.refresh_token),
+      client: "member",
+    });
+    expect(refreshed.status).toBe(200);
+    expect((await exchangeCode(server, { code: pending.code, client: "member" })).status).toBe(200);
+  });
 });

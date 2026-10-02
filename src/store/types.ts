@@ -130,7 +130,17 @@ export interface Store {
   /** In insertion order; replacing a user keeps its place. */
   listUsers(): Promise<StoredUser[]>;
   insertUser(user: StoredUser): Promise<"created" | "conflict">;
+  /**
+   * Replacing a user keeps every code, token, and session issued to their iD: it is the same
+   * person, edited (ADR 0009).
+   */
   upsertUser(user: StoredUser): Promise<"created" | "replaced">;
+  /**
+   * Removes the user and, in the same atomic step, every authorization code, access and refresh
+   * token, and session issued to that iD, so a user later created with the same iD starts with
+   * nothing carried over (ADR 0009). Returns whether there was a user; the codes, tokens, and
+   * sessions are removed either way.
+   */
   deleteUser(orcid: string): Promise<boolean>;
 
   getClient(clientId: string): Promise<StoredClient | null>;

@@ -57,7 +57,20 @@ export class MemoryStore implements Store {
   }
 
   async deleteUser(orcid: string): Promise<boolean> {
-    return this.#users.delete(orcid);
+    // No await between the deletes, so the user and everything issued to them go in one step.
+    const removed = this.#users.delete(orcid);
+    for (const [code, record] of this.#codes) {
+      if (record.orcid === orcid) this.#codes.delete(code);
+    }
+    for (const [access, token] of this.#tokens) {
+      if (token.orcid !== orcid) continue;
+      this.#tokens.delete(access);
+      this.#refreshIndex.delete(token.refresh_token);
+    }
+    for (const [id, session] of this.#sessions) {
+      if (session.orcid === orcid) this.#sessions.delete(id);
+    }
+    return removed;
   }
 
   async getClient(clientId: string): Promise<StoredClient | null> {

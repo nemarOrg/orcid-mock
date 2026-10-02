@@ -630,7 +630,7 @@ describe("refresh_token", () => {
     expect(reply.json?.orcid).toBeNull();
   });
 
-  test("a refresh token whose user was deleted cannot be used, and is not spent", async () => {
+  test("a refresh token whose user was deleted cannot be used, and a recreated user does not revive it", async () => {
     const original = await first();
     const { body: alder } = await server.admin<Record<string, unknown>>(
       "GET",
@@ -643,11 +643,14 @@ describe("refresh_token", () => {
       errorText("invalid_grant", `Invalid refresh token: ${original.refresh_token}`),
     );
 
-    // Not spent: with the user back, the same refresh token works.
+    // Deleting a user revokes everything issued to their iD (ADR 0009), so with the same iD back
+    // the old refresh token is still unknown, and a new sign-in starts clean.
     expect((await server.admin("PUT", `/users/${ids.alder}`, alder)).status).toBe(201);
-    const restored = await refreshTokens(server, { refreshToken: original.refresh_token });
-    expect(restored.status).toBe(200);
-    expect(restored.json?.orcid).toBe(ids.alder);
+    const revived = await refreshTokens(server, { refreshToken: original.refresh_token });
+    expect(revived.status).toBe(400);
+    expect(revived.text).toBe(
+      errorText("invalid_grant", `Invalid refresh token: ${original.refresh_token}`),
+    );
   });
 
   test("concurrent refreshes of one token give exactly one new token", async () => {
