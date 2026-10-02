@@ -125,12 +125,23 @@ export function createClient(target: Target) {
     return grant;
   }
 
-  /** The access token from `clientCredentials()`; throws, without the body, unless it was a 200. */
+  /**
+   * The access token from `clientCredentials()`. When there is none, the error says why in
+   * the server's own words (`error` and `error_description`) and never prints a body.
+   */
   async function clientCredentialsToken(): Promise<string> {
     const reply = await clientCredentials();
-    const token = (reply.json as { access_token?: unknown } | undefined)?.access_token;
+    const body = (reply.json ?? {}) as Record<string, unknown>;
+    const token = body.access_token;
     if (reply.status !== 200 || typeof token !== "string") {
-      throw new Error(`The client-credentials grant answered ${reply.status}, not a token.`);
+      const detail = ["error", "error_description"]
+        .filter((key) => typeof body[key] === "string")
+        .map((key) => `${key}: ${String(body[key])}`);
+      throw new Error(
+        `The client-credentials grant answered ${reply.status}, not a token${
+          detail.length > 0 ? ` (${detail.join("; ")})` : ""
+        }.`,
+      );
     }
     return token;
   }

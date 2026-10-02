@@ -6,6 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { createClient, retryDelayMs } from "../conformance/client";
 import { check, recordShapes } from "../conformance/shapes";
 import { loadTarget } from "../conformance/target";
+import { startTestServer } from "./harness";
 
 const COMPLETE = {
   CONFORMANCE_TARGET: "sandbox",
@@ -221,6 +222,24 @@ describe("the client", () => {
       expect(flaky.count()).toBe(1);
     } finally {
       flaky.stop();
+    }
+  });
+
+  test("a refused token request says why in the server's words, without the secret", async () => {
+    const server = await startTestServer();
+    try {
+      const client = createClient(target(server.baseUrl));
+      const failure = await client.clientCredentialsToken().then(
+        () => null,
+        (error: Error) => error,
+      );
+      expect(failure).not.toBeNull();
+      expect(failure?.message).toContain("401");
+      expect(failure?.message).toContain("error: invalid_client");
+      expect(failure?.message).toContain("error_description: Client authentication failed");
+      expect(failure?.message).not.toContain("wrong-secret");
+    } finally {
+      await server.stop();
     }
   });
 });
