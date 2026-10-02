@@ -42,6 +42,18 @@ Project-specific rules:
 
 `fixtures/users.example.json` shows the fixture shape until the JSON Schema lands.
 
+## Project memory
+
+`.memory/` is the tracked, cross-agent store for durable operational observations:
+what cost someone time and will cost the next agent the same unless written down.
+Keep one fact per Markdown file with `name`, `description`, `type`, `recorded`, and `revalidate_after` frontmatter,
+and add a one-line hook to [`.memory/INDEX.md`](.memory/INDEX.md); [`.memory/README.md`](.memory/README.md) has the format.
+
+- `.context/decisions/` is binding, `.context/` is non-binding analysis and plans, and `.memory/` is non-binding observation.
+  Promote a memory to an ADR when it encodes a choice; never cite a memory as policy.
+- Correct or delete a memory when it becomes false.
+- Never store secrets, tokens, credentials, private transcripts, customer data, personal data, or anything about a named individual.
+
 ## Reading the shared documentation, and what to do when you cannot
 
 `docs.nemar.org` is the canonical surface for anything about the NEMAR platform rather than about
