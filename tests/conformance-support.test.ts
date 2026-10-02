@@ -43,6 +43,30 @@ describe("loadTarget", () => {
     }
   });
 
+  test("anonymous-only needs no client variables and uses an unregistered placeholder", () => {
+    const { ORCID_CLIENT_ID: _id, ORCID_CLIENT_SECRET: _secret, ...bare } = COMPLETE;
+    expect(() => loadTarget(bare)).toThrow("ORCID_CLIENT_ID, ORCID_CLIENT_SECRET");
+    const target = loadTarget({ ...bare, CONFORMANCE_ANONYMOUS_ONLY: "1" });
+    expect(target.anonymousOnly).toBe(true);
+    expect(target.clientId).toBe("APP-0000000000000000");
+    expect(target.clientSecret).toBe("");
+    // A client that is given is kept, so the wrong-secret case can name a real client.
+    expect(loadTarget({ ...COMPLETE, CONFORMANCE_ANONYMOUS_ONLY: "1" }).clientId).toBe(
+      COMPLETE.ORCID_CLIENT_ID,
+    );
+    expect(loadTarget(COMPLETE).anonymousOnly).toBe(false);
+  });
+
+  test("the switches are 1 or unset, and anything else is refused", () => {
+    expect(loadTarget({ ...COMPLETE, CONFORMANCE_REQUIRE_ITEMS: "1" }).requireItems).toBe(true);
+    expect(loadTarget({ ...COMPLETE, CONFORMANCE_REQUIRE_ITEMS: "" }).requireItems).toBe(false);
+    for (const name of ["CONFORMANCE_ANONYMOUS_ONLY", "CONFORMANCE_REQUIRE_ITEMS"]) {
+      for (const bad of ["true", "yes", "0", "2"]) {
+        expect(() => loadTarget({ ...COMPLETE, [name]: bad })).toThrow(name);
+      }
+    }
+  });
+
   test("names every missing variable in one message and prints no value", () => {
     const { ORCID_CLIENT_ID: _id, ORCID_CLIENT_SECRET: _secret, ...rest } = COMPLETE;
     const failure = (): Error => {
