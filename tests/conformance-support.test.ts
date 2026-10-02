@@ -32,6 +32,17 @@ describe("loadTarget", () => {
     expect(loadTarget({ ...COMPLETE, CONFORMANCE_TARGET: "mock" }).requestDelayMs).toBe(0);
   });
 
+  test("lets CONFORMANCE_DELAY_MS override the delay, and refuses a value that is not a number", () => {
+    expect(loadTarget({ ...COMPLETE, CONFORMANCE_DELAY_MS: "1500" }).requestDelayMs).toBe(1500);
+    expect(loadTarget({ ...COMPLETE, CONFORMANCE_DELAY_MS: "0" }).requestDelayMs).toBe(0);
+    expect(loadTarget({ ...COMPLETE, CONFORMANCE_DELAY_MS: "" }).requestDelayMs).toBeGreaterThan(0);
+    for (const bad of ["fast", "-1", "1.5", "99999999"]) {
+      expect(() => loadTarget({ ...COMPLETE, CONFORMANCE_DELAY_MS: bad })).toThrow(
+        "CONFORMANCE_DELAY_MS",
+      );
+    }
+  });
+
   test("names every missing variable in one message and prints no value", () => {
     const { ORCID_CLIENT_ID: _id, ORCID_CLIENT_SECRET: _secret, ...rest } = COMPLETE;
     const failure = (): Error => {

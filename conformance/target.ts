@@ -7,6 +7,11 @@
 //   ORCID_CLIENT_SECRET  its secret
 //   ORCID_PUBLIC_ID      an iD whose record is public and whose name is public
 //
+// and optionally
+//
+//   CONFORMANCE_DELAY_MS  the least time between two requests, in milliseconds (the defaults are
+//                         400 for the sandbox and 0 for the mock)
+//
 // A missing or malformed variable stops the run with one message that names it; no message here
 // ever contains a variable's value, because two of them are credentials.
 
@@ -36,6 +41,7 @@ const REQUIRED = [
 
 /** ORCID allows 12 anonymous requests a second; one every 400 ms is about a fifth of that. */
 const SANDBOX_DELAY_MS = 400;
+const MAX_DELAY_MS = 60_000;
 
 const ORCID_ID_SHAPE = /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/;
 
@@ -50,6 +56,18 @@ function httpBase(name: string, value: string): string {
     throw new Error(`${name} must be an absolute http or https URL.`);
   }
   return value.replace(/\/+$/, "");
+}
+
+function delayMs(raw: string | undefined, fallback: number): number {
+  const value = (raw ?? "").trim();
+  if (value === "") return fallback;
+  const delay = Number(value);
+  if (!/^\d+$/.test(value) || delay > MAX_DELAY_MS) {
+    throw new Error(
+      `CONFORMANCE_DELAY_MS must be a whole number of milliseconds, at most ${MAX_DELAY_MS}.`,
+    );
+  }
+  return delay;
 }
 
 /** Reads and validates the target from `env`; throws one error that names what is wrong. */
@@ -78,6 +96,6 @@ export function loadTarget(env: Record<string, string | undefined> = process.env
     clientId: read("ORCID_CLIENT_ID"),
     clientSecret: read("ORCID_CLIENT_SECRET"),
     publicId,
-    requestDelayMs: name === "sandbox" ? SANDBOX_DELAY_MS : 0,
+    requestDelayMs: delayMs(env.CONFORMANCE_DELAY_MS, name === "sandbox" ? SANDBOX_DELAY_MS : 0),
   };
 }
