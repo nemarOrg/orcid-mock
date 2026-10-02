@@ -1,0 +1,263 @@
+name: Release
+
+# A real release runs only when the owner pushes a tag vX.Y.Z whose number equals package.json's
+# version and whose commit is on main. Nothing is pushed, published, released, or tagged from
+# anywhere else. To rehearse (every build and check, none of the four side effects), run this
+# workflow by hand with "dry-run" on, from any branch.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Build and check everything, but do not push the image, publish to npm, create the release, or move the floating tag
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+# Never cancel a release that is half done.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/nemarorg/orcid-mock
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      major: ${{ steps.meta.outputs.major }}
+      minor: ${{ steps.meta.outputs.minor }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      dry-run: ${{ steps.meta.outputs.dry-run }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # The main-branch check below needs history.
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - id: meta
+        env:
+          INPUT_DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          set -euo pipefail
+          version="$(bun -e 'console.log(require("./package.json").version)')"
+          if ! [[ "${version}" =~ ^([0-9]+)\.([0-9]+)\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error title=Release::package.json version '${version}' is not a semantic version (X.Y.Z or X.Y.Z-prerelease)."
+            exit 1
+          fi
+          major="${BASH_REMATCH[1]}"
+          minor="${BASH_REMATCH[2]}"
+
+          if [ "${GITHUB_EVENT_NAME}" = workflow_dispatch ]; then
+            dry_run="${INPUT_DRY_RUN}"
+          else
+            dry_run=false
+          fi
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then
+            if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+              echo "::error title=Release::Tag ${GITHUB_REF_NAME} does not equal v${version} from package.json. Bump the version, commit it, and tag that commit."
+              exit 1
+            fi
+          elif [ "${dry_run}" != true ]; then
+            echo "::error title=Release::A real release runs from a tag. Push v${version}, or keep dry-run on to rehearse from a branch."
+            exit 1
+          fi
+          if [ "${dry_run}" != true ] && ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "::error title=Release::${GITHUB_REF_NAME} is not on main. Merge to main first, then tag the merge commit."
+            exit 1
+          fi
+
+          prerelease=false
+          [[ "${version}" == *-* ]] && prerelease=true
+          {
+            echo "version=${version}"
+            echo "tag=v${version}"
+            echo "major=${major}"
+            echo "minor=${minor}"
+            echo "prerelease=${prerelease}"
+            echo "dry-run=${dry_run}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Releasing ${version} (prerelease: ${prerelease}, dry run: ${dry_run})"
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun run typecheck
+      - run: bun run test
+
+  image:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Log in to ghcr.io
+        if: needs.verify.outputs.dry-run != 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Work out the image tags
+        id: tags
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+          MAJOR: ${{ needs.verify.outputs.major }}
+          MINOR: ${{ needs.verify.outputs.minor }}
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          {
+            echo "list<<EOF"
+            echo "${IMAGE}:${VERSION}"
+            # A prerelease never moves the floating tags.
+            if [ "${PRERELEASE}" != true ]; then
+              echo "${IMAGE}:${MAJOR}.${MINOR}"
+              echo "${IMAGE}:${MAJOR}"
+              echo "${IMAGE}:latest"
+            fi
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+      - name: Build the multi-arch image (and push it, unless this is a dry run)
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ needs.verify.outputs.dry-run != 'true' }}
+          tags: ${{ steps.tags.outputs.list }}
+          build-args: VERSION=${{ needs.verify.outputs.version }}
+          # The provenance attestation below replaces BuildKit's, which would add
+          # unknown/unknown entries to the image index.
+          provenance: false
+      - name: Attest the image's build provenance
+        if: needs.verify.outputs.dry-run != 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+      - name: Smoke test the pushed image
+        if: needs.verify.outputs.dry-run != 'true'
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -euo pipefail
+          actual="$(docker run --rm "${IMAGE}:${VERSION}" --version)"
+          test "${actual}" = "${VERSION}" || { echo "image reports ${actual}, expected ${VERSION}"; exit 1; }
+
+  npm:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      # Missing credentials must stop the release, in a dry run too, so that a rehearsal finds the
+      # problem and not the real run.
+      - name: Require the NPM_TOKEN secret
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NPM_TOKEN}" ]; then
+            echo "::error title=npm::The NPM_TOKEN secret is not set, so the package cannot be published. Create an npm automation token that can publish to the @nemarorg scope and add it as a repository secret named NPM_TOKEN (the @nemarorg scope must exist on npm first)."
+            exit 1
+          fi
+      - name: Publish to npm
+        env:
+          # bun publish reads this variable.
+          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+          DRY_RUN: ${{ needs.verify.outputs.dry-run }}
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          flags=(--access public)
+          # A prerelease must not become the version `npm install` picks by default.
+          [ "${PRERELEASE}" = true ] && flags+=(--tag next)
+          [ "${DRY_RUN}" = true ] && flags+=(--dry-run)
+          bun publish "${flags[@]}"
+
+  release:
+    needs: [verify, image, npm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bun run build:binaries
+      - name: Checksums match the files
+        working-directory: dist
+        run: sha256sum --check SHA256SUMS
+      - name: Attest the binaries' build provenance
+        if: needs.verify.outputs.dry-run != 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/orcid-mock-*
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.verify.outputs.tag }}
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+          DRY_RUN: ${{ needs.verify.outputs.dry-run }}
+        run: |
+          set -euo pipefail
+          flags=(--verify-tag --generate-notes --title "${TAG}")
+          [ "${PRERELEASE}" = true ] && flags+=(--prerelease)
+          if [ "${DRY_RUN}" = true ]; then
+            echo "Dry run: would run gh release create ${TAG} ${flags[*]} with these files:"
+            ls -l dist/orcid-mock-* dist/SHA256SUMS
+            exit 0
+          fi
+          gh release create "${TAG}" dist/orcid-mock-* dist/SHA256SUMS "${flags[@]}"
+
+  floating-tag:
+    # The Action is used as nemarOrg/orcid-mock@v<major>; move that tag to this release, but never
+    # for a prerelease.
+    needs: [verify, release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Move the major tag
+        env:
+          MAJOR: ${{ needs.verify.outputs.major }}
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+          DRY_RUN: ${{ needs.verify.outputs.dry-run }}
+        run: |
+          set -euo pipefail
+          if [ "${PRERELEASE}" = true ]; then
+            echo "A prerelease does not move the v${MAJOR} tag."
+            exit 0
+          fi
+          if [ "${DRY_RUN}" = true ]; then
+            echo "Dry run: would move v${MAJOR} to ${GITHUB_SHA}."
+            exit 0
+          fi
+          git tag --force "v${MAJOR}" "${GITHUB_SHA}"
+          git push --force origin "refs/tags/v${MAJOR}"
