@@ -6,6 +6,14 @@ name: Conformance
 on:
   workflow_dispatch:
     inputs:
+      job:
+        description: Which job to run by hand; the weekly schedule runs only the sandbox job.
+        type: choice
+        options:
+          - sandbox
+          - services-smoke
+          - both
+        default: sandbox
       image:
         description: >-
           Image for the services-smoke job, with its tag. It can pass only once the image is
@@ -24,14 +32,19 @@ concurrency:
 
 jobs:
   sandbox:
+    if: github.event_name == 'schedule' || inputs.job != 'services-smoke'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # The sandbox client's secrets live in this environment, which the owner restricts to main
+    # (README, Conformance), so a branch cannot read them. Repository secrets of the same names
+    # work until it exists.
+    environment: conformance
     permissions:
       contents: read
     steps:
       # The secrets reach this step and the test step only. A job that cannot run says so in the
-      # log and the job summary, and succeeds: a notice is a visible skip, a red job would cry wolf
-      # in every repository that has not registered a sandbox client.
+      # log and the job summary, and succeeds: a warning is a visible skip, a red job would cry
+      # wolf in every repository that has not registered a sandbox client.
       - name: Check that the sandbox client is configured
         id: config
         env:
@@ -47,11 +60,11 @@ jobs:
           if [ "${#missing[@]}" -gt 0 ]; then
             printf -v list '%s, ' "${missing[@]}"
             list="${list%, }"
-            echo "::notice title=Sandbox conformance skipped::Not run: ${list} is not set. See the Conformance section of the README."
+            echo "::warning title=Sandbox conformance skipped::Not run. Missing: ${list}. See the Conformance section of the README."
             {
               echo "### Sandbox conformance skipped"
               echo
-              echo "Not run because these are not set: ${list}."
+              echo "Not run. Missing: ${list}."
             } >> "${GITHUB_STEP_SUMMARY}"
             echo "configured=false" >> "${GITHUB_OUTPUT}"
           else
@@ -76,14 +89,28 @@ jobs:
           ORCID_CLIENT_ID: ${{ secrets.ORCID_SANDBOX_CLIENT_ID }}
           ORCID_CLIENT_SECRET: ${{ secrets.ORCID_SANDBOX_CLIENT_SECRET }}
           ORCID_PUBLIC_ID: ${{ vars.ORCID_SANDBOX_PUBLIC_ID }}
-        run: bun run conformance
+        run: |
+          set -euo pipefail
+          bun run conformance 2>&1 | tee conformance.log
+      # What the run checked, not only that it passed: the sandbox's record may hold few items, and
+      # the sandbox run does not require any.
+      - name: Summarize the items checked
+        if: always() && steps.config.outputs.configured == 'true'
+        run: |
+          {
+            echo "### Items checked on the sandbox"
+            echo
+            echo '```'
+            grep -E '^[AB][0-9] .* checked$' conformance.log || echo "(no read finished)"
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
 
-  # Proves on a real runner that the image's own HEALTHCHECK gates a services: container: with no
-  # `options: --health-cmd` (none could run, since the image has no shell), the runner must still
-  # wait for the container to be healthy, so the first step finds the admin API answering at once.
+  # Proves on a real runner that the image carries a HEALTHCHECK the runner accepts: with no
+  # `options: --health-cmd` (none could run, since the image has no shell), the service container
+  # reports healthy by its own check, and the step after it finds the admin API answering at once.
   # It can pass only once the image is published and its package is public.
   services-smoke:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.job != 'sandbox'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -96,8 +123,15 @@ jobs:
         env:
           PUBLIC_BASE_URL: http://localhost:9700
     steps:
-      - name: The service container reports healthy
-        run: docker ps --format 'table {{.Image}}\t{{.Status}}'
+      - name: The service container is healthy by its own HEALTHCHECK
+        run: |
+          set -euo pipefail
+          docker ps --format 'table {{.Image}}\t{{.Status}}'
+          container="$(docker ps --quiet --filter publish=9700)"
+          test -n "${container}"
+          status="$(docker inspect --format '{{.State.Health.Status}}' "${container}")"
+          echo "health status: ${status}"
+          test "${status}" = healthy
       - name: The step after the service reaches the admin API, with no retry
         run: |
           set -euo pipefail
