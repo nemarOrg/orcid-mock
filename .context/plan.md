@@ -26,6 +26,12 @@ Tracked in epic #1, re-sequenced on 2026-10-01 into seven phases so fixtures lan
 Phase 1 runs alone; phases 2 and 5 run in parallel after it; then 3, 4, and 7; then 6.
 Wire details below were corrected on 2026-10-01 against live ORCID responses and ORCID's source (see research.md).
 
+Status, 2026-10-02: complete on the epic branch.
+Each phase was built by an implementer agent, reviewed by a separate reviewer agent, fixed until every finding was addressed, and squash-merged:
+phase 1 in #11, phase 2 in #12, phase 3 in #14, phase 4 in #15, phase 5 in #13, phase 6 in #18, phase 7 in #16.
+Every decision with real alternatives is an ADR (0002 to 0008).
+Adoption in nemar-cli follows the first release, in #17.
+
 ### Phase 1: foundation (#4)
 
 - Hono on the standard `fetch` interface with a portable layer that uses Web APIs only (ADR 0002), a frozen `Store` interface with the in-memory implementation, and every piece of mutable state inside the Store.
@@ -111,6 +117,7 @@ MVP2:
 2. Staging keeps the real ORCID app for realism; whether a CI-only configuration of the dev worker may point `ORCID_API_BASE` at this server is a separate decision.
 3. Whether the legacy password-plus-typed-ORCID sign-up route in nemar-cli (still live, no CLI caller) is worth supporting or should be removed first.
 4. Hosting: Cloudflare Worker with Durable Objects versus a container on nemar infrastructure; the portable HTTP layer keeps both open.
+5. npm publishing after January 2027: npm ends publishing with bypass-2FA tokens then, and its trusted publishing needs the npm command-line tool, which the Bun-only rule excludes (`bun publish` has no OpenID Connect support yet); ADR 0005 records the constraint, and the choice is the owner's before that date.
 
 ## Not doing
 
