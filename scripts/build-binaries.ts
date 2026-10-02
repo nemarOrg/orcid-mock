@@ -9,7 +9,7 @@
 //
 // Cross-compiling downloads the target's Bun runtime on first use, so the machine needs network
 // access unless the target matches the host. Nothing here publishes anything.
-import { mkdir, readdir } from "node:fs/promises";
+import { mkdir, readdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
@@ -67,6 +67,14 @@ async function compile(target: Target, outDir: string): Promise<string> {
   return outfile;
 }
 
+/**
+ * A build whose target is the host's own platform leaves a read-only copy of the Bun runtime,
+ * `.<hash>-00000000.bun-build`, in the working directory. Remove the ones this run left behind.
+ */
+async function strayTemporaries(): Promise<Set<string>> {
+  return new Set((await readdir(ROOT)).filter((name) => name.endsWith(".bun-build")));
+}
+
 async function sha256(path: string): Promise<string> {
   const hasher = new Bun.CryptoHasher("sha256");
   hasher.update(await Bun.file(path).arrayBuffer());
@@ -101,7 +109,11 @@ async function main(): Promise<void> {
 
   const outDir = resolve(ROOT, values.out ?? "dist");
   await mkdir(outDir, { recursive: true });
+  const before = await strayTemporaries();
   for (const target of targets) await compile(target, outDir);
+  for (const name of await strayTemporaries()) {
+    if (!before.has(name)) await rm(join(ROOT, name), { force: true });
+  }
   const lines = await writeChecksums(outDir);
   console.log(`\n${join(outDir, "SHA256SUMS")}\n${lines.join("\n")}`);
 }
