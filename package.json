@@ -14,7 +14,10 @@
   },
   "exports": {
     ".": "./src/app.ts",
-    "./server": "./src/server.ts"
+    "./bootstrap": "./src/bootstrap.ts",
+    "./server": "./src/server.ts",
+    "./fixtures/users.schema.json": "./fixtures/users.schema.json",
+    "./fixtures/users.example.json": "./fixtures/users.example.json"
   },
   "files": [
     "src/",
