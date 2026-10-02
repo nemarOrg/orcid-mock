@@ -376,14 +376,14 @@ All are `GET`, and `HEAD` and a trailing slash work on each; `{pc}` is a put-cod
 | `/person`, `/personal-details`, `/activities` | A composition of the sections below; each section is byte for byte what its own endpoint serves. |
 | `/email`, `/address`, `/other-names`, `/keywords`, `/external-identifiers`, `/researcher-urls`, `/biography` | Person-level sections. `/email` is `email` and `/address` is `address`, but `person` nests them as `emails` and `addresses`. |
 | `/employments`, `/educations`, `/qualifications`, `/fundings`, `/peer-reviews`, `/works` | Activity sections, grouped. |
-| `/distinctions`, `/invited-positions`, `/memberships`, `/services`, `/research-resources` | Always empty: a fixture has no such sections. |
+| `/distinctions`, `/invited-positions`, `/memberships`, `/services`, `/research-resources` | Always empty: a fixture has no such sections; their item paths (`/distinction/{pc}` and so on) answer 404 / 9016. |
 | `/work/{pc}`, `/employment/{pc}`, `/education/{pc}`, `/qualification/{pc}`, `/funding/{pc}`, `/peer-review/{pc}` | One full item. |
 | `/other-names/{pc}`, `/keywords/{pc}`, `/researcher-urls/{pc}`, `/external-identifiers/{pc}`, `/address/{pc}` | One person-level item. |
 | `/works/{pc,pc,...}` | Up to 100 full works: `{"bulk": [{"work": ...}, {"error": ...}]}`. |
 
 Every section is a container, `{"last-modified-date", <items>, "path"}`, with `[]` and a null date when empty.
 Item paths are singular for activities and plural for person-level items, `display-index` is a number on person-level items and a string on activity summaries, and put-codes are numbers.
-Not served: search, the unversioned redirects, the member API host, XML, and the `summary` and `citation` variants of single items.
+Not served: search, the unversioned redirects, the member API host, XML, the `summary` and `citation` variants of single items, and ORCID's two other representations (`application/ld+json` for the record, a citation style for a work), which are a 406 here.
 
 ### `Accept`
 
@@ -415,7 +415,9 @@ An item's `visibility` is `public`, `limited`, or `private`.
 Every record-scoped read checks, in this order: unknown iD (404 / 9016, with no checksum check), deprecated (301 with `Location` at the same path on the primary record, built from `PUBLIC_BASE_URL`, and a 9007 body), unclaimed (409 / 9036), locked (409 / 9018), deactivated (409 / 9044).
 Bulk works checks only that the record exists.
 In a bulk read, more than 100 put-codes is 400 / 9042 (checked first), an element that is not a number is 400 / 9006, and a put-code that is not the record's is a 9034 element after the works, with HTTP 200.
-A put-code that is not a number on a single-item path is 404 / 9001, a wrong method on a read path is 405 / 9001, `GET /v3.0/` is 406 / 9001, and any other unrouted path is 404 / 9001.
+A put-code in a single-item path is read before the record's state is checked: a non-number is 404 / 9001 for a work, funding, education, employment, or peer review (ORCID declares those as numbers in the path), and 400 / 9006 for every other kind.
+An affiliation put-code that belongs to another kind is 400 / 9006 (`Given affiliation <pc> doesn't match the desired type <kind>`), because ORCID keeps affiliations in one table.
+A wrong method on a read path is 405 / 9001, `GET /v3.0/` is 406 / 9001 (`OPTIONS` is 200 and other methods 405), and any other unrouted path is 404 / 9001.
 Error bodies have ORCID's five keys in order, `response-code`, `developer-message`, `user-message`, `error-code`, `more-info`.
 Every response, errors included, carries `access-control-allow-origin: *`, `cache-control: no-cache, no-store, max-age=0, must-revalidate`, `pragma: no-cache`, `expires: 0`, `x-content-type-options: nosniff`, and `x-frame-options: DENY`.
 

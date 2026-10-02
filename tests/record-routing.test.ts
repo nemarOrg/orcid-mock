@@ -224,7 +224,7 @@ describe("no real request reaches the generic 500 handler", () => {
     [`/v3.0/${IDS.rich}/works/${"1,".repeat(5000)}`, 400],
     [`/v3.0/${IDS.rich}/work/${"9".repeat(500)}`, 404],
     [`/v3.0/${IDS.rich}/works/${"9".repeat(500)}`, 400],
-    [`/v3.0/${IDS.rich}/other-names/${"9".repeat(500)}`, 404],
+    [`/v3.0/${IDS.rich}/other-names/${"9".repeat(500)}`, 400],
     [`/v3.0/${IDS.deprecated}/%E0%A4%A`, 404],
   ];
   for (const [path, status] of exotic) {

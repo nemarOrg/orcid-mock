@@ -19,7 +19,6 @@ import {
   personalDetails,
   researcherUrls,
 } from "../../record/person";
-import { parseJavaLong } from "../../record/putcode";
 import { record as recordBody } from "../../record/record";
 import type { ItemLookup } from "../../record/wire";
 import { bulkWorks, workItem, works } from "../../record/works";
@@ -38,23 +37,36 @@ function withSlash(tail: string): string[] {
 }
 
 /**
- * A single-item read: the put-code in the path is a Java `Long`, so a non-number is ORCID's 404
- * / 9001 with the `NumberFormatException` (observed for `/work/abc`); an item that is not in
- * this section of this record is 404 / 9016, and one the viewer may not see is 403 / 9039.
+ * A single-item read, for a route registered with `putCode` (the path's put-code is read, and a
+ * non-number answered, before the record's state is checked): an item that is not in this
+ * section of this record is 404 / 9016, one the viewer may not see is 403 / 9039.
  */
 function itemRead(read: ReadContext, lookup: (putCode: number) => ItemLookup): Response {
-  const raw = read.c.req.param("pc") ?? "";
-  const putCode = parseJavaLong(raw);
-  if (putCode === null) return read.fail(ORCID_API_ERRORS.unroutedPutCode(raw));
-  const found = lookup(Number(putCode));
+  const found = lookup(read.putCode as number);
   switch (found.kind) {
     case "ok":
       return read.send(found.json);
     case "hidden":
       return read.fail(ORCID_API_ERRORS.notPublic);
+    case "bad-request":
+      return read.fail(ORCID_API_ERRORS.badRequest(found.detail));
     case "missing":
       return read.fail(ORCID_API_ERRORS.notFound);
   }
+}
+
+/** The kinds whose put-code ORCID converts in the path declaration (see `PutCodeConversion`). */
+const PATH_LONG_KINDS = new Set(["/work", "/funding", "/education", "/employment", "/peer-review"]);
+
+/** `/:id<tail>/:pc` (and a trailing slash): a single-item read with its put-code converted first. */
+function itemRoute(
+  app: Hono<RecordEnv>,
+  tail: string,
+  lookup: (read: ReadContext, putCode: number) => ItemLookup,
+): void {
+  readRoute(app, withSlash(`${tail}/:pc`), (r) => itemRead(r, (putCode) => lookup(r, putCode)), {
+    putCode: PATH_LONG_KINDS.has(tail) ? "path" : "method",
+  });
 }
 
 export function recordRoutes(): Hono<RecordEnv> {
@@ -95,13 +107,12 @@ export function recordRoutes(): Hono<RecordEnv> {
   ] as const;
   for (const [segment, section] of lists) {
     readRoute(record, withSlash(segment), (r) => r.send(section.container(r.user, r.viewer).json));
-    readRoute(record, withSlash(`${segment}/:pc`), (r) =>
-      itemRead(r, (putCode) => section.item(r.user, r.viewer, putCode)),
-    );
+    itemRoute(record, segment, (r, putCode) => section.item(r.user, r.viewer, putCode));
   }
 
-  // The seven affiliation sections; only employments, educations, and qualifications have items
-  // in a fixture, so the other four are always empty and have no item route.
+  // The seven affiliation sections. A fixture has items for employments, educations, and
+  // qualifications only, so the other four are always empty, but they have item routes too: ORCID
+  // routes them (and `research-resource/{pc}`), checks the record, and answers 404 / 9016.
   const sections = [
     ["/employments", "employment"],
     ["/educations", "education"],
@@ -113,25 +124,16 @@ export function recordRoutes(): Hono<RecordEnv> {
   ] as const satisfies ReadonlyArray<readonly [string, AffiliationKind]>;
   for (const [segment, kind] of sections) {
     readRoute(record, withSlash(segment), (r) => r.send(affiliations(r.user, r.viewer, kind).json));
+    itemRoute(record, `/${kind}`, (r, putCode) => affiliationItem(r.user, r.viewer, kind, putCode));
   }
-  for (const kind of ["employment", "education", "qualification"] as const) {
-    readRoute(record, withSlash(`/${kind}/:pc`), (r) =>
-      itemRead(r, (putCode) => affiliationItem(r.user, r.viewer, kind, putCode)),
-    );
-  }
+  itemRoute(record, "/research-resource", () => ({ kind: "missing" }));
 
   readRoute(record, withSlash("/fundings"), (r) => r.send(fundings(r.user, r.viewer).json));
-  readRoute(record, withSlash("/funding/:pc"), (r) =>
-    itemRead(r, (putCode) => fundingItem(r.user, r.viewer, putCode)),
-  );
+  itemRoute(record, "/funding", (r, putCode) => fundingItem(r.user, r.viewer, putCode));
   readRoute(record, withSlash("/peer-reviews"), (r) => r.send(peerReviews(r.user, r.viewer).json));
-  readRoute(record, withSlash("/peer-review/:pc"), (r) =>
-    itemRead(r, (putCode) => peerReviewItem(r.user, r.viewer, putCode)),
-  );
+  itemRoute(record, "/peer-review", (r, putCode) => peerReviewItem(r.user, r.viewer, putCode));
   readRoute(record, withSlash("/works"), (r) => r.send(works(r.user, r.viewer).json));
-  readRoute(record, withSlash("/work/:pc"), (r) =>
-    itemRead(r, (putCode) => workItem(r.user, r.viewer, putCode)),
-  );
+  itemRoute(record, "/work", (r, putCode) => workItem(r.user, r.viewer, putCode));
   // Bulk checks only that the record exists (`existsOnly`), so a deprecated, locked, or
   // deactivated record is read like any other (observed for a deprecated one).
   readRoute(

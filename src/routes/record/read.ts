@@ -14,6 +14,7 @@ import { invalidTokenResponse } from "../../oauth/bearer";
 import { resolveRecordBearer } from "../../record/bearer";
 import { compactJson, type Json, prettyJson } from "../../record/json";
 import { type Negotiated, negotiate } from "../../record/negotiate";
+import { parseJavaLong } from "../../record/putcode";
 import { type Blocked, blockedBy, existsOnly } from "../../record/status";
 import { type Viewer, viewerFor } from "../../record/viewer";
 import type { StoredUser, TokenRecord } from "../../store/types";
@@ -64,6 +65,17 @@ export const recordMiddleware: MiddlewareHandler<RecordEnv> = async (c, next) =>
   applyRecordHeaders(c.res);
 };
 
+/**
+ * Where ORCID converts a put-code in the path to a number. Work, funding, education, employment,
+ * and peer-review declare `@PathParam Long`, which JAX-RS converts before the resource method
+ * runs, so a non-number is a 404 / 9001 with the `NumberFormatException` (`path`):
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-pub-web/src/main/java/org/orcid/api/publicV3/server/PublicV3ApiServiceImplV3_0.java#L159-L160
+ * Every other kind declares `String` and calls `Long.valueOf` in the method, so the exception is
+ * the 400 / 9006 of an `IllegalArgumentException` (`method`):
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-pub-web/src/main/java/org/orcid/api/publicV3/server/PublicV3ApiServiceImplV3_0.java#L456-L460
+ */
+export type PutCodeConversion = "path" | "method";
+
 /** What a read handler gets: the record, who is reading it, and writers for the answer. */
 export interface ReadContext {
   c: RecordContext;
@@ -72,6 +84,8 @@ export interface ReadContext {
   negotiated: Negotiated;
   /** The valid token the request presented, or null. */
   token: TokenRecord | null;
+  /** The put-code in the path (`:pc`), for a route registered with `putCode`; else null. */
+  putCode: number | null;
   /** A 200 with the body in the negotiated style and `Content-Type`. */
   send(body: Json): Response;
   /** An ORCID error in the negotiated style and `Content-Type`. */
@@ -129,7 +143,7 @@ export function readRoute(
   app: Hono<RecordEnv>,
   paths: string[],
   handler: ReadHandler,
-  opts: { existsOnly?: boolean } = {},
+  opts: { existsOnly?: boolean; putCode?: PutCodeConversion } = {},
 ): void {
   const read = async (c: RecordContext): Promise<Response> => {
     const accept = c.req.header("accept");
@@ -148,6 +162,24 @@ export function readRoute(
         ...(headers === undefined ? {} : { headers }),
       });
 
+    // The put-code is read before the record's state is checked, so a non-number is answered even
+    // for an unknown, deprecated, or locked record. How it is answered depends on where ORCID
+    // converts it (see `PutCodeConversion`); both were observed on pub.orcid.org/v3.0 on
+    // 2026-10-01.
+    let putCode: number | null = null;
+    if (opts.putCode !== undefined) {
+      const raw = c.req.param("pc") ?? "";
+      const parsed = parseJavaLong(raw);
+      if (parsed === null) {
+        return fail(
+          opts.putCode === "path"
+            ? ORCID_API_ERRORS.unroutedPutCode(raw)
+            : ORCID_API_ERRORS.badPutCode(raw),
+        );
+      }
+      putCode = Number(parsed);
+    }
+
     const orcid = c.req.param("id") ?? "";
     const user = await deps.store.getUser(orcid);
     const blocked = opts.existsOnly ? existsOnly(user) : blockedBy(user);
@@ -163,6 +195,7 @@ export function readRoute(
       viewer: viewerFor(token, user, baseUrl),
       negotiated,
       token,
+      putCode,
       send: (body) =>
         c.body(negotiated.pretty ? prettyJson(body) : compactJson(body), 200, {
           "Content-Type": negotiated.contentType,

@@ -141,10 +141,41 @@ describe("the empty sections", () => {
     }
   });
 
-  test("the four kinds the fixture has no section for have no item route", async () => {
-    const reply = await getRecord(server, `/v3.0/${C}/distinction/1`);
-    expect(reply.status).toBe(404);
-    expect((reply.json as { "error-code": number })["error-code"]).toBe(9001);
+  test("the four kinds the fixture has no section for still have item routes: 404 / 9016, after the record's state", async () => {
+    for (const kind of [
+      "distinction",
+      "invited-position",
+      "membership",
+      "service",
+      "research-resource",
+    ]) {
+      const reply = await getRecord(server, `/v3.0/${C}/${kind}/1`);
+      expect([kind, reply.status, (reply.json as { "error-code": number })["error-code"]]).toEqual([
+        kind,
+        404,
+        9016,
+      ]);
+      expect((await getRecord(server, `/v3.0/${IDS.locked}/${kind}/1`)).status).toBe(409);
+    }
+  });
+
+  test("an affiliation put-code of another kind is 400 / 9006, as ORCID's single table makes it", async () => {
+    // 5401 is an employment: asking for it as a distinction, an education, or a qualification
+    // finds the affiliation and then fails the type check, before visibility is considered.
+    for (const kind of ["distinction", "education", "qualification", "service"]) {
+      const reply = await getRecord(server, `/v3.0/${C}/${kind}/5401`);
+      expect(reply.status).toBe(400);
+      expect(reply.json).toEqual({
+        "response-code": 400,
+        "developer-message": `The client application sent a bad request to ORCID. Full validation error: Given affiliation 5401 doesn't match the desired type ${kind}`,
+        "user-message": "The client application sent a bad request to ORCID.",
+        "error-code": 9006,
+        "more-info": "https://members.orcid.org/api/resources/troubleshooting",
+      });
+    }
+    // Even a hidden affiliation: the type is checked first.
+    const hidden = await getRecord(server, `/v3.0/${IDS.rich}/education/1503`);
+    expect(hidden.status).toBe(400);
   });
 });
 
@@ -325,12 +356,8 @@ describe("a single affiliation by put-code", () => {
     }
   });
 
-  test("an unknown put-code, another record's, and another kind's are 404 / 9016", async () => {
-    for (const path of [
-      `/v3.0/${R}/employment/9999`,
-      `/v3.0/${C}/employment/1501`,
-      `/v3.0/${R}/education/1501`,
-    ]) {
+  test("an unknown put-code and another record's are 404 / 9016", async () => {
+    for (const path of [`/v3.0/${R}/employment/9999`, `/v3.0/${C}/employment/1501`]) {
       const reply = await getRecord(server, path);
       expect(reply.status).toBe(404);
       expect((reply.json as { "error-code": number })["error-code"]).toBe(9016);
@@ -350,9 +377,21 @@ describe("a single affiliation by put-code", () => {
     }
   });
 
-  test("a put-code that is not a number is 404 / 9001", async () => {
-    const reply = await getRecord(server, `/v3.0/${R}/employment/abc`);
-    expect(reply.status).toBe(404);
-    expect((reply.json as { "error-code": number })["error-code"]).toBe(9001);
+  test("a put-code that is not a number is 404 / 9001 (declared Long in the path), whatever the record's state", async () => {
+    for (const orcid of [R, "0000-0000-0000-0000", IDS.deprecated, IDS.locked]) {
+      const reply = await getRecord(server, `/v3.0/${orcid}/employment/abc`);
+      expect([orcid, reply.status, (reply.json as { "error-code": number })["error-code"]]).toEqual(
+        [orcid, 404, 9001],
+      );
+    }
+  });
+
+  test("a put-code that is not a number is 400 / 9006 for a qualification (converted in the method)", async () => {
+    for (const orcid of [R, "0000-0000-0000-0000", IDS.deprecated, IDS.locked]) {
+      const reply = await getRecord(server, `/v3.0/${orcid}/qualification/abc`);
+      expect([orcid, reply.status, (reply.json as { "error-code": number })["error-code"]]).toEqual(
+        [orcid, 400, 9006],
+      );
+    }
   });
 });

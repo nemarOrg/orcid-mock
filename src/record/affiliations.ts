@@ -120,8 +120,14 @@ export function affiliations(user: StoredUser, viewer: Viewer, kind: Affiliation
 /**
  * One affiliation by put-code, as ORCID's full item: `created-date`, `last-modified-date`,
  * `source`, `put-code`, `path`, then the same fields as the summary, with `display-index` last
- * but for `visibility` (observed on pub.orcid.org/v3.0 on 2026-10-01). A put-code that is not in
- * this record's section of this kind is missing, and one the viewer may not see is hidden.
+ * but for `visibility` (observed on pub.orcid.org/v3.0 on 2026-10-01). ORCID's affiliations share
+ * one table, so a put-code is found whatever its kind, and one of another kind is a 400 / 9006
+ * (`Given affiliation <pc> doesn't match the desired type <kind>`) before visibility is
+ * considered (source only):
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/manager/v3/read_only/impl/AffiliationsManagerReadOnlyImpl.java#L97-L101
+ * A put-code that is in none of this record's affiliations is missing, and one the viewer may
+ * not see is hidden. A fixture's put-codes are unique only within a section, so the section of
+ * the kind asked for is tried first.
  */
 export function affiliationItem(
   user: StoredUser,
@@ -130,7 +136,17 @@ export function affiliationItem(
   putCode: number,
 ): ItemLookup {
   const item = (KINDS[kind].list(user) ?? []).find((candidate) => candidate.put_code === putCode);
-  if (item === undefined) return { kind: "missing" };
+  if (item === undefined) {
+    const other = (Object.keys(KINDS) as AffiliationKind[]).some((otherKind) =>
+      (KINDS[otherKind].list(user) ?? []).some((candidate) => candidate.put_code === putCode),
+    );
+    return other
+      ? {
+          kind: "bad-request",
+          detail: `Given affiliation ${putCode} doesn't match the desired type ${kind}`,
+        }
+      : { kind: "missing" };
+  }
   if (!canSee(viewer, item.visibility)) return { kind: "hidden" };
   return {
     kind: "ok",

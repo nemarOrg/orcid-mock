@@ -21,6 +21,8 @@ export interface Built<T extends Json = JsonObject> {
 export type ItemLookup =
   | { kind: "ok"; json: JsonObject }
   | { kind: "hidden" }
+  /** The put-code is another kind's: 400 / 9006 with this detail (affiliations only). */
+  | { kind: "bad-request"; detail: string }
   | { kind: "missing" };
 
 /** The latest of the given times, ignoring nulls; null when there is none. */

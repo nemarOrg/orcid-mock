@@ -183,6 +183,15 @@ export function unroutedError(status: ErrorStatus, detail: string): OrcidApiErro
   };
 }
 
+function badRequest(detail: string): OrcidApiErrorSpec {
+  return {
+    status: 400,
+    code: 9006,
+    developerMessage: `The client application sent a bad request to ORCID. Full validation error: ${detail}`,
+    userMessage: "The client application sent a bad request to ORCID.",
+  };
+}
+
 // The literal placeholder ORCID leaves in a message when it has no value for it (observed).
 const CLIENT_NAME_PLACEHOLDER = ["$", "{clientName}"].join("");
 
@@ -318,12 +327,13 @@ export const ORCID_API_ERRORS = {
    * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/resources/i18n/api_en.properties#L24-L25
    * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/manager/v3/read_only/impl/WorkManagerReadOnlyImpl.java#L384-L387
    */
-  badPutCode: (raw: string): OrcidApiErrorSpec => ({
-    status: 400,
-    code: 9006,
-    developerMessage: `The client application sent a bad request to ORCID. Full validation error: For input string: "${raw}"`,
-    userMessage: "The client application sent a bad request to ORCID.",
-  }),
+  badPutCode: (raw: string): OrcidApiErrorSpec => badRequest(`For input string: "${raw}"`),
+  /**
+   * 9006 with any validation error: ORCID maps an `IllegalArgumentException` to it, as for an
+   * affiliation put-code that belongs to another kind (`checkType`, source only):
+   * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/manager/v3/read_only/impl/AffiliationsManagerReadOnlyImpl.java#L448-L452
+   */
+  badRequest,
   /**
    * 9034 (`apiError.9034`), one bulk element whose put-code is not one of the record's (observed:
    * an unknown put-code, another record's, a repeated one, and `007`, which reads as 7). ORCID

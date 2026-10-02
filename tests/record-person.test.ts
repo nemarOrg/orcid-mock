@@ -509,21 +509,32 @@ describe("a single person-level item", () => {
     }
   });
 
-  test("a put-code that is not a number is 404 / 9001 with the NumberFormatException, as observed", async () => {
-    for (const raw of ["abc", "1.5", "5002x", "99999999999999999999"]) {
-      const reply = await getRecord(server, `/v3.0/${C}/other-names/${raw}`);
-      expect(reply.status).toBe(404);
-      // Unlike an unrouted path, this 9001 has a Content-Type (observed).
-      expect(reply.headers.get("content-type")).toBe("application/json;charset=UTF-8");
-      expect(reply.json).toEqual({
-        "response-code": 404,
-        "developer-message":
-          "400 Bad Request: There is an issue with your data or the API endpoint. 405 Method Not Allowed: Endpoint and method mismatch. 415 Unsupported Media Type: data must be in XML or JSON format. " +
-          `Full validation error: HTTP 404 Not Found (java.lang.NumberFormatException: For input string: "${raw}")`,
-        "user-message": "ORCID could not process the data, because they were invalid.",
-        "error-code": 9001,
-        "more-info": "https://members.orcid.org/api/resources/troubleshooting",
-      });
+  test("a put-code that is not a number is 400 / 9006 here: ORCID converts it in the method, as observed", async () => {
+    for (const segment of [
+      "other-names",
+      "keywords",
+      "researcher-urls",
+      "external-identifiers",
+      "address",
+    ]) {
+      for (const raw of ["abc", "1.5", "5002x", "99999999999999999999"]) {
+        const reply = await getRecord(server, `/v3.0/${C}/${segment}/${raw}`);
+        expect(reply.status).toBe(400);
+        expect(reply.json).toEqual({
+          "response-code": 400,
+          "developer-message": `The client application sent a bad request to ORCID. Full validation error: For input string: "${raw}"`,
+          "user-message": "The client application sent a bad request to ORCID.",
+          "error-code": 9006,
+          "more-info": "https://members.orcid.org/api/resources/troubleshooting",
+        });
+      }
+    }
+  });
+
+  test("the put-code is read before the record's state: a non-number is 400 even for an unknown record", async () => {
+    for (const orcid of ["0000-0000-0000-0000", IDS.deprecated, IDS.locked, IDS.deactivated]) {
+      const reply = await getRecord(server, `/v3.0/${orcid}/other-names/abc`);
+      expect([orcid, reply.status]).toEqual([orcid, 400]);
     }
   });
 
