@@ -417,7 +417,8 @@ Bulk works checks only that the record exists.
 In a bulk read, more than 100 put-codes is 400 / 9042 (checked first), an element that is not a number is 400 / 9006, and a put-code that is not the record's is a 9034 element after the works, with HTTP 200.
 A put-code in a single-item path is read before the record's state is checked: a non-number is 404 / 9001 for a work, funding, education, employment, or peer review (ORCID declares those as numbers in the path), and 400 / 9006 for every other kind.
 An affiliation put-code that belongs to another kind is 400 / 9006 (`Given affiliation <pc> doesn't match the desired type <kind>`), because ORCID keeps affiliations in one table.
-A wrong method on a read path is 405 / 9001, `GET /v3.0/` is 406 / 9001 (`OPTIONS` is 200 and other methods 405), and any other unrouted path is 404 / 9001.
+A wrong method on a read path is 405 / 9001, `GET /v3.0/` is 406 / 9001 (`OPTIONS` is 200 and other methods 405), `/v3.0` with no slash is a 302 to `/v3.0/v3.0` for any method (ORCID's unversioned-path rule applied to the iD `v3.0`), and any other unrouted path is 404 / 9001.
+ORCID's own root-level resources (`search`, `csv-search`, `expanded-search`, `group-id-record`, `client`, `identifiers`, `statistics`, `status`, `pubStatus`) are not served and are never read as an iD: they answer 404 / 9001, not 404 / 9016.
 Error bodies have ORCID's five keys in order, `response-code`, `developer-message`, `user-message`, `error-code`, `more-info`.
 Every response, errors included, carries `access-control-allow-origin: *`, `cache-control: no-cache, no-store, max-age=0, must-revalidate`, `pragma: no-cache`, `expires: 0`, `x-content-type-options: nosniff`, and `x-frame-options: DENY`.
 

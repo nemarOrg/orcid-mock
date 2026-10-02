@@ -71,8 +71,54 @@ describe("paths that are not read paths", () => {
     }
   });
 
+  test("/v3.0 with no slash is a 302 to /v3.0/v3.0 for any method, with an empty body (observed)", async () => {
+    for (const method of ["GET", "HEAD", "POST", "OPTIONS", "DELETE"]) {
+      const reply = await getRecord(server, "/v3.0", { method });
+      expect([method, reply.status, reply.headers.get("location"), reply.text]).toEqual([
+        method,
+        302,
+        `${server.publicBaseUrl}/v3.0/v3.0`,
+        "",
+      ]);
+      expectHeaders(reply);
+    }
+    // The redirect points at the iD `v3.0`, which no record has.
+    const next = await getRecord(server, "/v3.0/v3.0");
+    expect(next.status).toBe(404);
+    expect((next.json as { "error-code": number })["error-code"]).toBe(9016);
+  });
+
+  test("ORCID's own root-level resources are never read as an iD: 404 / 9001, not 9016", async () => {
+    for (const name of [
+      "search",
+      "csv-search",
+      "expanded-search",
+      "group-id-record",
+      "client",
+      "identifiers",
+      "statistics",
+      "status",
+      "pubStatus",
+    ]) {
+      for (const path of [`/v3.0/${name}`, `/v3.0/${name}/`, `/v3.0/${name}/anything/email`]) {
+        const reply = await getRecord(server, path);
+        expect([
+          path,
+          reply.status,
+          (reply.json as { "error-code": number })["error-code"],
+        ]).toEqual([path, 404, 9001]);
+        expectHeaders(reply);
+      }
+    }
+    // Only the exact name is reserved: a longer one is an iD like any other.
+    expect(
+      ((await getRecord(server, "/v3.0/searching/email")).json as { "error-code": number })[
+        "error-code"
+      ],
+    ).toBe(9016);
+  });
+
   for (const path of [
-    "/v3.0",
     `/v3.0/${IDS.carberry}/bogus`,
     `/v3.0/${IDS.carberry}/email/extra/segments`,
     "/v3.0/a/b/c/d",

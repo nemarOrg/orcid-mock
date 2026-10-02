@@ -20,7 +20,7 @@ async function get(path: string, init?: RequestInit) {
 // The record router owns /v3.0 (tests/record-routing.test.ts covers its routes, methods, and
 // headers): a path that is no read path answers 404 / 9001 whatever the method.
 describe("an unrouted /v3.0 path answers in ORCID's record-API shape", () => {
-  for (const path of ["/v3.0/x/y/z", "/v3.0", "/v3.0/x/bogus"]) {
+  for (const path of ["/v3.0/x/y/z", "/v3.0/x/bogus"]) {
     test(`GET ${path}`, async () => {
       const { response, text, json } = await get(path);
       expect(response.status).toBe(404);

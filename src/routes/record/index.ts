@@ -26,6 +26,7 @@ import {
   methodNotAllowedResponse,
   optionsResponse,
   type PutCodeConversion,
+  type RecordContext,
   type RecordEnv,
   readRoute,
   recordMiddleware,
@@ -36,9 +37,33 @@ function withSlash(tail: string): string[] {
   return [`/:id${tail}`, `/:id${tail}/`];
 }
 
+/** The paths under /v3.0 that are ORCID's own resources, not iDs (`OrcidApiConstants`). */
+const RESERVED_ROOT_NAMES = [
+  "search",
+  "csv-search",
+  "expanded-search",
+  "group-id-record",
+  "client",
+  "identifiers",
+  "statistics",
+  "status",
+  "pubStatus",
+];
+
+const unrouted = (c: RecordContext): Response => orcidApiError(c, ORCID_API_ERRORS.unrouted);
+
 export function recordRoutes(): Hono<RecordEnv> {
   const record = new Hono<RecordEnv>();
   record.use("*", recordMiddleware);
+
+  // Root-level resources ORCID serves under /v3.0 that orcid-mock does not (search and the like,
+  // observed on pub.orcid.org on 2026-10-02: each answers 200, 404, or 406, never as an iD). They
+  // are registered first so that they are never read as an iD, and answer the unrouted 404 / 9001
+  // instead of a 404 / 9016 for an iD that does not exist.
+  for (const name of RESERVED_ROOT_NAMES) {
+    record.all(`/${name}`, unrouted);
+    record.all(`/${name}/*`, unrouted);
+  }
 
   // The whole record: `/{iD}`, `/{iD}/`, `/{iD}/record`, and `/{iD}/record/` are one body.
   readRoute(record, ["/:id", "/:id/", ...withSlash("/record")], (r) =>
@@ -139,10 +164,15 @@ export function recordRoutes(): Hono<RecordEnv> {
   // Anything else under /v3.0: every other unrouted path is a 404 / 9001 with no Content-Type
   // (observed on pub.orcid.org/v3.0 on 2026-10-01), a 404 before any header is read. Hono's
   // `route()` drops a sub-app's notFound, so this catch-all keeps the response headers on it too.
+  // `/v3.0` with no slash is ORCID's unversioned-path rule applied to the iD `v3.0`: any method is
+  // a 302 to `/v3.0/v3.0` (observed on pub.orcid.org on 2026-10-02, with an empty body).
   // `/v3.0/` is a resource of ORCID's: GET is a 406 / 9001 (a 400 page for an `Accept` that does
   // not parse), OPTIONS is a 200, and any other method is a 405.
   record.all("*", (c) => {
-    if (c.req.path !== "/v3.0/") return orcidApiError(c, ORCID_API_ERRORS.unrouted);
+    if (c.req.path === "/v3.0") {
+      return c.body(null, 302, { Location: `${c.get("deps").config.publicBaseUrl}/v3.0/v3.0` });
+    }
+    if (c.req.path !== "/v3.0/") return unrouted(c);
     switch (c.req.method) {
       case "GET":
       case "HEAD":
