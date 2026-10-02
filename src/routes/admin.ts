@@ -51,6 +51,18 @@ function rejection(c: Context<AppEnv>, prepared: Exclude<PrepareResult, { ok: tr
 export function adminRoutes(): Hono<AppEnv> {
   const admin = new Hono<AppEnv>();
 
+  // orcid-mock's own rule, not ORCID's: the admin API has no authentication, so a web page must
+  // not be able to reset or rewrite a local mock. Browsers always send `Origin` on a cross-origin
+  // request, and curl and test clients send none, so refusing a foreign `Origin` closes the hole
+  // without getting in the way of either.
+  admin.use("*", async (c, next) => {
+    const origin = c.req.header("origin");
+    if (origin !== undefined && origin !== new URL(c.get("deps").config.publicBaseUrl).origin) {
+      return adminError(c, 403, "forbidden_origin");
+    }
+    await next();
+  });
+
   async function counts(c: Context<AppEnv>) {
     const { store } = c.get("deps");
     return {
@@ -109,6 +121,13 @@ export function adminRoutes(): Hono<AppEnv> {
   admin.delete("/users/:orcid", async (c) => {
     const removed = await c.get("deps").store.deleteUser(c.req.param("orcid"));
     return removed ? c.body(null, 204) : adminError(c, 404, "not_found");
+  });
+
+  admin.get("/clients", async (c) => c.json(await c.get("deps").store.listClients()));
+
+  admin.get("/clients/:client_id", async (c) => {
+    const client = await c.get("deps").store.getClient(c.req.param("client_id"));
+    return client ? c.json(client) : adminError(c, 404, "not_found");
   });
 
   // Upsert a client, so an app under test on a random port can register its redirect_uri.

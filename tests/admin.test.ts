@@ -215,6 +215,35 @@ describe("upserting and deleting users", () => {
 });
 
 describe("clients", () => {
+  test("GET /clients lists the starter's clients and GET /clients/:id reads one", async () => {
+    const list = await server.admin<Array<{ client_id: string }>>("GET", "/clients");
+    expect(list.status).toBe(200);
+    expect(list.body.map((client) => client.client_id)).toEqual([
+      "APP-ORCIDMOCK000001",
+      "APP-ORCIDMOCK000002",
+    ]);
+    expect(list.body[0] as unknown).toEqual({
+      client_id: "APP-ORCIDMOCK000001",
+      client_secret: "orcid-mock-secret",
+      name: "orcid-mock public client",
+      redirect_uris: ["http://localhost:3000/callback", "http://127.0.0.1:3000/callback"],
+      member: false,
+    });
+    expect((await server.admin("GET", "/clients/APP-ORCIDMOCK000002")).body).toEqual(list.body[1]);
+    expect(await server.admin("GET", "/clients/APP-NOPE")).toEqual({
+      status: 404,
+      body: { error: "not_found" },
+    });
+  });
+
+  test("a client read from the API can be written back unchanged", async () => {
+    const { body } = await server.admin<Array<{ client_id: string }>>("GET", "/clients");
+    for (const client of body) {
+      const put = await server.admin("PUT", `/clients/${client.client_id}`, client);
+      expect(put).toEqual({ status: 200, body: client });
+    }
+  });
+
   test("PUT creates with 201 and replaces with 200; the path id wins", async () => {
     const client = {
       client_secret: "secret",
@@ -283,6 +312,7 @@ describe("clients", () => {
 describe("reset", () => {
   test("undoes creates, deletes, replaces, and client changes, and restores the starter iDs", async () => {
     const before = (await server.admin<FixtureUserBody[]>("GET", "/users")).body;
+    const clientsBefore = (await server.admin("GET", "/clients")).body;
 
     const minted = await server.admin<FixtureUserBody>("POST", "/users", person("Transient"));
     await server.admin("DELETE", `/users/${(before[0] as FixtureUserBody).orcid}`);
@@ -290,6 +320,11 @@ describe("reset", () => {
     await server.admin("PUT", "/clients/APP-TRANSIENT", {
       client_secret: "s",
       redirect_uris: ["http://localhost/cb"],
+    });
+    await server.admin("PUT", "/clients/APP-ORCIDMOCK000001", {
+      client_secret: "changed",
+      redirect_uris: ["http://localhost:9/changed"],
+      member: true,
     });
     expect((await server.admin("GET", "/health")).body).toEqual({
       status: "ok",
@@ -300,6 +335,8 @@ describe("reset", () => {
     const reset = await server.admin("POST", "/reset");
     expect(reset).toEqual({ status: 200, body: { status: "ok", users: 3, clients: 2 } });
     expect((await server.admin("GET", "/users")).body).toEqual(before);
+    expect((await server.admin("GET", "/clients")).body).toEqual(clientsBefore);
+    expect((await server.admin("GET", "/clients/APP-TRANSIENT")).status).toBe(404);
     expect((await server.admin("GET", `/users/${minted.body.orcid}`)).status).toBe(404);
 
     // The mint counter is back at its baseline, so the same create mints the same iD.
@@ -512,5 +549,77 @@ describe("starting with a bad fixture", () => {
       ],
     };
     await expect(startTestServer({ users: dup })).rejects.toThrow("users[1].orcid");
+  });
+});
+
+describe("cross-origin protection", () => {
+  const withOrigin = (origin: string, path: string, method = "GET", body?: unknown) =>
+    fetch(`${server.baseUrl}/__admin${path}`, {
+      method,
+      headers: {
+        origin,
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+
+  test("a foreign Origin is refused on every method, and nothing changes", async () => {
+    const created = await server.admin<FixtureUserBody>("POST", "/users", person("Guarded"));
+    const evil = "https://evil.example.test";
+    const attempts: Array<[string, string, unknown?]> = [
+      ["GET", "/health"],
+      ["GET", "/users"],
+      ["GET", "/clients"],
+      ["POST", "/reset"],
+      ["POST", "/users", person("Intruder")],
+      ["PUT", `/users/${created.body.orcid}`, person("Overwritten")],
+      ["DELETE", `/users/${created.body.orcid}`],
+      ["PUT", "/clients/APP-EVIL", { client_secret: "s", redirect_uris: ["http://evil.test/cb"] }],
+    ];
+    for (const [method, path, body] of attempts) {
+      const response = await withOrigin(evil, path, method, body);
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ error: "forbidden_origin" });
+    }
+    expect((await server.admin("GET", "/health")).body).toEqual({
+      status: "ok",
+      users: 4,
+      clients: 2,
+    });
+    expect(
+      (await server.admin<FixtureUserBody>("GET", `/users/${created.body.orcid}`)).body.name,
+    ).toMatchObject({
+      given_names: "Guarded",
+    });
+  });
+
+  test("an opaque Origin of null is refused too", async () => {
+    expect((await withOrigin("null", "/health")).status).toBe(403);
+  });
+
+  test("the server's own origin is allowed, and so is no Origin at all", async () => {
+    expect((await withOrigin(server.publicBaseUrl, "/health")).status).toBe(200);
+    expect((await withOrigin(server.publicBaseUrl, "/reset", "POST")).status).toBe(200);
+    expect((await server.admin("GET", "/health")).status).toBe(200);
+  });
+
+  test("the rule only guards /__admin", async () => {
+    const response = await fetch(`${server.baseUrl}/v3.0/nope`, {
+      headers: { origin: "https://evil.example.test" },
+    });
+    expect(response.status).toBe(404);
+  });
+
+  test("the allowed origin is the public base URL's, whatever its path prefix", async () => {
+    const proxied = await startTestServer({ publicBaseUrl: "https://orcid.example.test/mock/" });
+    try {
+      const get = (origin: string) =>
+        fetch(`${proxied.baseUrl}/__admin/health`, { headers: { origin } });
+      expect((await get("https://orcid.example.test")).status).toBe(200);
+      expect((await get("https://orcid.example.test:8443")).status).toBe(403);
+      expect((await get(proxied.baseUrl)).status).toBe(403);
+    } finally {
+      await proxied.stop();
+    }
   });
 });
