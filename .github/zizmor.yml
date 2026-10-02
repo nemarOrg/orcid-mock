@@ -1,11 +1,30 @@
-# zizmor configuration (uvx zizmor .github/workflows action.yml).
+# zizmor configuration. CI runs it in the `check` job, offline and at a pinned version:
 #
-# self-repository asks for the `uses: $/...` form of an in-repository action or reusable workflow.
-# GitHub added it in July 2026, but actionlint (the other workflow linter these files must pass,
-# v1.7.12 at the time of writing) rejects it: rhysd/actionlint issues 711 and 732 are open. Until
-# actionlint accepts it, the `./` form stays, and this one low-severity help finding is muted.
+#   uvx zizmor@1.30.1 --offline .github/workflows action.yml
+#
+# Every ignore below is a finding that was looked at and accepted, with the reason.
 rules:
+  # self-repository asks for the `uses: $/...` form of an in-repository action or reusable workflow.
+  # GitHub added it in July 2026, but actionlint (the other workflow linter these files must pass,
+  # v1.7.12 at the time of writing) rejects it: rhysd/actionlint issues 711 and 732 are open. Until
+  # actionlint accepts it, the `./` form stays, and this one low-severity help finding is muted.
   self-repository:
     ignore:
       - ci.yml
+      - release.yml
+
+  # conformance.yml's services-smoke job runs whatever image its `image` input names, so that the
+  # published image (`ghcr.io/nemarorg/orcid-mock:1` by default) and a candidate tag can both be
+  # smoke-tested by hand. The input is mutable on purpose, and the job holds no secrets. The line
+  # is the `image:` line of that service, so an edit above it in conformance.yml moves it.
+  unpinned-images:
+    ignore:
+      - conformance.yml:120
+
+  # release.yml publishes to npm with `bun publish` and a token, because bun has no npm trusted
+  # publishing or provenance yet (oven-sh/bun#15601 and #22423; ADR 0005 records this, and the
+  # January 2027 deadline for publishing with a token that bypasses two-factor authentication).
+  # The PyPI upload in the same file does use trusted publishing.
+  use-trusted-publishing:
+    ignore:
       - release.yml
