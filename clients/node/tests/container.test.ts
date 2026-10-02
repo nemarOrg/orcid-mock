@@ -129,6 +129,41 @@ describe("OrcidMockContainer", () => {
     expect(failure?.message).toContain("orcid-mock-does-not-exist:0");
   });
 
+  test("a port that Docker finds taken is replaced by a fresh one, and start succeeds", async () => {
+    // The mock's own published port is a real conflict: Docker refuses to bind it a second time.
+    const taken = Number(new URL(mock.baseUrl).port);
+    const answers = [taken];
+    class RacyContainer extends OrcidMockContainer {
+      protected override pickPort(): Promise<number> {
+        const next = answers.shift();
+        return next === undefined ? super.pickPort() : Promise.resolve(next);
+      }
+    }
+    const raced = await new RacyContainer().start();
+    try {
+      expect(answers).toEqual([]);
+      expect(raced.baseUrl).not.toBe(mock.baseUrl);
+      expect((await raced.client.health()).status).toBe("ok");
+    } finally {
+      await raced.stop();
+    }
+  });
+
+  test("a port that stays taken fails start with Docker's own message", async () => {
+    const taken = Number(new URL(mock.baseUrl).port);
+    class StuckContainer extends OrcidMockContainer {
+      protected override pickPort(): Promise<number> {
+        return Promise.resolve(taken);
+      }
+    }
+    const failure = await new StuckContainer().start().then(
+      () => null,
+      (error: Error) => error,
+    );
+    expect(failure?.message).toContain("did not start");
+    expect(failure?.message).toMatch(/already allocated|already in use|not available/i);
+  });
+
   test("two containers at once get different ports and each knows its own address", async () => {
     const other = await new OrcidMockContainer().start();
     try {

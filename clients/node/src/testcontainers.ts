@@ -128,7 +128,7 @@ export class OrcidMockContainer extends GenericContainer {
     }
 
     for (let attempt = 1; ; attempt++) {
-      const port = await freePort();
+      const port = await this.pickPort();
       const baseUrl = `http://localhost:${port}`;
       this.#bind(port, baseUrl);
       this.#containerId = undefined;
@@ -148,6 +148,14 @@ export class OrcidMockContainer extends GenericContainer {
         );
       }
     }
+  }
+
+  /**
+   * A host port to publish on. The operating system's answer can be taken by the time Docker binds
+   * it, which `start()` survives by asking again; a subclass can answer otherwise to prove that.
+   */
+  protected pickPort(): Promise<number> {
+    return freePort();
   }
 
   protected override async containerCreated(containerId: string): Promise<void> {
