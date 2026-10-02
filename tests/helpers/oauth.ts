@@ -3,6 +3,9 @@
 // redirect, and the rest are thin wrappers over `fetch`.
 import type { TestServer } from "../harness";
 
+/** What the helpers need to reach a server over HTTP: where it listens. */
+type Reachable = Pick<TestServer, "baseUrl">;
+
 /** The redirect URI both starter clients register (a path prefix of it is also accepted). */
 export const REDIRECT_URI = "http://localhost:3000/callback";
 
@@ -90,7 +93,7 @@ export function sessionCookie(response: Response): string | null {
  * an error).
  */
 export async function authorizeAs(
-  server: TestServer,
+  server: Reachable,
   opts: AuthorizeOptions,
 ): Promise<AuthorizeResult> {
   const client = resolveClient(opts.client);
@@ -202,7 +205,7 @@ export function basicAuth(ref: ClientRef = "public"): string {
 
 /** A form-encoded POST; undefined fields are left out. */
 export async function postForm(
-  server: TestServer,
+  server: Reachable,
   path: string,
   fields: Record<string, string | undefined>,
   headers: Record<string, string> = {},
@@ -235,7 +238,7 @@ export function clientFields(ref: ClientRef = "public"): Record<string, string> 
 
 /** POST /oauth/token with the client's credentials in the form; `fields` may override them. */
 export function tokenRequest(
-  server: TestServer,
+  server: Reachable,
   fields: Record<string, string | undefined>,
   client: ClientRef = "public",
   headers: Record<string, string> = {},
@@ -245,7 +248,7 @@ export function tokenRequest(
 
 /** Exchanges an authorization code; the redirect URI defaults to the client's registered one. */
 export function exchangeCode(
-  server: TestServer,
+  server: Reachable,
   opts: { code: string; client?: ClientRef; redirectUri?: string | null },
 ): Promise<TokenReply> {
   const client = resolveClient(opts.client);
@@ -263,7 +266,7 @@ export function exchangeCode(
 
 /** Signs `orcid` in with `login_as` and exchanges the code; throws unless the answer is a 200. */
 export async function obtainToken(
-  server: TestServer,
+  server: Reachable,
   opts: {
     orcid: string;
     scope: string;
@@ -287,7 +290,7 @@ export async function obtainToken(
 
 /** The client-credentials grant; `scope` defaults to none, which ORCID treats as /read-public. */
 export function clientCredentials(
-  server: TestServer,
+  server: Reachable,
   opts: { client?: ClientRef; scope?: string } = {},
 ): Promise<TokenReply> {
   return tokenRequest(server, { grant_type: "client_credentials", scope: opts.scope }, opts.client);
@@ -295,7 +298,7 @@ export function clientCredentials(
 
 /** The refresh-token grant; `extra` carries `scope` or `revoke_old`. */
 export function refreshTokens(
-  server: TestServer,
+  server: Reachable,
   opts: { refreshToken: string; client?: ClientRef; extra?: Record<string, string | undefined> },
 ): Promise<TokenReply> {
   return tokenRequest(
