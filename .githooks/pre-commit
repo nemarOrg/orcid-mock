@@ -1,0 +1,56 @@
+#!/bin/bash
+
+# Runs ruff check and format on staged Python files only.
+# The Python helper (clients/python) is the only Python in this repository, so ruff runs through
+# its uv project, with its configuration. Enable the hook with:
+#   git config core.hooksPath .githooks
+#
+# Like the reference hook it is adapted from, it re-stages each file it formats, which also stages
+# any unstaged edits to that file: stage whole files, or stash the rest, before committing.
+
+echo "Running ruff check and format on staged files..."
+
+if ! command -v uv &> /dev/null; then
+    echo "Error: uv is not installed or not in PATH"
+    echo "Please install uv: https://docs.astral.sh/uv/"
+    exit 1
+fi
+
+# Staged Python files, added, copied, or modified; names with spaces survive the loop.
+staged_files=()
+while IFS= read -r file; do
+    staged_files+=("$file")
+done < <(git diff --cached --name-only --diff-filter=ACM | grep '\.py$')
+
+if [ ${#staged_files[@]} -eq 0 ]; then
+    echo "No Python files staged for commit"
+    exit 0
+fi
+
+echo "Staged Python files: ${staged_files[*]}"
+
+# The repository root, so the staged paths resolve whatever directory git ran the hook from.
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+echo "Running ruff check --fix --unsafe-fixes on staged files..."
+if ! uv run --project clients/python ruff check --fix --unsafe-fixes "${staged_files[@]}"; then
+    echo "Error: ruff check found issues that need manual fixing"
+    echo "Please fix the issues and try committing again"
+    exit 1
+fi
+
+echo "Running ruff format on staged files..."
+if ! uv run --project clients/python ruff format "${staged_files[@]}"; then
+    echo "Error: ruff format failed"
+    exit 1
+fi
+
+# Re-add only the files that were originally staged and potentially modified by ruff
+for file in "${staged_files[@]}"; do
+    if [ -f "$file" ]; then
+        git add "$file"
+    fi
+done
+
+echo "ruff check and format completed successfully on staged files"
+exit 0
