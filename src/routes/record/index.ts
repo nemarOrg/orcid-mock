@@ -3,6 +3,7 @@
 // root).
 import { Hono } from "hono";
 import { ORCID_API_ERRORS, orcidApiError } from "../../errors";
+import { type AffiliationKind, affiliationItem, affiliations } from "../../record/affiliations";
 import {
   addresses,
   biography,
@@ -75,6 +76,26 @@ export function recordRoutes(): Hono<RecordEnv> {
     readRoute(record, withSlash(segment), (r) => r.send(section.container(r.user, r.viewer).json));
     readRoute(record, withSlash(`${segment}/:pc`), (r) =>
       itemRead(r, (putCode) => section.item(r.user, r.viewer, putCode)),
+    );
+  }
+
+  // The seven affiliation sections; only employments, educations, and qualifications have items
+  // in a fixture, so the other four are always empty and have no item route.
+  const sections = [
+    ["/employments", "employment"],
+    ["/educations", "education"],
+    ["/qualifications", "qualification"],
+    ["/distinctions", "distinction"],
+    ["/invited-positions", "invited-position"],
+    ["/memberships", "membership"],
+    ["/services", "service"],
+  ] as const satisfies ReadonlyArray<readonly [string, AffiliationKind]>;
+  for (const [segment, kind] of sections) {
+    readRoute(record, withSlash(segment), (r) => r.send(affiliations(r.user, r.viewer, kind).json));
+  }
+  for (const kind of ["employment", "education", "qualification"] as const) {
+    readRoute(record, withSlash(`/${kind}/:pc`), (r) =>
+      itemRead(r, (putCode) => affiliationItem(r.user, r.viewer, kind, putCode)),
     );
   }
 

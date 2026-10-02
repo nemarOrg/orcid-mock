@@ -473,6 +473,238 @@ const rich: FixtureUser = {
   ],
 };
 
+const grantId = (value: string, relationship: "self" | "funded-by" = "self") => ({
+  external_id_type: "grant_number",
+  external_id_value: value,
+  external_id_relationship: relationship,
+});
+
+const employment = (
+  put_code: number,
+  fields: {
+    start_date?: string;
+    end_date?: string;
+    visibility?: "public" | "limited" | "private";
+    display_index?: number;
+    external_ids?: ReturnType<typeof grantId>[];
+    role_title?: string;
+  },
+) => ({
+  put_code,
+  organization: HARTWELL,
+  visibility: "public" as const,
+  ...fields,
+});
+
+const work = (
+  put_code: number,
+  title: string,
+  fields: {
+    type?: string;
+    publication_date?: string;
+    external_ids?: Array<
+      | ReturnType<typeof doi>
+      | {
+          external_id_type: string;
+          external_id_value: string;
+          external_id_relationship: "part-of" | "self";
+        }
+    >;
+    display_index?: number;
+    visibility?: "public" | "limited" | "private";
+  },
+) => ({
+  put_code,
+  title,
+  type: "journal-article",
+  visibility: "public" as const,
+  ...fields,
+});
+
+const issn = (value: string, relationship: "part-of" | "self") => ({
+  external_id_type: "issn",
+  external_id_value: value,
+  external_id_relationship: relationship,
+});
+
+const review = (
+  put_code: number,
+  review_group_id: string,
+  fields: {
+    completion_date?: string;
+    external_ids?: Array<{
+      external_id_type: string;
+      external_id_value: string;
+      external_id_relationship: "self";
+    }>;
+    visibility?: "public" | "limited" | "private";
+  },
+) => ({
+  put_code,
+  reviewer_role: "reviewer" as const,
+  review_type: "review" as const,
+  review_group_id,
+  convening_organization: JOURNAL_BODY,
+  visibility: "public" as const,
+  ...fields,
+});
+
+const workId = (value: string) => ({
+  external_id_type: "source-work-id",
+  external_id_value: value,
+  external_id_relationship: "self" as const,
+});
+
+/**
+ * Grouping and ordering. Work groups, by publication date newest first, then title, then type:
+ * 3201+3202 (2022-03-14), 3215 (2022-03), 3216 (2022), 3204 (2021-10), 3203 (2020),
+ * 3205+3206+3207 (2019, one group by a bridge), 3208+3209 (2018, version-of ids group), 3210
+ * (2017, no ids), 3213 (2016, whose hidden twin 3214 is not part of it), 3218 and 3217 (2015, by
+ * type), 3220 and 3219 (2014, by title), and 3221 (no date). 3211+3212 are private and gone.
+ */
+const grouping: FixtureUser = {
+  orcid: IDS.grouping,
+  name: {
+    given_names: "Corwin",
+    family_name: "Delacourt",
+    credit_name: null,
+    visibility: "public",
+  },
+  employments: [
+    employment(3101, { start_date: "2015", display_index: 0, external_ids: [grantId("G-1")] }),
+    employment(3102, { start_date: "2017-03", display_index: 5, external_ids: [grantId("G-1")] }),
+    employment(3103, {}),
+    employment(3104, { start_date: "2018-06" }),
+    employment(3105, { start_date: "2010", end_date: "2012-05" }),
+    employment(3106, { start_date: "2011", end_date: "2014-01" }),
+    employment(3107, { visibility: "private", external_ids: [grantId("G-2"), grantId("G-3")] }),
+    employment(3108, { external_ids: [grantId("G-2"), grantId("F-1", "funded-by")] }),
+    employment(3109, { visibility: "private", external_ids: [grantId("G-9")] }),
+    employment(3110, { visibility: "private", external_ids: [grantId("G-9")] }),
+  ],
+  works: [
+    work(3201, "Alpha Study", {
+      publication_date: "2022-03-14",
+      external_ids: [doi("10.5555/GROUP.A"), issn("1111-2222", "part-of")],
+      display_index: 2,
+    }),
+    work(3202, "Alpha Study", {
+      publication_date: "2022-03-14",
+      external_ids: [doi("10.5555/group.a")],
+      display_index: 1,
+    }),
+    work(3203, "Beta Study", {
+      publication_date: "2020",
+      external_ids: [issn("3333-4444", "part-of")],
+    }),
+    work(3204, "Gamma Study", {
+      publication_date: "2021-10",
+      external_ids: [issn("3333-4444", "part-of")],
+    }),
+    work(3205, "Delta one", { publication_date: "2019", external_ids: [doi("10.5555/t.x")] }),
+    work(3206, "Delta two", { publication_date: "2019", external_ids: [doi("10.5555/t.y")] }),
+    work(3207, "Delta bridge", {
+      publication_date: "2019",
+      external_ids: [doi("10.5555/t.x"), doi("10.5555/t.y")],
+    }),
+    work(3208, "Epsilon", {
+      publication_date: "2018",
+      external_ids: [doi("10.5555/v.1", "version-of")],
+    }),
+    work(3209, "Epsilon, second version", {
+      publication_date: "2018",
+      external_ids: [doi("10.5555/v.1", "version-of")],
+    }),
+    work(3210, "Zeta", { publication_date: "2017" }),
+    work(3211, "Eta hidden", {
+      external_ids: [doi("10.5555/hid")],
+      visibility: "private",
+    }),
+    work(3212, "Eta hidden twin", {
+      external_ids: [doi("10.5555/hid")],
+      visibility: "limited",
+    }),
+    work(3213, "Theta", { publication_date: "2016", external_ids: [doi("10.5555/w.1")] }),
+    work(3214, "Theta hidden twin", {
+      publication_date: "2016",
+      external_ids: [
+        doi("10.5555/w.1"),
+        { external_id_type: "eid", external_id_value: "E-LEAK", external_id_relationship: "self" },
+      ],
+      visibility: "private",
+    }),
+    work(3215, "Iota", { publication_date: "2022-03", external_ids: [doi("10.5555/i.1")] }),
+    work(3216, "Kappa", { publication_date: "2022", external_ids: [doi("10.5555/k.1")] }),
+    work(3217, "Lambda", {
+      type: "report",
+      publication_date: "2015",
+      external_ids: [doi("10.5555/l.1")],
+    }),
+    work(3218, "Lambda", {
+      type: "book",
+      publication_date: "2015",
+      external_ids: [doi("10.5555/l.2")],
+    }),
+    work(3219, "Mu B", { publication_date: "2014", external_ids: [doi("10.5555/m.1")] }),
+    work(3220, "Mu A", { publication_date: "2014", external_ids: [doi("10.5555/m.2")] }),
+    work(3221, "Nu", { external_ids: [doi("10.5555/n.1")] }),
+  ],
+  fundings: [
+    {
+      put_code: 3301,
+      title: "Grant One",
+      type: "grant",
+      organization: FUNDER,
+      external_ids: [grantId("GR-1")],
+      visibility: "public",
+      display_index: 0,
+    },
+    {
+      put_code: 3302,
+      title: "Grant One, renewed",
+      type: "grant",
+      organization: FUNDER,
+      external_ids: [grantId("GR-1")],
+      visibility: "public",
+      display_index: 3,
+    },
+    {
+      put_code: 3303,
+      title: "Grant Two",
+      type: "award",
+      organization: FUNDER,
+      visibility: "public",
+      display_index: 1,
+    },
+    {
+      put_code: 3304,
+      title: "Grant Three",
+      type: "contract",
+      organization: FUNDER,
+      external_ids: [grantId("GR-3"), grantId("FB-1", "funded-by")],
+      visibility: "public",
+      display_index: 1,
+    },
+    {
+      put_code: 3305,
+      title: "Grant hidden",
+      type: "grant",
+      organization: FUNDER,
+      external_ids: [grantId("GR-3")],
+      visibility: "private",
+      display_index: 9,
+    },
+  ],
+  peer_reviews: [
+    review(3401, "issn:1111-1111", { completion_date: "2023-05-01", external_ids: [workId("A1")] }),
+    review(3402, "issn:1111-1111", { completion_date: "2023-01-15", external_ids: [workId("A1")] }),
+    review(3403, "issn:1111-1111", { completion_date: "2022-12-01", external_ids: [workId("B2")] }),
+    review(3404, "issn:2222-2222", { completion_date: "2024-02-02", external_ids: [workId("C3")] }),
+    review(3405, "issn:3333-3333", {}),
+    review(3406, "issn:4444-4444", { completion_date: "2025-01-01", visibility: "private" }),
+  ],
+};
+
 const nullFamily: FixtureUser = {
   orcid: IDS.nullFamily,
   name: { given_names: "Ondine", family_name: null, credit_name: null, visibility: "public" },
@@ -574,6 +806,7 @@ export const RECORD_USERS_FILE: UsersFileInput = {
     privateName,
     bioPrivate,
     allPrivate,
+    grouping,
     primary,
     deprecated,
     stateUser(IDS.locked, "Lockhart", { locked: true }),
