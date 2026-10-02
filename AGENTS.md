@@ -8,7 +8,7 @@ Claude Code reads this through `@AGENTS.md` in `CLAUDE.md`.
 An ephemeral mock of the Open Researcher and Contributor ID (ORCID) service for tests and continuous integration:
 the OAuth 2.0 authorization-code flow, OpenID Connect, and the public record API, with users defined in JSON and all state in memory.
 It exists so that a brand-new ORCID sign-up can be driven from an automated test, first for NEMAR and then for anyone, and so that the same code can be run locally, in a CI service container, self-hosted on Cloudflare, or as a hosted multi-tenant service.
-Status: MVP1 complete (epic #1); 1.0.0 is the first release. Repository: public under nemarOrg, MIT.
+Status: MVP1 complete (epic #1); 1.0.0 will be the first release, once the owner's one-time setup is done. Repository: public under nemarOrg, MIT.
 
 ## Tooling
 

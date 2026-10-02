@@ -4,9 +4,9 @@ An ephemeral mock of the Open Researcher and Contributor ID (ORCID) service for 
 the OAuth 2.0 authorization-code flow, OpenID Connect, and the public record API,
 with users defined in a JSON file and all state kept in memory.
 
-Status: MVP1 is complete (epic #1, read-only):
+Status: the first minimum viable product (MVP1) is complete (epic #1, read-only):
 the admin API, OAuth, OpenID Connect, and the public record API are built, and [a conformance suite](#conformance) holds the mock to ORCID's sandbox and drives a brand-new sign-up end to end in CI.
-1.0.0 is the first release, published once the one-time owner setup under [Releasing](#releasing) is done.
+1.0.0 will be the first release, published once the one-time owner setup under [Releasing](#releasing) is done.
 See [`.context/plan.md`](.context/plan.md) for the roadmap and [`.context/research.md`](.context/research.md) for the findings behind it.
 
 ## Install and run
@@ -99,6 +99,8 @@ Reset between tests with `curl -X POST "$ORCID_MOCK_URL/__admin/reset"`.
 The Action needs a published image, so `uses: nemarOrg/orcid-mock@v1` works after the first release, which will be `1.0.0`.
 
 ### As a `services:` container
+
+This also needs the published image, so it works after the first release.
 
 ```yaml
 services:
@@ -723,9 +725,9 @@ ORCID retired its own mock in 2012, and the generic OAuth and OpenID Connect moc
 
 - The authorization-code flow with a sign-in page that lists the fixture users, a `login_as` shortcut for headless drivers, ORCID's redirect matching, and an unmodified `state` round trip ([OAuth](#oauth)).
 - The token endpoint with ORCID's non-standard response (`orcid` and `name` alongside the access token), refresh and client-credentials grants, revocation, and ORCID's error bodies, status codes, and key order.
-- OpenID Connect: a discovery document byte-identical to ORCID's, JWKS, an RS256 ID token whose `sub` is the iD, and userinfo ([OpenID Connect](#openid-connect)).
-- Every public read endpoint of the v3.0 API, projected from the users file with ORCID's wire shapes, per-item visibility, grouping and ordering, `Accept` negotiation, record states, and error codes ([Record API](#record-api)).
-- Checksum-valid iDs (ISO/IEC 7064 MOD 11-2) minted for fixtures, and an admin API to reset, add, replace, and remove users and clients and to move the clock.
+- OpenID Connect: a discovery document byte-identical to ORCID's apart from the base URL, JWKS, an RS256 ID token whose `sub` is the iD, and userinfo ([OpenID Connect](#openid-connect)).
+- The public v3.0 record reads (search, XML, and the summary and citation variants are not served), projected from the users file with ORCID's wire shapes, per-item visibility, grouping and ordering, `Accept` negotiation, record states, and error codes ([Record API](#record-api)).
+- Checksum-valid iDs (ISO/IEC 7064 MOD 11-2) minted for fixtures, and an admin API to reset the server, add, replace, and remove users, register clients, and move the clock.
 - Four ways to run it (`bunx`, a container, a binary, a GitHub Action) and client helpers for Node (Testcontainers, Playwright) and Python (Testcontainers, pytest).
 
 ## What comes after (MVP2)
