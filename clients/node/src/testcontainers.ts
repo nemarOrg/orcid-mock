@@ -5,7 +5,7 @@
 // and every URL it emits), so the host port must be chosen before the container starts and the
 // base URL handed to it. The port is bound explicitly, on the loopback interface only: the admin
 // API has no authentication.
-import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { createServer } from "node:net";
 import {
   AbstractStartedContainer,
@@ -17,9 +17,9 @@ import {
 } from "testcontainers";
 import { OrcidMockClient } from "./client.js";
 import { CONTAINER_PORT, CONTAINER_USERS_PATH, resolveImage } from "./shared.js";
-import type { UsersInput } from "./start.js";
+import { OrcidMockStartError, type UsersInput } from "./start.js";
 
-export type { UsersInput } from "./start.js";
+export { OrcidMockStartError, type UsersInput } from "./start.js";
 
 /** Attempts at picking a free port before giving up; a lost race is the only reason to retry. */
 const PORT_ATTEMPTS = 3;
@@ -44,12 +44,24 @@ function freePort(): Promise<number> {
   });
 }
 
-async function readUsersFile(path: string): Promise<string> {
+function readUsersFile(path: string): string {
   try {
-    return await readFile(path, "utf8");
+    return readFileSync(path, "utf8");
   } catch (error) {
-    throw new Error(`cannot read the users file ${path}`, { cause: error });
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new OrcidMockStartError(`cannot read the users file ${path}: ${reason}`, {
+      cause: error,
+    });
   }
+}
+
+/** Docker's answer for a container that is already gone. */
+function isNotFound(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { statusCode?: number }).statusCode === 404
+  );
 }
 
 function isPortConflict(error: unknown): boolean {
@@ -83,7 +95,6 @@ export class StartedOrcidMockContainer extends AbstractStartedContainer {
  * base URL is `http://localhost:<port>`.
  */
 export class OrcidMockContainer extends GenericContainer {
-  #users: { path: string } | { json: string } | undefined;
   #containerId: string | undefined;
   #logTail = "";
 
@@ -110,23 +121,20 @@ export class OrcidMockContainer extends GenericContainer {
    * Serves this users file instead of the bundled starter users. The content is copied into the
    * container with mode 0644, so it works whatever the file's own permissions are (a bind mount
    * must be readable by the image's `nonroot` user) and with a remote Docker daemon.
-   * A path is read when `start()` runs, so a missing file fails there, with its path.
+   * A path is read now, so a missing file throws an `OrcidMockStartError` here, with its path; an
+   * object is serialized now. Calling it again replaces the earlier file.
    */
   withUsers(users: UsersInput): this {
-    // A path is read at start; an object is serialized now, so a later mutation is not picked up.
-    this.#users = typeof users === "string" ? { path: users } : { json: JSON.stringify(users) };
-    return this;
+    const content = typeof users === "string" ? readUsersFile(users) : JSON.stringify(users);
+    this.contentsToCopy = this.contentsToCopy.filter(
+      (copy) => copy.target !== CONTAINER_USERS_PATH,
+    );
+    return this.withCopyContentToContainer([
+      { content, target: CONTAINER_USERS_PATH, mode: 0o644 },
+    ]).withEnvironment({ USERS_FILE: CONTAINER_USERS_PATH });
   }
 
   override async start(): Promise<StartedOrcidMockContainer> {
-    if (this.#users !== undefined) {
-      const content =
-        "json" in this.#users ? this.#users.json : await readUsersFile(this.#users.path);
-      this.withCopyContentToContainer([
-        { content, target: CONTAINER_USERS_PATH, mode: 0o644 },
-      ]).withEnvironment({ USERS_FILE: CONTAINER_USERS_PATH });
-    }
-
     for (let attempt = 1; ; attempt++) {
       const port = await this.pickPort();
       const baseUrl = `http://localhost:${port}`;
@@ -138,12 +146,14 @@ export class OrcidMockContainer extends GenericContainer {
         await waitUntilReachable(started.client);
         return started;
       } catch (error) {
-        const logs = await this.#discard();
+        const { logs, problems } = await this.#discard();
         if (attempt < PORT_ATTEMPTS && isPortConflict(error)) continue;
-        throw new Error(
+        throw new OrcidMockStartError(
           `orcid-mock did not start from ${this.imageName.string}: ${
             error instanceof Error ? error.message : String(error)
-          }${logs === "" ? "" : `\n--- container output ---\n${logs}`}`,
+          }${logs === "" ? "" : `\n--- container output ---\n${logs}`}${
+            problems.length === 0 ? "" : `\n--- cleanup ---\n${problems.join("\n")}`
+          }`,
           { cause: error },
         );
       }
@@ -167,23 +177,36 @@ export class OrcidMockContainer extends GenericContainer {
    * (a users file it rejected, say), and the container removed. Testcontainers removes a container
    * that never became ready, but leaves one that exited before its ports were bound for its
    * reaper at the end of the process; that one is read and removed here. Touches only the
-   * container this start created.
+   * container this start created. Each step that fails is reported in `problems`, so a container
+   * that could not be removed is never left silently.
    */
-  async #discard(): Promise<string> {
-    if (this.#containerId === undefined) return this.#logTail.trim();
+  async #discard(): Promise<{ logs: string; problems: string[] }> {
+    const problems: string[] = [];
+    if (this.#containerId === undefined) return { logs: this.#logTail.trim(), problems };
+    let logs = this.#logTail;
     try {
       const client = await getContainerRuntimeClient();
       const container = client.container.getById(this.#containerId);
-      let output = this.#logTail;
-      if (output === "") {
-        const stream = await client.container.logs(container, { tail: LOG_TAIL_LINES });
-        for await (const chunk of stream) output += chunk.toString();
+      if (logs === "") {
+        try {
+          const stream = await client.container.logs(container, { tail: LOG_TAIL_LINES });
+          for await (const chunk of stream) logs += chunk.toString();
+        } catch (error) {
+          if (!isNotFound(error)) problems.push(`could not read the container's output: ${error}`);
+        }
       }
-      await client.container.remove(container, { removeVolumes: true });
-      return output.trim();
-    } catch {
-      return this.#logTail.trim();
+      try {
+        await container.remove({ force: true, v: true });
+      } catch (error) {
+        // Testcontainers may have removed it already; anything else leaves a container behind.
+        if (!isNotFound(error)) {
+          problems.push(`could not remove container ${this.#containerId.slice(0, 12)}: ${error}`);
+        }
+      }
+    } catch (error) {
+      problems.push(`could not reach the container runtime to clean up: ${error}`);
     }
+    return { logs: logs.trim(), problems };
   }
 
   /** Publishes the container port on `port`, loopback only, and tells the mock its address. */
@@ -208,7 +231,7 @@ async function waitUntilReachable(client: OrcidMockClient): Promise<void> {
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
   }
-  throw new Error(`the container is up but ${client.baseUrl} does not answer`, {
+  throw new OrcidMockStartError(`the container is up but ${client.baseUrl} does not answer`, {
     cause: lastError,
   });
 }

@@ -12,8 +12,15 @@ import {
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getContainerRuntimeClient } from "testcontainers";
 import { OrcidMockError, type OrcidMockUser } from "../src/client";
-import { OrcidMockContainer, type StartedOrcidMockContainer } from "../src/testcontainers";
+import { resolveImage } from "../src/shared";
+import {
+  OrcidMockContainer,
+  OrcidMockStartError,
+  type StartedOrcidMockContainer,
+} from "../src/testcontainers";
+import { withEnv } from "./support";
 
 setDefaultTimeout(120_000);
 
@@ -107,19 +114,39 @@ describe("OrcidMockContainer", () => {
       (error: Error) => error,
     );
     expect(failure).not.toBeNull();
+    expect(failure).toBeInstanceOf(OrcidMockStartError);
     expect(failure?.message).toContain("did not start");
     expect(failure?.message).toContain("check character");
   });
 
-  test("a users file that does not exist fails start naming the path", async () => {
-    const failure = await new OrcidMockContainer()
-      .withUsers("/no/such/users.json")
-      .start()
-      .then(
-        () => null,
-        (error: Error) => error,
-      );
-    expect(failure?.message).toContain("/no/such/users.json");
+  test("a users file that does not exist fails at withUsers, naming the path", () => {
+    let failure: unknown;
+    try {
+      new OrcidMockContainer().withUsers("/no/such/users.json");
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeInstanceOf(OrcidMockStartError);
+    expect((failure as Error).message).toContain("/no/such/users.json");
+  });
+
+  test("a second users file replaces the first", async () => {
+    const first = {
+      clients: [],
+      users: [{ ...newUser("First", "first@example.test"), orcid: "0000-0002-1825-0097" }],
+    };
+    const second = {
+      clients: [],
+      users: [{ ...newUser("Second", "second@example.test"), orcid: "0000-0001-5109-3700" }],
+    };
+    const custom = await new OrcidMockContainer().withUsers(first).withUsers(second).start();
+    try {
+      expect((await custom.client.users()).map((user) => user.orcid)).toEqual([
+        "0000-0001-5109-3700",
+      ]);
+    } finally {
+      await custom.stop();
+    }
   });
 
   test("withImage replaces the image, and a missing image fails start with its name", async () => {
@@ -178,6 +205,66 @@ describe("OrcidMockContainer", () => {
     } finally {
       await other.stop();
     }
+  });
+});
+
+describe("what the container promises", () => {
+  test("the host port is published on loopback only", async () => {
+    const client = await getContainerRuntimeClient();
+    const inspected = await client.container.getById(mock.getId()).inspect();
+    const bindings = inspected.NetworkSettings.Ports["9700/tcp"];
+    expect(bindings?.map((binding) => binding.HostIp)).toEqual(["127.0.0.1"]);
+    expect(bindings?.[0]?.HostPort).toBe(new URL(mock.baseUrl).port);
+  });
+
+  test("a container that is up but unreachable fails start and is removed", async () => {
+    // PORT=9701 makes the server print its readiness line but listen where the published port
+    // does not point, so the readiness wait passes and the reachability check fails.
+    const created: string[] = [];
+    class Remembering extends OrcidMockContainer {
+      protected override async containerCreated(containerId: string): Promise<void> {
+        created.push(containerId);
+        await super.containerCreated(containerId);
+      }
+    }
+    const failure = await new Remembering()
+      .withEnvironment({ PORT: "9701" })
+      .start()
+      .then(
+        () => null,
+        (error: Error) => error,
+      );
+    expect(failure).toBeInstanceOf(OrcidMockStartError);
+    expect(failure?.message).toContain("does not answer");
+    expect(created).toHaveLength(1);
+    const runtime = await getContainerRuntimeClient();
+    const lookup = await runtime.container
+      .getById(created[0] as string)
+      .inspect()
+      .then(
+        () => null,
+        (error: { statusCode?: number }) => error,
+      );
+    expect(lookup?.statusCode).toBe(404);
+  });
+
+  test("the constructor image wins over ORCID_MOCK_IMAGE", async () => {
+    const real = resolveImage();
+    await withEnv("ORCID_MOCK_IMAGE", "orcid-mock-does-not-exist:0", async () => {
+      // The control: with only the environment to go by, the bogus image is what is started.
+      const failure = await new OrcidMockContainer().start().then(
+        () => null,
+        (error: Error) => error,
+      );
+      expect(failure?.message).toContain("orcid-mock-does-not-exist:0");
+
+      const chosen = await new OrcidMockContainer(real).start();
+      try {
+        expect((await chosen.client.health()).status).toBe("ok");
+      } finally {
+        await chosen.stop();
+      }
+    });
   });
 });
 

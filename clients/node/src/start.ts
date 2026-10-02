@@ -4,6 +4,11 @@
 import { OrcidMockClient } from "./client.js";
 import { urlFromEnv } from "./shared.js";
 
+/** The mock could not be started or reached; the message says why, and `cause` holds the error. */
+export class OrcidMockStartError extends Error {
+  override readonly name = "OrcidMockStartError";
+}
+
 /** A users file: the path of one on disk, or the parsed object (`{ clients, users }`). */
 export type UsersInput = string | Record<string, unknown>;
 
@@ -34,7 +39,7 @@ export async function startOrConnect(options: StartOrConnectOptions = {}): Promi
   const url = urlFromEnv();
   if (url !== undefined) {
     if (options.users !== undefined) {
-      throw new Error(
+      throw new OrcidMockStartError(
         `ORCID_MOCK_URL is set (${url}), so a running orcid-mock is used and its users cannot be set here. Load them where it starts, or unset ORCID_MOCK_URL to start a container.`,
       );
     }
@@ -42,9 +47,12 @@ export async function startOrConnect(options: StartOrConnectOptions = {}): Promi
     try {
       await client.health();
     } catch (error) {
-      throw new Error(`ORCID_MOCK_URL is set (${url}) but orcid-mock does not answer there`, {
-        cause: error,
-      });
+      throw new OrcidMockStartError(
+        `ORCID_MOCK_URL is set (${url}) but orcid-mock does not answer there`,
+        {
+          cause: error,
+        },
+      );
     }
     return { baseUrl: client.baseUrl, client, mode: "url", stop: async () => {} };
   }
