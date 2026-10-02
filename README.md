@@ -109,7 +109,7 @@ The hosted mode will run the same app inside a Durable Object per tenant.
 ## Test helpers
 
 Helpers for tests that need a mock ORCID: a typed client for the admin API and the headless sign-in, a Testcontainers module that starts the image on a port it picks, Playwright fixtures, and a pytest plugin.
-They are separate packages in this repository, [`clients/node`](clients/node) (`@nemarorg/orcid-mock-testing` on npm) and [`clients/python`](clients/python) (`orcid-mock-testing` on PyPI, imported as `orcid_mock`), and carry the server's version, so the default image of a helper is the image of its own version ([ADR 0008](.context/decisions/0008-client-helpers.md)).
+They are separate packages in this repository, [`clients/node`](clients/node) (`@nemarorg/orcid-mock-testing` on npm) and [`clients/python`](clients/python) (`orcid-mock-testing` on the Python Package Index (PyPI), imported as `orcid_mock`), and carry the server's version, so the default image of a helper is the image of its own version ([ADR 0008](.context/decisions/0008-client-helpers.md)).
 Nothing is published until the first release, `1.0.0`.
 
 ### The rules every helper follows
@@ -126,16 +126,21 @@ Nothing is published until the first release, `1.0.0`.
   It waits for the readiness line on stdout, then for the published port to answer, and copies a users file into the container (mode 0644, so the file's own permissions do not matter).
   If the start fails, the error carries the tail of the container's output, which is where the server says why it exited.
   The Docker daemon must be on the machine that runs the tests.
+- **Users files.**
+  A path is read when you pass it (`withUsers` in Node, `with_users` and the constructor in Python), so a missing file fails there with an `OrcidMockStartError` naming it, and a second call replaces the first file.
+- **Proxies.**
+  A proxy named by `HTTP_PROXY` or `ALL_PROXY` must not capture the traffic to a mock on this machine, so the clients ignore those variables: the Python client sets `trust_env=False`, and the Node client talks through `node:http` with an agent of its own, because Bun's `fetch` sends even a request to localhost through `HTTP_PROXY` (checked on Bun 1.4.2) and Node's does when `NODE_USE_ENV_PROXY` is set.
+  Your own code is not covered: an application under test that reaches the mock through a proxy needs `NO_PROXY=localhost`.
 - **Reset.**
   `reset()` restores the loaded file: users, clients, counters, and the clock, and clears codes, tokens, and sessions.
   A client registered with `putClient` is dropped too, so register it again after a reset.
 - **Sign-in.**
   `signIn` is the headless sequence of [the round trip above](#a-headless-round-trip): `GET /oauth/authorize` with `login_as` without following the redirect, the code from `Location`, then `POST /oauth/token`.
-  By default it uses the starter file's public client and `/authenticate`; any non-2xx answer is an `OrcidMockError` carrying the status and body.
+  By default it uses the starter file's public client and `/authenticate`; any non-2xx answer is an `OrcidMockError` carrying the status and body, and a redirect that carries no code (an `error` fragment) is one with status 0.
 
 ### Testcontainers for Node
 
-The package ships TypeScript source, like the server, so it needs Bun 1.4 or later.
+The package ships compiled JavaScript (ES modules) with declarations, so it loads under Node 22 or later and under Bun 1.4 or later.
 `testcontainers` and `@playwright/test` are optional peer dependencies, each needed only by the entry point that uses it.
 
 ```bash
@@ -160,7 +165,8 @@ afterAll(() => mock.stop());
 beforeEach(() => mock.client.reset());
 
 test("a user can sign in", async () => {
-  const [alder] = await mock.client.users();
+  const alder = (await mock.client.users())[0];
+  if (!alder) throw new Error("the starter file has users");
   const token = await mock.client.signIn({ orcid: alder.orcid });
   expect(token.orcid).toBe(alder.orcid);
   // Point the application under test at mock.baseUrl.
@@ -181,7 +187,8 @@ test("signs in with ORCID", async ({ page, orcidMock, signInAs }) => {
     client_secret: "my-secret",
     redirect_uris: ["http://localhost:5173/auth/callback"],
   });
-  const [alder] = await orcidMock.client.users();
+  const alder = (await orcidMock.client.users())[0];
+  if (!alder) throw new Error("the starter file has users");
 
   await page.goto("http://localhost:5173/login"); // the app redirects to the mock
   await signInAs(page, alder.orcid); // waits for the consent page, clicks that user's button
@@ -189,13 +196,16 @@ test("signs in with ORCID", async ({ page, orcidMock, signInAs }) => {
 });
 ```
 
-`orcidMock` is worker-scoped (one mock per worker, from `ORCID_MOCK_URL` or a container) and has `baseUrl` and `client`; `signInAs(page, iD)` waits until the page is on `<baseUrl>/oauth/authorize`, clicks the button whose accessible name holds the iD, and throws with the mock's answer if it refuses the sign-in (a locked user).
+`orcidMock` is worker-scoped (one mock per worker, from `ORCID_MOCK_URL` or a container) and has `baseUrl`, `client`, and `publicBaseUrl()`; `signInAs(page, iD)` waits until the page is on `<address>/oauth/authorize` (the origin and the path, not the query), clicks the button whose accessible name holds the iD, and throws with the mock's answer if it refuses the sign-in (a locked user).
 Set the container's image and users with `test.use({ orcidMockOptions: { image, users } })`.
-`signInAs(page, iD, { baseUrl })` is also exported for a plain Playwright `Page`.
+`signInAs(page, iD, { baseUrl })` is also exported for a plain Playwright `Page`; `baseUrl` is the address the browser reaches the mock at and the address the mock puts in its own URLs (`PUBLIC_BASE_URL`), which are the same for a container and can differ for a running instance, so pass both as an array then (the fixture does).
 
-- **Run Playwright under Bun.**
-  `bun --bun x playwright test` (or `bun run --bun playwright test`) runs the runner and the fixtures on Bun 1.4.2, tested with `@playwright/test` 1.63.
-  Without `--bun` the runner runs on Node, which refuses to load TypeScript from `node_modules`, so an installed copy of this package does not load there ([ADR 0008](.context/decisions/0008-client-helpers.md)).
+- **Both runtimes.**
+  Playwright's runner loads the package under Node and under Bun (`bun --bun x playwright test`); both are tested, with `@playwright/test` 1.63.
+- **A running instance is shared.**
+  Workers get a container each, but with `ORCID_MOCK_URL` every worker talks to the same mock and its state, so set `workers: 1` in `playwright.config.ts` and call `orcidMock.client.reset()` between tests (and register your client again after it).
+- **Popups.**
+  When the application signs in in a popup, pass the popup page: `const popup = await page.waitForEvent("popup"); await signInAs(popup, alder.orcid);`.
 - **An application that must know the mock's address at start-up** (a `webServer` entry in `playwright.config.ts`) cannot wait for a worker's random port: start the mock yourself on a fixed port and set `ORCID_MOCK_URL` to it, as the [GitHub Action](#as-a-github-action) does.
 
 ### pytest
@@ -631,9 +641,9 @@ One version, from `package.json`, numbers the npm package, the image, the binari
 2. Tag the merge commit and push the tag: `git tag v1.2.3 && git push origin v1.2.3`.
 3. The [Release workflow](.github/workflows/release.yml) then works in this order, so that a failure leaves nothing public and a re-run converges:
    it refuses a tag that differs from `package.json` or is not on `main`, runs lint, type checking, and the tests, and checks the npm token (`bun pm whoami`);
-   it builds every binary once and runs each on a runner of its kind (Linux x64 and arm64, macOS arm64, Windows x64), and builds the Python helper's wheel and source distribution in a job that holds no credentials;
+   it builds every binary once and runs each on a runner of its kind (Linux x64 and arm64, macOS arm64, Windows x64), and builds the helpers' packages (the Node helper's compiled tarball, the Python helper's wheel and source distribution) in jobs that hold no credentials;
    it builds the image, smoke-tests the amd64 image and runs the arm64 image once, and only then pushes the exact tag `1.2.3`, tests what it pushed, and attests it;
-   it publishes `@nemarorg/orcid-mock` and `@nemarorg/orcid-mock-testing` to npm, each unless that version is already there, and `orcid-mock-testing` to PyPI through trusted publishing (the `pypi` job only uploads the files the earlier job built, and skips a file the index already has);
+   it publishes `@nemarorg/orcid-mock` and `@nemarorg/orcid-mock-testing` (the tarball the earlier job built) to npm, each unless that version is already there, and `orcid-mock-testing` to PyPI through trusted publishing (the `pypi` job only uploads the files the earlier job built, and skips a file the index already has);
    it creates the GitHub Release if it does not exist and uploads the binaries and `SHA256SUMS` (replacing any earlier upload);
    and last it moves `latest`, `1`, and `1.2`, and the `v1` tag that `uses: nemarOrg/orcid-mock@v1` follows.
 4. Floating tags only move forward: each moves only when the released version is the highest stable version in its scope (`latest` against all, `1` against 1.x.y, `1.2` against 1.2.z), so a patch for an old line never takes `latest`.
@@ -663,6 +673,8 @@ These are repository and registry settings; no workflow or pull request creates 
   The name `orcid-mock-testing` was free on PyPI on 2026-10-01.
   The first release creates the project, through a pending trusted publisher, so create that before tagging: sign in at pypi.org, open Your account, Publishing, and add a pending publisher for the project `orcid-mock-testing` with owner `nemarOrg`, repository `orcid-mock`, workflow `release.yml`, and environment `pypi` ([PyPI's documentation](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)).
   There is no token to create or rotate; the `pypi` job's OpenID Connect identity is the credential.
+  Nothing can check this setup before it is used: a mistyped repository, workflow, or environment name in the pending publisher surfaces only when the `pypi` job runs, which is after the image and the npm packages are public.
+  A re-run converges (the image tag, the npm versions, and the files already published are skipped), so the repair is to fix the publisher on pypi.org and re-run the failed job; but check the four values twice before tagging.
 - **GitHub environment `pypi`** (Settings, Environments, New environment).
   Under "Deployment branches and tags", choose "Selected branches and tags" and add the tag rule `v*.*.*`, as for `release`; "Required reviewers" is optional, and it needs no secret.
   The environment's name must match the one in the pending publisher.
