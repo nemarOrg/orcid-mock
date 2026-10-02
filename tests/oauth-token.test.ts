@@ -554,7 +554,9 @@ describe("refresh_token", () => {
   });
 
   test("revoke_old defaults to true, and only the string true means true", async () => {
-    // Legacy refreshAccessToken: absent means true; a present value goes through Boolean.valueOf.
+    // The legacy implementation (removed upstream): absent means true, and a present value goes
+    // through Boolean.valueOf, which is true only for "true":
+    // https://github.com/ORCID/ORCID-Source/blob/7eeb1e7709760f328f5d3f72ebf2629f0a5d54c9/orcid-core/src/main/java/org/orcid/core/oauth/service/OrcidRandomValueTokenServicesImpl.java#L439
     const kept: Array<string | undefined> = ["false", "FALSE", "0", "", "yes"];
     for (const value of [undefined, "true", "TRUE", ...kept]) {
       const original = await first();
