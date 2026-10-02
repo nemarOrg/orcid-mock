@@ -18,6 +18,7 @@ A token kept working for a user who was deleted and then created again with the 
 A request to `/__admin/*` whose `Origin` is not the origin of `PUBLIC_BASE_URL` is `403 {"error":"forbidden_origin"}`, as before.
 A request whose `Host` hostname is neither a loopback name (`localhost`, `127.0.0.1`, `::1`, `[::1]`, any case, any port) nor the hostname of `PUBLIC_BASE_URL` is `403 {"error":"forbidden_host"}`.
 A missing or malformed `Host` is refused too.
+`GET /__admin/health` alone is exempt from the `Host` rule, because it reveals only two counts and an orchestrator's probe sends `Host: <pod-ip>:9700`; the `Origin` rule still applies to it.
 `PUBLIC_BASE_URL` is how a caller on another host, such as another container, is let in: it names the address that caller uses.
 This is the one place the mock reads `Host`, and only to refuse; every URL still derives from `PUBLIC_BASE_URL` (ADR 0001), and the path and query are read from the text of the request URL, so a `Host` that does not parse no longer turns a valid request into a 500, and when Bun cannot build a URL from `Host` at all (empty, absent, or holding a space, `/`, `@`, `?`, or `#`) `src/server.ts` rebuilds the request under the origin of `PUBLIC_BASE_URL` with its raw target, so routing never depends on `Host` while the admin guard still reads the original header.
 

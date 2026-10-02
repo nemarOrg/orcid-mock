@@ -78,12 +78,15 @@ export function adminRoutes(): Hono<AppEnv> {
   // though, so only a loopback name or the hostname of PUBLIC_BASE_URL (what callers outside this
   // machine, such as another container, use to reach the mock) is served. Fail closed: a missing
   // or malformed `Host` is refused.
+  // One exemption from the `Host` rule: `GET /__admin/health`, which reveals two counts, so an
+  // orchestrator's probe that sends `Host: <pod-ip>:9700` works; the `Origin` rule still applies.
   admin.use("*", async (c, next) => {
     const base = new URL(c.get("deps").config.publicBaseUrl);
     const origin = c.req.header("origin");
     if (origin !== undefined && origin !== base.origin) {
       return adminError(c, 403, "forbidden_origin");
     }
+    if (c.req.method === "GET" && c.req.path === "/__admin/health") return next();
     const hostname = hostnameOf(c.req.header("host"));
     if (hostname === null || !(LOOPBACK_HOSTNAMES.has(hostname) || hostname === base.hostname)) {
       return adminError(c, 403, "forbidden_host");

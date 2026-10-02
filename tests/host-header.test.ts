@@ -172,17 +172,21 @@ describe("a Host that cannot be made into a URL does not change routing", () => 
       });
 
       test("the admin API is refused as a foreign host, not misrouted to a 404", async () => {
-        const reply = await rawRequest(server, "GET", "/__admin/health", {}, host);
+        const reply = await rawRequest(server, "GET", "/__admin/users", {}, host);
         expect([reply.status, reply.json]).toEqual([403, { error: "forbidden_host" }]);
+        // Health alone is exempt from the Host rule, and routes as normal.
+        const health = await rawRequest(server, "GET", "/__admin/health", {}, host);
+        expect(health.status).toBe(200);
       });
     });
   }
 });
 
 describe("HTTP/1.0 with no Host header at all", () => {
-  test("the admin API is refused, failing closed", async () => {
-    const reply = await rawRequest(server, "GET", "/__admin/health", {}, null);
+  test("the admin API is refused, failing closed, except for health", async () => {
+    const reply = await rawRequest(server, "GET", "/__admin/users", {}, null);
     expect([reply.status, reply.json]).toEqual([403, { error: "forbidden_host" }]);
+    expect((await rawRequest(server, "GET", "/__admin/health", {}, null)).status).toBe(200);
   });
 
   test("a record read is served as normal", async () => {

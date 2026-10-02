@@ -772,7 +772,7 @@ describe("DNS-rebinding protection", () => {
 
   test("a rebinding Host with no Origin cannot read the admin API", async () => {
     for (const host of REBOUND_HOSTS) {
-      for (const path of ["/clients", "/users", "/health"]) {
+      for (const path of ["/clients", "/users"]) {
         const reply = await get(path, host);
         expect([host, path, reply.status, reply.json]).toEqual([
           host,
@@ -781,6 +781,32 @@ describe("DNS-rebinding protection", () => {
           { error: "forbidden_host" },
         ]);
       }
+    }
+  });
+
+  test("GET /__admin/health alone is exempt from the Host rule, so a probe sent to a pod IP works", async () => {
+    const expected = (await server.admin("GET", "/health")).body;
+    for (const host of [...REBOUND_HOSTS, "10.1.2.3:9700"]) {
+      const reply = await get("/health", host);
+      expect([host, reply.status, reply.json]).toEqual([host, 200, expected]);
+    }
+    // The Origin rule still applies to it.
+    const foreign = await get("/health", "10.1.2.3:9700", { Origin: "https://evil.example.test" });
+    expect([foreign.status, foreign.json]).toEqual([403, { error: "forbidden_origin" }]);
+    // Any other method on the same path is guarded like the rest.
+    for (const method of ["POST", "PUT", "DELETE"]) {
+      const reply = await rawRequest(
+        server,
+        method,
+        "/__admin/health",
+        { "Content-Length": "0" },
+        "10.1.2.3:9700",
+      );
+      expect([method, reply.status, reply.json]).toEqual([
+        method,
+        403,
+        { error: "forbidden_host" },
+      ]);
     }
   });
 
@@ -832,11 +858,11 @@ describe("DNS-rebinding protection", () => {
     const named = await startTestServer({ publicBaseUrl: "http://orcid-mock.test:9700" });
     try {
       for (const host of ["orcid-mock.test:9700", "orcid-mock.test", "ORCID-Mock.test:1"]) {
-        const reply = await rawRequest(named, "GET", "/__admin/health", {}, host);
+        const reply = await rawRequest(named, "GET", "/__admin/clients", {}, host);
         expect([host, reply.status]).toEqual([host, 200]);
       }
       for (const host of ["other.test:9700", "orcid-mock.test.evil.example", "evil.example"]) {
-        const reply = await rawRequest(named, "GET", "/__admin/health", {}, host);
+        const reply = await rawRequest(named, "GET", "/__admin/clients", {}, host);
         expect([host, reply.status, reply.json]).toEqual([host, 403, { error: "forbidden_host" }]);
       }
     } finally {
