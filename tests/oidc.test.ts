@@ -7,8 +7,10 @@ import {
   authorizeUrl,
   CLIENTS,
   clientCredentials,
+  clientFields,
   exchangeCode,
   obtainToken,
+  postForm,
   refreshTokens,
   type StarterIds,
   type TokenResponse,
@@ -525,5 +527,263 @@ describe("no id_token", () => {
     const reply = await clientCredentials(server);
     expect(reply.status).toBe(200);
     expect(reply.json).not.toHaveProperty("id_token");
+  });
+});
+
+const DENIED = '{"error":"access_denied","error-description":"access_token is invalid"}';
+
+/** GET /oauth/userinfo with an optional bearer header. */
+function getUserinfo(authorization?: string, from: TestServer = server) {
+  return fetch(`${from.baseUrl}/oauth/userinfo`, {
+    ...(authorization === undefined ? {} : { headers: { authorization } }),
+  });
+}
+
+/** POST /oauth/userinfo with an optional form body and optional extra headers. */
+function postUserinfo(opts: {
+  form?: Record<string, string>;
+  headers?: Record<string, string>;
+  body?: string;
+}) {
+  const hasForm = opts.form !== undefined;
+  return fetch(`${server.baseUrl}/oauth/userinfo`, {
+    method: "POST",
+    headers: {
+      ...(hasForm ? { "content-type": "application/x-www-form-urlencoded" } : {}),
+      ...opts.headers,
+    },
+    ...(hasForm ? { body: new URLSearchParams(opts.form) } : {}),
+    ...(opts.body === undefined ? {} : { body: opts.body }),
+  });
+}
+
+/** What userinfo answers for the starter users, as text, to compare bytes and key order. */
+function userinfoText(
+  orcid: string,
+  names: { name: string | null; family: string | null; given: string | null },
+  base: string = server.publicBaseUrl,
+): string {
+  return JSON.stringify({
+    id: `${base}/${orcid}`,
+    sub: orcid,
+    name: names.name,
+    family_name: names.family,
+    given_name: names.given,
+  });
+}
+
+const ALDER_NAMES = { name: "A. Fennimore", family: "Fennimore", given: "Alder" };
+
+describe("GET /oauth/userinfo", () => {
+  test("answers a /authenticate or an openid token with id, sub, and the public names, in order", async () => {
+    for (const scope of ["/authenticate", "openid", "openid /read-limited"]) {
+      const token = await obtainToken(server, { orcid: ids.alder, scope, client: "member" });
+      const response = await getUserinfo(`Bearer ${token.access_token}`);
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe(userinfoText(ids.alder, ALDER_NAMES));
+    }
+  });
+
+  test("carries ORCID's content type and CORS", async () => {
+    const token = await obtainToken(server, { orcid: ids.alder, scope: "openid" });
+    const response = await getUserinfo(`Bearer ${token.access_token}`);
+    expect(response.headers.get("content-type")).toBe("application/json;charset=UTF-8");
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
+  });
+
+  test("writes null for a field that does not exist, and for every field of a private name", async () => {
+    const sennet = await obtainToken(server, { orcid: ids.sennet, scope: "openid" });
+    expect(await (await getUserinfo(`Bearer ${sennet.access_token}`)).text()).toBe(
+      userinfoText(ids.sennet, { name: null, family: null, given: "Sennet" }),
+    );
+
+    const created = await server.admin<{ orcid: string }>("POST", "/users", {
+      name: {
+        given_names: "Quiet",
+        family_name: "Person",
+        credit_name: "Q. Person",
+        visibility: "private",
+      },
+    });
+    const quiet = await obtainToken(server, { orcid: created.body.orcid, scope: "/authenticate" });
+    expect(await (await getUserinfo(`Bearer ${quiet.access_token}`)).text()).toBe(
+      userinfoText(created.body.orcid, { name: null, family: null, given: null }),
+    );
+  });
+
+  test("id is the iD under the public base URL, path prefix included", async () => {
+    const prefixed = await startTestServer({ publicBaseUrl: "https://mock.example.test/orcid" });
+    try {
+      const alder = (await userIds(prefixed)).alder;
+      const token = await obtainToken(prefixed, { orcid: alder, scope: "openid" });
+      const response = await getUserinfo(`Bearer ${token.access_token}`, prefixed);
+      expect(await response.text()).toBe(
+        userinfoText(alder, ALDER_NAMES, "https://mock.example.test/orcid"),
+      );
+    } finally {
+      await prefixed.stop();
+    }
+  });
+
+  test("sub matches the id_token's sub and its names", async () => {
+    const token = await obtainToken(server, { orcid: ids.alder, scope: "openid" });
+    const claims = JSON.parse(jwtParts(token.id_token as string).payload) as Record<string, string>;
+    const info = (await (await getUserinfo(`Bearer ${token.access_token}`)).json()) as Record<
+      string,
+      string
+    >;
+    expect(info.sub).toBe(claims.sub);
+    expect(info.name).toBe(claims.name);
+    expect(info.family_name).toBe(claims.family_name);
+    expect(info.given_name).toBe(claims.given_name);
+  });
+
+  test("accepts the Bearer scheme in any case and trims the token", async () => {
+    const token = await obtainToken(server, { orcid: ids.alder, scope: "openid" });
+    for (const header of [`bearer ${token.access_token}`, `BEARER   ${token.access_token}  `]) {
+      expect((await getUserinfo(header)).status).toBe(200);
+    }
+  });
+
+  test("reads the header alone: an access_token in the query string is not a token", async () => {
+    const token = await obtainToken(server, { orcid: ids.alder, scope: "openid" });
+    const response = await fetch(
+      `${server.baseUrl}/oauth/userinfo?access_token=${token.access_token}`,
+    );
+    expect(response.status).toBe(403);
+  });
+
+  test("a token whose user was deleted is as invalid as an unknown one", async () => {
+    const created = await server.admin<{ orcid: string }>("POST", "/users", {
+      name: { given_names: "Gone", visibility: "public" },
+    });
+    const token = await obtainToken(server, { orcid: created.body.orcid, scope: "openid" });
+    expect((await getUserinfo(`Bearer ${token.access_token}`)).status).toBe(200);
+    await server.admin("DELETE", `/users/${created.body.orcid}`);
+    expect(await (await getUserinfo(`Bearer ${token.access_token}`)).text()).toBe(DENIED);
+  });
+});
+
+describe("POST /oauth/userinfo", () => {
+  test("reads the access_token form field", async () => {
+    const token = await obtainToken(server, { orcid: ids.alder, scope: "openid" });
+    const response = await postUserinfo({ form: { access_token: token.access_token } });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe(userinfoText(ids.alder, ALDER_NAMES));
+    expect(response.headers.get("content-type")).toBe("application/json;charset=UTF-8");
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
+  });
+
+  test("falls back to the Authorization header, with or without a form body", async () => {
+    const token = await obtainToken(server, { orcid: ids.alder, scope: "openid" });
+    const headers = { authorization: `Bearer ${token.access_token}` };
+    expect((await postUserinfo({ headers })).status).toBe(200);
+    expect((await postUserinfo({ headers, form: { unrelated: "x" } })).status).toBe(200);
+    expect((await postUserinfo({ headers, form: { access_token: "" } })).status).toBe(200);
+  });
+
+  test("a form token that is no good falls through to a header token that is", async () => {
+    const good = await obtainToken(server, { orcid: ids.alder, scope: "openid" });
+    const response = await postUserinfo({
+      form: { access_token: "00000000-0000-4000-8000-000000000000" },
+      headers: { authorization: `Bearer ${good.access_token}` },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe(userinfoText(ids.alder, ALDER_NAMES));
+  });
+
+  test("a good form token wins over a header token that is no good", async () => {
+    const good = await obtainToken(server, { orcid: ids.alder, scope: "openid" });
+    const response = await postUserinfo({
+      form: { access_token: good.access_token },
+      headers: { authorization: "Bearer 00000000-0000-4000-8000-000000000000" },
+    });
+    expect(response.status).toBe(200);
+  });
+
+  test("a form field is only read from a form-encoded body", async () => {
+    const token = await obtainToken(server, { orcid: ids.alder, scope: "openid" });
+    const asJson = await postUserinfo({
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ access_token: token.access_token }),
+    });
+    expect(await asJson.text()).toBe(DENIED);
+    const withCharset = await postUserinfo({
+      headers: { "content-type": "Application/X-WWW-Form-Urlencoded; charset=UTF-8" },
+      body: `access_token=${token.access_token}`,
+    });
+    expect(withCharset.status).toBe(200);
+  });
+});
+
+describe("userinfo refuses with ORCID's one 403", () => {
+  /** Every way of presenting a token that must not work, as `[description, request]`. */
+  async function refusals(): Promise<Array<[string, () => Promise<Response>]>> {
+    const bearer = (token: string) => () => getUserinfo(`Bearer ${token}`);
+    const live = await obtainToken(server, { orcid: ids.alder, scope: "openid" });
+
+    const revoked = await obtainToken(server, { orcid: ids.alder, scope: "openid" });
+    const revoke = await postForm(server, "/oauth/revoke", {
+      ...clientFields(),
+      token: revoked.access_token,
+    });
+    expect(revoke.status).toBe(200);
+
+    const rotated = await obtainToken(server, { orcid: ids.alder, scope: "openid" });
+    expect((await refreshTokens(server, { refreshToken: rotated.refresh_token })).status).toBe(200);
+
+    const credentials = (await clientCredentials(server)).json as unknown as TokenResponse;
+    const limitedOnly = await obtainToken(server, {
+      orcid: ids.alder,
+      scope: "/read-limited",
+      client: "member",
+    });
+    return [
+      ["no token at all", () => getUserinfo()],
+      ["an unknown token", bearer("00000000-0000-4000-8000-000000000000")],
+      ["a revoked token", bearer(revoked.access_token)],
+      ["an access token that a refresh rotated out", bearer(rotated.access_token)],
+      ["a refresh token", bearer(live.refresh_token)],
+      ["a /read-public client-credentials token", bearer(credentials.access_token)],
+      ["a /read-limited token, which has no /authenticate", bearer(limitedOnly.access_token)],
+      ["a bearer header with nothing after it", () => getUserinfo("Bearer")],
+      ["another scheme", () => getUserinfo(`Basic ${live.access_token}`)],
+      ["the id_token in place of the access token", bearer(live.id_token as string)],
+      [
+        "a bad form token over POST",
+        () => postUserinfo({ form: { access_token: "00000000-0000-4000-8000-000000000000" } }),
+      ],
+      ["a POST with nothing", () => postUserinfo({})],
+    ];
+  }
+
+  test("for no token, an unknown, revoked, rotated, or wrong-kind token, and a scope without /authenticate", async () => {
+    for (const [description, send] of await refusals()) {
+      const response = await send();
+      expect({ description, status: response.status }).toEqual({ description, status: 403 });
+      expect({ description, body: await response.text() }).toEqual({ description, body: DENIED });
+    }
+  });
+
+  test("with the hyphenated error-description key, error first, JSON, no WWW-Authenticate", async () => {
+    const response = await getUserinfo();
+    expect(response.status).toBe(403);
+    expect(response.headers.get("content-type")).toBe("application/json;charset=UTF-8");
+    expect(response.headers.get("cache-control")).toBe(
+      "no-cache, no-store, max-age=0, must-revalidate",
+    );
+    expect(response.headers.get("www-authenticate")).toBeNull();
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
+    const text = await response.text();
+    expect(text).toBe('{"error":"access_denied","error-description":"access_token is invalid"}');
+    expect(Object.keys(JSON.parse(text))).toEqual(["error", "error-description"]);
+  });
+
+  test("for an expired token", async () => {
+    const token = await obtainToken(server, { orcid: ids.alder, scope: "openid" });
+    expect((await getUserinfo(`Bearer ${token.access_token}`)).status).toBe(200);
+    // Tokens last 631138519 seconds of server time.
+    await server.admin("POST", "/clock", { advance_seconds: 631138519 });
+    expect(await (await getUserinfo(`Bearer ${token.access_token}`)).text()).toBe(DENIED);
   });
 });

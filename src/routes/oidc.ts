@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { AppEnv } from "../app";
 import { discoveryEndpoint } from "../oidc/discovery";
 import { jwksEndpoint } from "../oidc/jwks";
+import { userinfoEndpoint } from "../oidc/userinfo";
 
 // ORCID's OpenID Connect routes: /.well-known/openid-configuration, /oauth/jwks, and
 // /oauth/userinfo. The router is mounted at the root, so it declares full paths and nothing else.
@@ -12,5 +13,7 @@ export function oidcRoutes(): Hono<AppEnv> {
   const oidc = new Hono<AppEnv>();
   oidc.get("/.well-known/openid-configuration", discoveryEndpoint);
   oidc.get("/oauth/jwks", jwksEndpoint);
+  oidc.get("/oauth/userinfo", userinfoEndpoint);
+  oidc.post("/oauth/userinfo", userinfoEndpoint);
   return oidc;
 }
