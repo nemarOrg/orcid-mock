@@ -115,7 +115,7 @@ MVP2:
 
 1. The website repository forbids mocks by policy; a real ORCID-shaped server on the network is a boundary stand-in like the backend's existing fixtures, but that reading needs the owner's sign-off before a live website test lands.
 2. Staging keeps the real ORCID app for realism; whether a CI-only configuration of the dev worker may point `ORCID_API_BASE` at this server is a separate decision.
-3. Whether the legacy password-plus-typed-ORCID sign-up route in nemar-cli (still live, no CLI caller) is worth supporting or should be removed first.
+3. Whether the legacy password-plus-typed-ORCID sign-up route in nemar-cli (still live, no command-line caller) is worth supporting or should be removed first.
 4. Hosting: Cloudflare Worker with Durable Objects versus a container on nemar infrastructure; the portable HTTP layer keeps both open.
 5. npm publishing after January 2027: npm ends publishing with tokens that bypass two-factor authentication (2FA) then, and its trusted publishing needs the npm command-line tool, which the Bun-only rule excludes (`bun publish` has no OpenID Connect support yet); ADR 0005 records the constraint, and the choice is the owner's before that date.
 

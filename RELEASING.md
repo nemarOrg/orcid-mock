@@ -107,7 +107,7 @@ Do them in this order.
 2. **Repository hardening** (Settings, Advanced Security and Rules):
    turn on secret scanning and push protection, and turn on private vulnerability reporting, which [`SECURITY.md`](SECURITY.md) tells reporters to use;
    add a branch ruleset on `main` that blocks deletion and force pushes, requires a pull request, and requires the CI jobs `check`, `clients`, `binaries`, `docker`, and `e2e`;
-   optionally, under Settings, Actions, General, require actions to be pinned to a full-length commit SHA, which every workflow here already satisfies.
+   optionally, turn on "Require actions to be pinned to a full-length commit SHA" (Settings, Actions, General), which every workflow here already satisfies.
 3. **Dry run.**
    Actions, Release, Run workflow, from `main`, with "dry-run" on.
    Expect green, with notices that the npm token and the PyPI trusted publisher were not checked ([Dry run](#dry-run)).

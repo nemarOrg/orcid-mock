@@ -20,7 +20,7 @@ Repository: public under nemarOrg, MIT.
 - Hono on the standard `fetch` interface, so one build runs as a Bun binary, a container, and a Cloudflare Worker (Architecture Decision Record (ADR) 0001).
 - JSON Web Token (JWT) signing and verification through a maintained `jose`-family library on Web Crypto; never hand-rolled.
 - Storage behind one `Store` interface: in-memory for tests and CI, Durable Objects with a time-to-live for the hosted mode.
-- Workflows pin every third-party action by full commit SHA with a version comment; `actionlint` and zizmor check them (README, Contributing).
+- Workflows pin every third-party action by its full commit hash, with a version comment; `actionlint` and zizmor check them (README, Contributing).
 
 ## Rules
 

@@ -17,7 +17,7 @@ Source: nemar-cli `backend/src/services/orcid-auth.ts`, `backend/src/routes/auth
 - Test stand-ins: every backend test that touches ORCID starts its own `Bun.serve` for the two endpoints above; users are seeded by an admin fixture route that writes the database directly.
   The website has no live ORCID test under its no-mocks policy.
 - Untestable today: the brand-new ORCID sign-up through the command-line device flow, the website's link and relink pages, the pending-account state that only a fresh ORCID sign-up produces.
-- A legacy password-plus-typed-ORCID sign-up route still exists on the backend with no CLI caller.
+- A legacy password-plus-typed-ORCID sign-up route still exists on the backend with no command-line caller.
 
 ## ORCID's real surface
 
