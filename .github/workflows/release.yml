@@ -21,6 +21,9 @@ name: Release
 # To rehearse (every build and check, none of the side effects), run this workflow by hand with
 # "dry-run" on, from any branch. A dry run does not use the "release" environment, so it cannot
 # check the npm token; it says so.
+#
+# The build artifacts are kept 30 days, which is also how long GitHub allows a re-run of a run, so a
+# re-run of the failed jobs always finds them (RELEASING.md).
 on:
   push:
     tags:
@@ -227,7 +230,7 @@ jobs:
             dist/orcid-mock-*
             dist/SHA256SUMS
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 30
 
   smoke-binaries:
     needs: [verify, binaries]
@@ -274,7 +277,7 @@ jobs:
           name: node-dist
           path: node-dist/*.tgz
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 30
 
   # The Python helper's wheel and sdist, built before anything is public and without credentials:
   # the job that holds the PyPI identity only downloads these files, so no build backend runs next
@@ -322,7 +325,7 @@ jobs:
           name: python-dist
           path: clients/python/dist/*
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 30
 
   image:
     needs: [verify, preflight, smoke-binaries, node-dist, pypi-dist]
