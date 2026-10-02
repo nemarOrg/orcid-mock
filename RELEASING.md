@@ -137,8 +137,12 @@ Do them in this order.
    Turn on "Restrict creations", "Restrict updates", and "Restrict deletions".
    Add the Repository admin role to the bypass list, with bypass mode "Always", so that you can push release tags.
    The floating `v1` tag is outside the pattern on purpose, so the `promote` job can move it ([Floating tags](#floating-tags)).
-9. **Optional: the sandbox conformance job.**
-   Create the environment `conformance`, restricted to `main`, with the two sandbox secrets and the repository variable described under [Conformance](README.md#against-the-sandbox) (the variable must name a populated sandbox record), then dispatch the Conformance workflow with `job=sandbox`.
+9. **Optional: the sandbox conformance job** ([Conformance](README.md#against-the-sandbox) describes what it does).
+   Create a GitHub environment named `conformance` (Settings, Environments), with a deployment rule that restricts it to the `main` branch, and store two secrets there, so no other branch can read them: `ORCID_SANDBOX_CLIENT_ID` and `ORCID_SANDBOX_CLIENT_SECRET`, a client registered under Developer tools at `sandbox.orcid.org`.
+   The job names that environment; repository secrets of the same names work too until it exists.
+   Add the repository variable `ORCID_SANDBOX_PUBLIC_ID`: the iD of a sandbox record with a public name, and ideally some public works and employments, so item shapes are checked too.
+   Then dispatch the Conformance workflow with `job=sandbox`.
+   Until all three exist, the job prints a warning naming what is missing and succeeds without running.
 10. **Tag `v1.0.0` on the merge commit and push it:** `git switch main && git pull && git tag v1.0.0 && git push origin v1.0.0`.
     Approve the `release` environment twice (before `preflight` and before `npm`), and watch the `pypi` and `promote` jobs.
 11. **After the release:**

@@ -749,13 +749,8 @@ Nothing in CI uses `CONFORMANCE_ANONYMOUS_ONLY`.
 
 The sandbox half runs weekly (Mondays, 05:23 UTC) and on demand from [`conformance.yml`](.github/workflows/conformance.yml), job `sandbox`; a manual run has an input `job` (`sandbox`, `services-smoke`, or `both`, default `sandbox`).
 The job does not require items, and appends the items each read checked to the job summary.
-**The repository owner sets up** the job once:
-
-- Create a GitHub environment named `conformance` (Settings, Environments), with a deployment rule that restricts it to the `main` branch, and store the two secrets there, so no other branch can read them: `ORCID_SANDBOX_CLIENT_ID` and `ORCID_SANDBOX_CLIENT_SECRET`, a client registered under Developer tools at `sandbox.orcid.org`.
-  The job names that environment; repository secrets of the same names work too until it exists.
-- Add the repository variable `ORCID_SANDBOX_PUBLIC_ID`: the iD of a sandbox record with a public name, and ideally some public works and employments, so item shapes are checked too.
-
-Until all three exist, the job prints a `::warning::` naming what is missing, writes the same to the job summary, and succeeds without running, so a skip is visible and not silent.
+The job needs a sandbox client and a public sandbox record, which the repository owner configures once ([`RELEASING.md`](RELEASING.md#owner-checklist-for-100), item 9).
+Until they exist, the job prints a `::warning::` naming what is missing, writes the same to the job summary, and succeeds without running, so a skip is visible and not silent.
 A failing case on the sandbox means the mock is wrong about ORCID or ORCID changed: find out which, and fix the mock or the assertion, never by weakening the check to pass.
 
 ### Sign-in is checked on the mock only

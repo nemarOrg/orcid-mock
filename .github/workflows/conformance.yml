@@ -36,8 +36,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # The sandbox client's secrets live in this environment, which the owner restricts to main
-    # (README, Conformance), so a branch cannot read them. Repository secrets of the same names
-    # work until it exists.
+    # (RELEASING.md, owner checklist), so a branch cannot read them. Repository secrets of the same
+    # names work until it exists.
     environment: conformance
     permissions:
       contents: read
@@ -60,7 +60,7 @@ jobs:
           if [ "${#missing[@]}" -gt 0 ]; then
             printf -v list '%s, ' "${missing[@]}"
             list="${list%, }"
-            echo "::warning title=Sandbox conformance skipped::Not run. Missing: ${list}. See the Conformance section of the README."
+            echo "::warning title=Sandbox conformance skipped::Not run. Missing: ${list}. See the owner checklist in RELEASING.md."
             {
               echo "### Sandbox conformance skipped"
               echo
