@@ -7,6 +7,6 @@ revalidate_after: 2027-01-02
 ---
 
 `bun test --coverage` (Bun 1.4.2) instruments only the test runner's own process.
-Code that runs inside a child started with `Bun.spawn` (for example `bun src/main.ts serve` in `tests/cli.test.ts`) is never counted, so `src/main.ts`, parts of `src/server.ts`, and `src/log.ts` show low coverage although tests exercise them.
+Code that runs inside a child process (the command-line tests start `bun src/main.ts` through `spawnMain` in `tests/harness.ts`) is never counted: `src/main.ts` does not appear in the report at all, and `src/server.ts` and `src/log.ts` read as partly covered although tests exercise them.
 That is why route tests start the real server in-process through `tests/harness.ts` (`startServer({ port: 0 })`), and only the command-line tests spawn the binary.
 Verified while building phase 1 of epic #1; stale if a Bun release adds child-process coverage.
