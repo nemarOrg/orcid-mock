@@ -25,6 +25,48 @@ async function stillHealthy(): Promise<void> {
   expect(health.body.status).toBe("ok");
 }
 
+const TOKEN_FORM = new URLSearchParams({
+  grant_type: "client_credentials",
+  client_id: CLIENTS.public.client_id,
+  client_secret: CLIENTS.public.client_secret,
+}).toString();
+
+/**
+ * A POST to /oauth/token whose body is exactly `size` bytes: a valid client-credentials form,
+ * padded with one more parameter. `chunked` sends it as a stream, with no `Content-Length`.
+ * Resolves with the status, or `{ closed: true }` when the server cut the connection.
+ */
+async function tokenRequestOfSize(
+  size: number,
+  opts: { chunked?: boolean } = {},
+): Promise<{ status: number } | { closed: true }> {
+  const prefix = `${TOKEN_FORM}&padding=`;
+  const body = prefix + "a".repeat(size - prefix.length);
+  const encoded = new TextEncoder().encode(body);
+  const payload = opts.chunked
+    ? new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (let at = 0; at < encoded.length; at += 65_536) {
+            controller.enqueue(encoded.slice(at, at + 65_536));
+          }
+          controller.close();
+        },
+      })
+    : encoded;
+  try {
+    const response = await fetch(`${server.baseUrl}/oauth/token`, {
+      method: "POST",
+      headers: FORM,
+      body: payload,
+      ...(opts.chunked ? { duplex: "half" } : {}),
+    } as RequestInit);
+    await response.arrayBuffer();
+    return { status: response.status };
+  } catch {
+    return { closed: true };
+  }
+}
+
 describe("a body above the limit is a 413 and the server carries on", () => {
   test("the limit is 8 MiB", () => {
     expect(MAX_REQUEST_BODY_BYTES).toBe(8 * MIB);
@@ -53,6 +95,22 @@ describe("a body above the limit is a 413 and the server carries on", () => {
     await stillHealthy();
     // Nothing was created.
     expect((await server.admin<unknown[]>("GET", "/users")).body).toHaveLength(before);
+  });
+
+  test("exactly 8 MiB reaches the app, and one byte more is refused", async () => {
+    const exact = await tokenRequestOfSize(MAX_REQUEST_BODY_BYTES);
+    // The app answered: a client-credentials grant for the public client.
+    expect(exact).toEqual({ status: 200 });
+    expect(await tokenRequestOfSize(MAX_REQUEST_BODY_BYTES + 1)).toEqual({ status: 413 });
+    await stillHealthy();
+  });
+
+  test("a chunked upload above the limit is refused too: a 413, or a closed connection", async () => {
+    const over = await tokenRequestOfSize(MAX_REQUEST_BODY_BYTES + 1, { chunked: true });
+    expect([{ status: 413 }, { closed: true }]).toContainEqual(over);
+    const exact = await tokenRequestOfSize(MAX_REQUEST_BODY_BYTES, { chunked: true });
+    expect(exact).toEqual({ status: 200 });
+    await stillHealthy();
   });
 
   test("a body just under the limit is read, and the app answers it", async () => {

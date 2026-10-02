@@ -43,7 +43,7 @@ A refresh can still ask for a narrower `scope`, and a refusal revokes nothing.
 Membership is therefore not stored on a token: the `member` field of `TokenRecord` is removed, an interface change to the `Store` made before 1.0, and the store contract suite no longer sets it.
 
 **Also decided in the same review.**
-A request body above 8 MiB is answered `413` by the socket before the app sees it (Bun's default is 128 MiB).
+A request body above 8 MiB is refused (413, or a closed connection for chunked uploads) by the socket before the app sees it (Bun's default is 128 MiB).
 The sign-in errors of `login_as` and the consent form put `error_description` first, like the other `invalid_request` errors of `/oauth/authorize`, and stay UTF-8 because they echo the iD the caller sent, which ISO-8859-1 cannot carry.
 
 ## Consequences
