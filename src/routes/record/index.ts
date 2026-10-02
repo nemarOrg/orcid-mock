@@ -20,12 +20,12 @@ import {
   researcherUrls,
 } from "../../record/person";
 import { record as recordBody } from "../../record/record";
-import type { ItemLookup } from "../../record/wire";
 import { bulkWorks, workItem, works } from "../../record/works";
 import {
+  itemRoute,
   methodNotAllowedResponse,
   optionsResponse,
-  type ReadContext,
+  type PutCodeConversion,
   type RecordEnv,
   readRoute,
   recordMiddleware,
@@ -34,39 +34,6 @@ import {
 /** `/:id<tail>` and the same with a trailing slash, which ORCID serves for every read path. */
 function withSlash(tail: string): string[] {
   return [`/:id${tail}`, `/:id${tail}/`];
-}
-
-/**
- * A single-item read, for a route registered with `putCode` (the path's put-code is read, and a
- * non-number answered, before the record's state is checked): an item that is not in this
- * section of this record is 404 / 9016, one the viewer may not see is 403 / 9039.
- */
-function itemRead(read: ReadContext, lookup: (putCode: number) => ItemLookup): Response {
-  const found = lookup(read.putCode as number);
-  switch (found.kind) {
-    case "ok":
-      return read.send(found.json);
-    case "hidden":
-      return read.fail(ORCID_API_ERRORS.notPublic);
-    case "bad-request":
-      return read.fail(ORCID_API_ERRORS.badRequest(found.detail));
-    case "missing":
-      return read.fail(ORCID_API_ERRORS.notFound);
-  }
-}
-
-/** The kinds whose put-code ORCID converts in the path declaration (see `PutCodeConversion`). */
-const PATH_LONG_KINDS = new Set(["/work", "/funding", "/education", "/employment", "/peer-review"]);
-
-/** `/:id<tail>/:pc` (and a trailing slash): a single-item read with its put-code converted first. */
-function itemRoute(
-  app: Hono<RecordEnv>,
-  tail: string,
-  lookup: (read: ReadContext, putCode: number) => ItemLookup,
-): void {
-  readRoute(app, withSlash(`${tail}/:pc`), (r) => itemRead(r, (putCode) => lookup(r, putCode)), {
-    putCode: PATH_LONG_KINDS.has(tail) ? "path" : "method",
-  });
 }
 
 export function recordRoutes(): Hono<RecordEnv> {
@@ -98,6 +65,9 @@ export function recordRoutes(): Hono<RecordEnv> {
     }
   });
 
+  // Each item route names where ORCID converts its put-code (see `PutCodeConversion`): work,
+  // funding, education, employment, and peer-review declare a number in the path, every other
+  // kind converts a string in the method.
   const lists = [
     ["/address", addresses],
     ["/other-names", otherNames],
@@ -107,33 +77,37 @@ export function recordRoutes(): Hono<RecordEnv> {
   ] as const;
   for (const [segment, section] of lists) {
     readRoute(record, withSlash(segment), (r) => r.send(section.container(r.user, r.viewer).json));
-    itemRoute(record, segment, (r, putCode) => section.item(r.user, r.viewer, putCode));
+    itemRoute(record, segment, "method", (r, putCode) => section.item(r.user, r.viewer, putCode));
   }
 
   // The seven affiliation sections. A fixture has items for employments, educations, and
   // qualifications only, so the other four are always empty, but they have item routes too: ORCID
   // routes them (and `research-resource/{pc}`), checks the record, and answers 404 / 9016.
   const sections = [
-    ["/employments", "employment"],
-    ["/educations", "education"],
-    ["/qualifications", "qualification"],
-    ["/distinctions", "distinction"],
-    ["/invited-positions", "invited-position"],
-    ["/memberships", "membership"],
-    ["/services", "service"],
-  ] as const satisfies ReadonlyArray<readonly [string, AffiliationKind]>;
-  for (const [segment, kind] of sections) {
+    ["/employments", "employment", "path"],
+    ["/educations", "education", "path"],
+    ["/qualifications", "qualification", "method"],
+    ["/distinctions", "distinction", "method"],
+    ["/invited-positions", "invited-position", "method"],
+    ["/memberships", "membership", "method"],
+    ["/services", "service", "method"],
+  ] as const satisfies ReadonlyArray<readonly [string, AffiliationKind, PutCodeConversion]>;
+  for (const [segment, kind, conversion] of sections) {
     readRoute(record, withSlash(segment), (r) => r.send(affiliations(r.user, r.viewer, kind).json));
-    itemRoute(record, `/${kind}`, (r, putCode) => affiliationItem(r.user, r.viewer, kind, putCode));
+    itemRoute(record, `/${kind}`, conversion, (r, putCode) =>
+      affiliationItem(r.user, r.viewer, kind, putCode),
+    );
   }
-  itemRoute(record, "/research-resource", () => ({ kind: "missing" }));
+  itemRoute(record, "/research-resource", "method", () => ({ kind: "missing" }));
 
   readRoute(record, withSlash("/fundings"), (r) => r.send(fundings(r.user, r.viewer).json));
-  itemRoute(record, "/funding", (r, putCode) => fundingItem(r.user, r.viewer, putCode));
+  itemRoute(record, "/funding", "path", (r, putCode) => fundingItem(r.user, r.viewer, putCode));
   readRoute(record, withSlash("/peer-reviews"), (r) => r.send(peerReviews(r.user, r.viewer).json));
-  itemRoute(record, "/peer-review", (r, putCode) => peerReviewItem(r.user, r.viewer, putCode));
+  itemRoute(record, "/peer-review", "path", (r, putCode) =>
+    peerReviewItem(r.user, r.viewer, putCode),
+  );
   readRoute(record, withSlash("/works"), (r) => r.send(works(r.user, r.viewer).json));
-  itemRoute(record, "/work", (r, putCode) => workItem(r.user, r.viewer, putCode));
+  itemRoute(record, "/work", "path", (r, putCode) => workItem(r.user, r.viewer, putCode));
   // Bulk checks only that the record exists (`existsOnly`), so a deprecated, locked, or
   // deactivated record is read like any other (observed for a deprecated one).
   readRoute(

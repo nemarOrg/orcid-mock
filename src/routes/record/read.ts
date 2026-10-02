@@ -17,6 +17,7 @@ import { type Negotiated, negotiate } from "../../record/negotiate";
 import { parseJavaLong } from "../../record/putcode";
 import { type Blocked, blockedBy, existsOnly } from "../../record/status";
 import { type Viewer, viewerFor } from "../../record/viewer";
+import type { ItemLookup } from "../../record/wire";
 import type { StoredUser, TokenRecord } from "../../store/types";
 
 export type RecordEnv = {
@@ -84,8 +85,6 @@ export interface ReadContext {
   negotiated: Negotiated;
   /** The valid token the request presented, or null. */
   token: TokenRecord | null;
-  /** The put-code in the path (`:pc`), for a route registered with `putCode`; else null. */
-  putCode: number | null;
   /** A 200 with the body in the negotiated style and `Content-Type`. */
   send(body: Json): Response;
   /** An ORCID error in the negotiated style and `Content-Type`. */
@@ -132,18 +131,25 @@ function blockedSpec(
   }
 }
 
+type Fail = (spec: OrcidApiErrorSpec, headers?: Record<string, string>) => Response;
+
+/** What a route's `prepare` step hands the handler, or the response that ends the request. */
+type Prepared<A> = { ok: true; value: A } | { ok: false; response: Response };
+
 /**
  * Registers a read route for each of `paths` and answers the other methods the way ORCID does:
- * GET (and HEAD, which Hono serves from GET) goes to `handler`; OPTIONS is a 200 with an
+ * GET (and HEAD, which Hono serves from GET) is handled by `handler`; OPTIONS is a 200 with an
  * `Allow` header; any other method is 405 / 9001 with no Content-Type (observed).
- * Order for GET: `Accept` negotiation (406), then the record's state (404, 301, 409; bulk works
- * checks only that the record exists), then the handler.
+ * Order for GET: `Accept` negotiation (406), then `prepare` (the put-code of an item route), then
+ * the record's state (404, 301, 409; bulk works checks only that the record exists), then the
+ * handler.
  */
-export function readRoute(
+function serve<A>(
   app: Hono<RecordEnv>,
   paths: string[],
-  handler: ReadHandler,
-  opts: { existsOnly?: boolean; putCode?: PutCodeConversion } = {},
+  opts: { existsOnly?: boolean },
+  prepare: (c: RecordContext, fail: Fail) => Prepared<A>,
+  handler: (read: ReadContext, arg: A) => Response | Promise<Response>,
 ): void {
   const read = async (c: RecordContext): Promise<Response> => {
     const accept = c.req.header("accept");
@@ -155,30 +161,15 @@ export function readRoute(
 
     const deps = c.get("deps");
     const baseUrl = deps.config.publicBaseUrl;
-    const fail = (spec: OrcidApiErrorSpec, headers?: Record<string, string>): Response =>
+    const fail: Fail = (spec, headers) =>
       orcidApiError(c, spec, {
         contentType: negotiated.contentType,
         pretty: negotiated.pretty,
         ...(headers === undefined ? {} : { headers }),
       });
 
-    // The put-code is read before the record's state is checked, so a non-number is answered even
-    // for an unknown, deprecated, or locked record. How it is answered depends on where ORCID
-    // converts it (see `PutCodeConversion`); both were observed on pub.orcid.org/v3.0 on
-    // 2026-10-01.
-    let putCode: number | null = null;
-    if (opts.putCode !== undefined) {
-      const raw = c.req.param("pc") ?? "";
-      const parsed = parseJavaLong(raw);
-      if (parsed === null) {
-        return fail(
-          opts.putCode === "path"
-            ? ORCID_API_ERRORS.unroutedPutCode(raw)
-            : ORCID_API_ERRORS.badPutCode(raw),
-        );
-      }
-      putCode = Number(parsed);
-    }
+    const prepared = prepare(c, fail);
+    if (!prepared.ok) return prepared.response;
 
     const orcid = c.req.param("id") ?? "";
     const user = await deps.store.getUser(orcid);
@@ -189,19 +180,21 @@ export function readRoute(
     }
 
     const token = c.get("token") ?? null;
-    return handler({
-      c,
-      user,
-      viewer: viewerFor(token, user, baseUrl),
-      negotiated,
-      token,
-      putCode,
-      send: (body) =>
-        c.body(negotiated.pretty ? prettyJson(body) : compactJson(body), 200, {
-          "Content-Type": negotiated.contentType,
-        }),
-      fail,
-    });
+    return handler(
+      {
+        c,
+        user,
+        viewer: viewerFor(token, user, baseUrl),
+        negotiated,
+        token,
+        send: (body) =>
+          c.body(negotiated.pretty ? prettyJson(body) : compactJson(body), 200, {
+            "Content-Type": negotiated.contentType,
+          }),
+        fail,
+      },
+      prepared.value,
+    );
   };
 
   for (const path of paths) {
@@ -209,6 +202,68 @@ export function readRoute(
     app.options(path, optionsResponse);
     app.all(path, methodNotAllowedResponse);
   }
+}
+
+/** A read route with nothing to read from the path but the iD (see `serve` for the order). */
+export function readRoute(
+  app: Hono<RecordEnv>,
+  paths: string[],
+  handler: ReadHandler,
+  opts: { existsOnly?: boolean } = {},
+): void {
+  serve(
+    app,
+    paths,
+    opts,
+    () => ({ ok: true, value: undefined }),
+    (read) => handler(read),
+  );
+}
+
+/**
+ * A single-item route, `/:id<tail>/:pc` and the same with a trailing slash. The put-code is read
+ * before the record's state is checked, so a non-number is answered even for an unknown,
+ * deprecated, or locked record; how it is answered is `conversion`, which each caller names
+ * (both observed on pub.orcid.org/v3.0 on 2026-10-01). Then `lookup` answers: an item that is not
+ * in this section of this record is 404 / 9016, one the viewer may not see is 403 / 9039.
+ */
+export function itemRoute(
+  app: Hono<RecordEnv>,
+  tail: string,
+  conversion: PutCodeConversion,
+  lookup: (read: ReadContext, putCode: number) => ItemLookup,
+): void {
+  serve(
+    app,
+    [`/:id${tail}/:pc`, `/:id${tail}/:pc/`],
+    {},
+    (c, fail) => {
+      const raw = c.req.param("pc") ?? "";
+      const parsed = parseJavaLong(raw);
+      if (parsed !== null) return { ok: true, value: Number(parsed) };
+      return {
+        ok: false,
+        response: fail(
+          conversion === "path"
+            ? ORCID_API_ERRORS.unroutedPutCode(raw)
+            : ORCID_API_ERRORS.badPutCode(raw),
+        ),
+      };
+    },
+    (read, putCode) => {
+      const found = lookup(read, putCode);
+      switch (found.kind) {
+        case "ok":
+          return read.send(found.json);
+        case "hidden":
+          return read.fail(ORCID_API_ERRORS.notPublic);
+        case "bad-request":
+          return read.fail(ORCID_API_ERRORS.badRequest(found.detail));
+        case "missing":
+          return read.fail(ORCID_API_ERRORS.notFound);
+      }
+    },
+  );
 }
 
 /**
