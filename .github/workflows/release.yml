@@ -5,12 +5,15 @@ name: Release
 # is pushed, published, released, or tagged from anywhere else.
 #
 # Order, so that a failure leaves nothing public and a re-run converges:
-#   verify            tag, version, and Action default agree; lint, typecheck, tests
+#   verify            tag, version, the helpers' versions, and Action default agree; lint, typecheck, tests
 #   preflight         the NPM_TOKEN secret exists and npm accepts it (real runs only)
 #   binaries, smoke   build every binary once, run it on each kind of runner (gating)
+#   node-dist,        build the two helpers' packages (the Node tarball, the Python wheel and sdist),
+#   pypi-dist         gating, in jobs that hold no credentials
 #   image             build and smoke-test the image BEFORE pushing; then push only the exact tag,
 #                     smoke-test what was pushed, and attest it. The first public effect.
-#   npm               publish, unless this version is already there
+#   npm               publish the server and the Node helper, each unless its version is already there
+#   pypi              publish the Python helper through PyPI trusted publishing, unless already there
 #   release           create or update the GitHub Release, upload the binaries again with --clobber
 #   promote           move latest, MAJOR, MAJOR.MINOR and the Action's v<major> tag, but only
 #                     forward: never to a version that is not the highest in its scope
@@ -111,6 +114,23 @@ jobs:
             fail "action.yml defaults version to '${action_default}' but package.json is major ${major} (${version}). Make them agree before releasing: the Action's default image tag is its own major."
           fi
 
+          # The client helpers are released in lockstep with the server (ADR 0008): the Node
+          # helper's version and the Python helper's version are the tag's, character for character,
+          # since a helper's default image tag is its own version.
+          node_helper="$(bun -e 'console.log(require("./clients/node/package.json").version)')"
+          python_helper="$(bun -e 'console.log(Bun.TOML.parse(await Bun.file("clients/python/pyproject.toml").text()).project.version)')"
+          if [ "${node_helper}" != "${version}" ]; then
+            fail "clients/node/package.json is version '${node_helper}' but package.json is '${version}'. The helpers are released in lockstep: bump them together."
+          fi
+          if [ "${python_helper}" != "${version}" ]; then
+            fail "clients/python/pyproject.toml is version '${python_helper}' but package.json is '${version}'. The helpers are released in lockstep: bump them together."
+          fi
+          # PEP 440 has no spelling for an arbitrary semantic-version prerelease: only these three
+          # forms survive the trip (1.2.3-rc.1 is 1.2.3rc1 on PyPI, and the helper maps it back).
+          if [ "${prerelease}" = true ] && ! [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[0-9]+$ ]]; then
+            fail "Prerelease '${version}' cannot be released: the Python helper needs a PEP 440 form, so use -alpha.N, -beta.N, or -rc.N."
+          fi
+
           # Whether this release is the highest stable version, which decides the "latest" mark on
           # the GitHub Release. The promote job asks again, with the tags as they are by then.
           moves="$(git tag --list | bun scripts/floating-tags.ts --version "${version}")"
@@ -129,6 +149,17 @@ jobs:
       - run: bun run lint
       - run: bun run typecheck
       - run: bun run test
+      # The helpers' own gates (lint, types, tests against a container) run in CI's clients job on
+      # every push; here the lockfile, and below the builds, before anything is public.
+      # Bumping clients/python/pyproject.toml without `uv lock` leaves uv.lock stale, and the
+      # published files and the lockfile would then disagree about the version.
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.15"
+          enable-cache: false
+      - name: The Python helper's lockfile is current
+        working-directory: clients/python
+        run: uv lock --check
 
   # Before anything is public: is there a token, and does npm accept it? The secret lives in the
   # "release" environment (restricted to v*.*.* tags, with a required reviewer), which a dry run
@@ -206,8 +237,95 @@ jobs:
     with:
       version: ${{ needs.verify.outputs.version }}
 
+  # The Node helper's tarball: compiled JavaScript and declarations, built before anything is public
+  # and without credentials. The npm job, which holds the token, only publishes this file.
+  node-dist:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+          no-cache: true
+      - name: Build the Node helper
+        working-directory: clients/node
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+      - name: Pack it, and check the tarball carries the version being released
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        working-directory: clients/node
+        run: |
+          set -euo pipefail
+          mkdir -p ../../node-dist
+          bun pm pack --destination ../../node-dist
+          ls -l ../../node-dist
+          test -f "../../node-dist/nemarorg-orcid-mock-testing-${VERSION}.tgz"
+          test "$(find ../../node-dist -type f | wc -l)" -eq 1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: node-dist
+          path: node-dist/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+  # The Python helper's wheel and sdist, built before anything is public and without credentials:
+  # the job that holds the PyPI identity only downloads these files, so no build backend runs next
+  # to it.
+  pypi-dist:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.15"
+          enable-cache: false
+      - name: Build the wheel and the source distribution
+        working-directory: clients/python
+        run: uv build
+      - name: The files carry the version being released
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        working-directory: clients/python
+        run: |
+          set -euo pipefail
+          ls -l dist
+          # PEP 440 normalizes 1.2.3-rc.1 to 1.2.3rc1 in the file names (the verify job allows
+          # only the -alpha.N, -beta.N, and -rc.N forms).
+          normalized="${VERSION}"
+          if [[ "${VERSION}" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-(alpha|beta|rc)\.([0-9]+)$ ]]; then
+            case "${BASH_REMATCH[2]}" in
+              alpha) word=a ;;
+              beta) word=b ;;
+              rc) word=rc ;;
+            esac
+            normalized="${BASH_REMATCH[1]}${word}${BASH_REMATCH[3]}"
+          fi
+          test -f "dist/orcid_mock_testing-${normalized}-py3-none-any.whl"
+          test -f "dist/orcid_mock_testing-${normalized}.tar.gz"
+          test "$(find dist -type f | wc -l)" -eq 2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: python-dist
+          path: clients/python/dist/*
+          if-no-files-found: error
+          retention-days: 7
+
   image:
-    needs: [verify, preflight, smoke-binaries]
+    needs: [verify, preflight, smoke-binaries, node-dist, pypi-dist]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -365,7 +483,7 @@ jobs:
           push-to-registry: true
 
   npm:
-    needs: [verify, image]
+    needs: [verify, image, node-dist]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: ${{ needs.verify.outputs.dry-run != 'true' && 'release' || '' }}
@@ -379,8 +497,14 @@ jobs:
         with:
           bun-version-file: package.json
           no-cache: true
-      # No install: bun publish packs the files the package lists, and runs nothing from it.
-      - name: Publish to npm, unless this version is already there
+      # The Node helper's tarball was built, with its compiled files, by the node-dist job.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: node-dist
+          path: node-dist
+      # No install: for the server, bun publish packs the files the package lists and runs nothing
+      # from it; for the helper, it uploads the tarball as it is.
+      - name: Publish the server and the Node helper to npm, unless each version is already there
         env:
           # bun reads this variable. The token is checked in the preflight job.
           NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -392,20 +516,70 @@ jobs:
           flags=(--access public)
           # A prerelease must not become the version that gets the default dist-tag.
           if [ "${PRERELEASE}" = true ]; then flags+=(--tag next); fi
+
+          # Each package is published, or skipped, on its own, so a re-run after a failure between
+          # the two finishes the job. The Node helper's default image tag is its own version, and
+          # the image job has already pushed that tag. The optional argument is a tarball.
+          publish() {
+            local name="$1"
+            shift
+            if [ "${DRY_RUN}" = true ]; then
+              bun publish "$@" "${flags[@]}" --dry-run
+              return
+            fi
+            # npm never lets a version be published twice, so a re-run after a later job failed
+            # must not try.
+            if bun pm view "${name}@${VERSION}" version > /dev/null 2>&1; then
+              echo "::notice title=npm::${name}@${VERSION} is already published; nothing to do."
+              return
+            fi
+            bun publish "$@" "${flags[@]}"
+          }
+          publish "@nemarorg/orcid-mock"
+          publish "@nemarorg/orcid-mock-testing" "node-dist/nemarorg-orcid-mock-testing-${VERSION}.tgz"
+
+  # The Python helper, through PyPI trusted publishing: no stored token, the job's OpenID Connect
+  # identity is the credential. The PyPI project must name this repository, this workflow, and the
+  # "pypi" environment as a trusted publisher (see "Releasing" in the README). The job only uploads
+  # the files pypi-dist built.
+  pypi:
+    needs: [verify, image, pypi-dist]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ needs.verify.outputs.dry-run != 'true' && 'pypi' || '' }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.15"
+          enable-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: python-dist
+          path: dist
+      - name: Publish to PyPI, skipping files that are already there
+        env:
+          DRY_RUN: ${{ needs.verify.outputs.dry-run }}
+        run: |
+          set -euo pipefail
+          ls -l dist
           if [ "${DRY_RUN}" = true ]; then
-            bun publish "${flags[@]}" --dry-run
+            # A dry run uses no environment, so it cannot be a trusted publisher: it only checks
+            # the files.
+            echo "::notice title=Dry run::A dry run does not use the pypi environment, so whether PyPI trusts this workflow is NOT checked. The files are."
+            uv publish --dry-run --trusted-publishing never dist/*
             exit 0
           fi
-          # npm never lets a version be published twice, so a re-run after a later job failed must
-          # not try.
-          if bun pm view "@nemarorg/orcid-mock@${VERSION}" version > /dev/null 2>&1; then
-            echo "::notice title=npm::@nemarorg/orcid-mock@${VERSION} is already published; nothing to do."
-            exit 0
-          fi
-          bun publish "${flags[@]}"
+          # --check-url takes the index root: uv appends the project name itself (a URL that
+          # already ends in the project name would be asked about /simple/<name>/<name>/, find
+          # nothing, and skip nothing). It skips a file the index already has, so a re-run after a
+          # later job failed finishes instead of failing on a second upload of the same version.
+          uv publish --trusted-publishing always --check-url https://pypi.org/simple/ dist/*
 
   release:
-    needs: [verify, image, npm]
+    needs: [verify, image, npm, pypi]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:

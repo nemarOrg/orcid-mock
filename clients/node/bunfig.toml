@@ -2,8 +2,3 @@
 # Refuse package versions published less than seven days ago, so a freshly compromised release
 # cannot reach a developer machine or CI before the community has had time to catch it.
 minimumReleaseAge = 604800
-
-[test]
-# The server's own tests only: the client helpers under clients/ have their own packages, and their
-# tests need Docker and a browser (they run in the CI "clients" job).
-root = "tests"
