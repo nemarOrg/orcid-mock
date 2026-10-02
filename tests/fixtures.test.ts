@@ -172,7 +172,6 @@ describe("put-codes and stamps", () => {
       4_242,
     );
     const user = snapshot.users[0];
-    expect(snapshot.loaded_ms).toBe(4_242);
     for (const dated of [user?.name, user?.biography, user?.emails?.[0], user?.keywords?.[0]]) {
       expect(dated).toMatchObject({ created_ms: 4_242, modified_ms: 4_242 });
     }

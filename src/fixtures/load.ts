@@ -176,7 +176,6 @@ export function parseUsersFile(input: unknown, nowMs: number): LoadResult {
       clients: file.clients.map(normalizeClient),
       next_put_code: counter,
       next_mint_seq: 1,
-      loaded_ms: nowMs,
     },
   };
 }

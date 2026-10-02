@@ -1,15 +1,17 @@
 // The in-memory Store: ephemeral by construction, one instance per tenant.
 // Every value is structuredClone'd on the way in and on the way out, so a caller that mutates
 // what it holds never changes stored state. No work happens at module scope.
-import type {
-  AuthCode,
-  Session,
-  SigningKey,
-  Snapshot,
-  Store,
-  StoredClient,
-  StoredUser,
-  TokenRecord,
+import {
+  type AuthCode,
+  ClockRangeError,
+  MAX_DATE_MS,
+  type Session,
+  type SigningKey,
+  type Snapshot,
+  type Store,
+  type StoredClient,
+  type StoredUser,
+  type TokenRecord,
 } from "./types";
 
 const EMPTY_BASELINE: Snapshot = {
@@ -17,7 +19,6 @@ const EMPTY_BASELINE: Snapshot = {
   clients: [],
   next_put_code: 1000,
   next_mint_seq: 1,
-  loaded_ms: 0,
 };
 
 export class MemoryStore implements Store {
@@ -146,9 +147,14 @@ export class MemoryStore implements Store {
 
   async advanceClock(seconds: number): Promise<number> {
     if (!Number.isFinite(seconds) || seconds < 0) {
-      throw new RangeError("advanceClock expects a finite, non-negative number of seconds");
+      throw new ClockRangeError("advanceClock expects a finite, non-negative number of seconds");
     }
-    this.#clockOffsetMs += seconds * 1000;
+    const next = this.#clockOffsetMs + seconds * 1000;
+    // Date.now() + offset must stay a valid Date, or every expiry computation turns into NaN.
+    if (!Number.isFinite(next) || Date.now() + next > MAX_DATE_MS) {
+      throw new ClockRangeError("advanceClock would move the clock past the end of the Date range");
+    }
+    this.#clockOffsetMs = next;
     return this.#clockOffsetMs;
   }
 
@@ -156,8 +162,10 @@ export class MemoryStore implements Store {
     return this.#signingKey ? structuredClone(this.#signingKey) : null;
   }
 
-  async putSigningKey(key: SigningKey): Promise<void> {
-    this.#signingKey = structuredClone(key);
+  async putSigningKeyIfAbsent(key: SigningKey): Promise<SigningKey> {
+    // No await between the check and the write, so the first caller wins atomically.
+    this.#signingKey ??= structuredClone(key);
+    return structuredClone(this.#signingKey);
   }
 
   async setBaseline(snapshot: Snapshot): Promise<void> {

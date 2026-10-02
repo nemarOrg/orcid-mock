@@ -74,7 +74,6 @@ export interface AuthCode {
   orcid: string;
   scopes: ScopeName[];
   redirect_uri: string;
-  state_present: boolean;
   nonce: string | null;
   auth_time_ms: number;
   amr: string | null;
@@ -116,7 +115,14 @@ export interface Snapshot {
   clients: StoredClient[];
   next_put_code: number;
   next_mint_seq: number;
-  loaded_ms: number;
+}
+
+/** The largest time value a `Date` can hold, in epoch milliseconds. */
+export const MAX_DATE_MS = 8.64e15;
+
+/** A clock advance that is negative, not finite, or beyond the `Date` range. */
+export class ClockRangeError extends RangeError {
+  override name = "ClockRangeError";
 }
 
 export interface Store {
@@ -156,11 +162,18 @@ export interface Store {
   nextMintSeq(): Promise<number>;
 
   clockOffsetMs(): Promise<number>;
-  /** Rejects a negative or non-finite number of seconds; returns the new offset. */
+  /**
+   * Rejects (with a ClockRangeError) a negative or non-finite number of seconds, and any advance
+   * that would push `Date.now() + offset` past the end of the `Date` range; returns the new offset.
+   */
   advanceClock(seconds: number): Promise<number>;
 
   getSigningKey(): Promise<SigningKey | null>;
-  putSigningKey(key: SigningKey): Promise<void>;
+  /**
+   * Stores `key` only when no key exists, and returns whichever key is stored, so that two
+   * concurrent first uses agree on one winner.
+   */
+  putSigningKeyIfAbsent(key: SigningKey): Promise<SigningKey>;
 
   /** Records the snapshot as the baseline and applies it, as `reset()` would. */
   setBaseline(snapshot: Snapshot): Promise<void>;
