@@ -294,6 +294,29 @@ describe("the id_token", () => {
     expect(claims.auth_time as number).toBeLessThanOrEqual(claims.iat as number);
   });
 
+  test("auth_time is the sign-in, not the exchange: a silent re-authorization keeps it", async () => {
+    const first = await authorizeAs(server, { orcid: ids.alder, scope: "openid" });
+    expect(first.cookie).not.toBeNull();
+    const firstToken = (await exchangeCode(server, { code: first.code })).json as unknown as {
+      id_token: string;
+    };
+    // Long enough for a whole second to pass, so a clock read at the exchange would differ.
+    await Bun.sleep(1200);
+    const second = await authorizeAs(server, {
+      orcid: ids.alder,
+      scope: "openid",
+      prompt: "none",
+      cookie: first.cookie as string,
+    });
+    const secondToken = (await exchangeCode(server, { code: second.code })).json as unknown as {
+      id_token: string;
+    };
+    const one = JSON.parse(jwtParts(firstToken.id_token).payload) as Record<string, number>;
+    const two = JSON.parse(jwtParts(secondToken.id_token).payload) as Record<string, number>;
+    expect(two.auth_time).toBe(one.auth_time as number);
+    expect(two.auth_time as number).toBeLessThan(two.iat as number);
+  });
+
   test("lasts 24 hours", async () => {
     const token = await openidToken({ orcid: ids.alder });
     const claims = JSON.parse(jwtParts(token.id_token).payload) as { exp: number; iat: number };
