@@ -19,8 +19,9 @@ name: Release
 #                     forward: never to a version that is not the highest in its scope
 #
 # To rehearse (every build and check, none of the side effects), run this workflow by hand with
-# "dry-run" on, from any branch. A dry run does not use the "release" environment, so it cannot
-# check the npm token; it says so.
+# "dry-run" on; GitHub offers the button only once this file is on main. A dry run does not use the
+# "release" or "pypi" environments, so it cannot check the npm token or the PyPI trusted
+# publisher; it says so.
 #
 # The build artifacts are kept 30 days, which is also how long GitHub allows a re-run of a run, so a
 # re-run of the failed jobs always finds them (RELEASING.md).
@@ -192,7 +193,7 @@ jobs:
             exit 0
           fi
           if [ -z "${NPM_TOKEN}" ]; then
-            echo "::error title=npm::The NPM_TOKEN secret is not set in the 'release' environment, so the package cannot be published. Create an npm granular access token that can publish to the @nemarorg scope and add it as an environment secret named NPM_TOKEN on the release environment (see 'Releasing' in the README)."
+            echo "::error title=npm::The NPM_TOKEN secret is not set in the 'release' environment, so the package cannot be published. Create an npm granular access token that can publish to the @nemarorg scope and add it as an environment secret named NPM_TOKEN on the release environment (see RELEASING.md)."
             exit 1
           fi
           # `bun pm whoami` asks the registry who the token belongs to: a revoked, expired, or
@@ -543,8 +544,8 @@ jobs:
 
   # The Python helper, through PyPI trusted publishing: no stored token, the job's OpenID Connect
   # identity is the credential. The PyPI project must name this repository, this workflow, and the
-  # "pypi" environment as a trusted publisher (see "Releasing" in the README). The job only uploads
-  # the files pypi-dist built.
+  # "pypi" environment as a trusted publisher (see RELEASING.md). The job only uploads the files
+  # pypi-dist built.
   pypi:
     needs: [verify, image, pypi-dist]
     runs-on: ubuntu-latest

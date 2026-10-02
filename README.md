@@ -175,8 +175,7 @@ The image defines its own health check, `/orcid-mock health`, and a runner waits
 An `options: --health-cmd` is not needed, and none could run the real command: Docker runs that form through `/bin/sh`, which the image does not have.
 A `services:` container starts before your repository is checked out, so it can serve only the bundled starter users; to serve your own file, use [the Action](#as-a-github-action) after `actions/checkout`.
 
-Point your application at it with the same variables you use for the sandbox
-(for NEMAR: `ORCID_API_BASE` and `ORCID_PUB_API_BASE`).
+Point your application at it with the same variables you use for the sandbox (for NEMAR: `ORCID_API_BASE` and `ORCID_PUB_API_BASE`).
 
 ### The Cloudflare Worker entry
 
@@ -776,69 +775,10 @@ It runs only on a manual dispatch (input `job` set to `services-smoke` or `both`
 
 The second minimum viable product (MVP2) is planned to add member-API writes for works and employments, the hosted multi-tenant service, XML and other representations, webhooks, and rate-limit emulation.
 
-## Releasing
-
-For maintainers.
-Nothing is published until a version tag is pushed.
-One version, from `package.json`, numbers the npm package, the image, the binaries, the two [test helpers](#test-helpers), and (as its major) the Action.
-
-1. Bump `version` in `package.json`, `clients/node/package.json`, and `clients/python/pyproject.toml` to the same string, in a pull request, and merge it to `main`.
-   Run `uv lock` in `clients/python` afterwards, since the lockfile records the project's own version: the workflow refuses a stale one (`uv lock --check`).
-   The workflow also refuses a tag that differs from any of the three, and the helpers' tests fail until the three agree.
-   The first release is `1.0.0`: the Action defaults to the image tag `1`, and the workflow refuses a stable release whose major differs from that default in `action.yml`.
-   A prerelease is `1.2.3-rc.1`: it gets only its exact image tag, the `next` tag on npm, a prerelease GitHub Release, and no change to any floating tag.
-   Write it `-alpha.N`, `-beta.N`, or `-rc.N` and nothing else, because the Python helper needs a form that Python Enhancement Proposal (PEP) 440 can spell (`1.2.3-rc.1` is `1.2.3rc1` on PyPI).
-2. Tag the merge commit and push the tag: `git tag v1.2.3 && git push origin v1.2.3`.
-3. The [Release workflow](.github/workflows/release.yml) then works in this order, so that a failure leaves nothing public and a re-run converges:
-   it refuses a tag that differs from `package.json` or is not on `main`, runs lint, type checking, and the tests, and checks the npm token (`bun pm whoami`);
-   it builds every binary once and runs each on a runner of its kind (Linux x64 and arm64, macOS arm64, Windows x64), and builds the helpers' packages (the Node helper's compiled tarball, the Python helper's wheel and source distribution) in jobs that hold no credentials;
-   it builds the image, smoke-tests the amd64 image and runs the arm64 image once, and only then pushes the exact tag `1.2.3`, tests what it pushed, and attests it;
-   it publishes `@nemarorg/orcid-mock` and `@nemarorg/orcid-mock-testing` (the tarball the earlier job built) to npm, each unless that version is already there, and `orcid-mock-testing` to PyPI through trusted publishing (the `pypi` job only uploads the files the earlier job built, and skips a file the index already has);
-   it creates the GitHub Release if it does not exist and uploads the binaries and `SHA256SUMS` (replacing any earlier upload);
-   and last it moves `latest`, `1`, and `1.2`, and the `v1` tag that `uses: nemarOrg/orcid-mock@v1` follows.
-4. Floating tags only move forward: each moves only when the released version is the highest stable version in its scope (`latest` against all, `1` against 1.x.y, `1.2` against 1.2.z), so a patch for an old line never takes `latest`.
-   An exact image tag is never overwritten: if it already exists and was built from another commit, the workflow stops.
-5. After a partial failure, re-run the workflow's failed jobs (or all of them); each step skips what is already done.
-6. To rehearse, run the workflow by hand (Actions, Release, Run workflow) with "dry-run" on, from any branch.
-   It does every build and check, and does not push the image, publish, create the release, or move a tag.
-   A dry run does not use the `release` or `pypi` environments, so it cannot check the npm token or the trusted publisher, and says so.
-7. A real release asks the `release` environment's reviewer twice: before the preflight job (the token check) and before the npm publish, since each job that uses an environment is approved on its own; and it asks the `pypi` environment's reviewers, if it has any, before the PyPI publish.
-
-### One-time setup, by the repository owner
-
-These are repository and registry settings; no workflow or pull request creates them.
-
-- **npm.**
-  The `@nemarorg` scope must exist.
-  Create a granular access token ([npm's documentation](https://docs.npmjs.com/about-access-tokens): classic tokens were revoked in November 2025, so a granular token is the only kind) with read and write permission on `@nemarorg/orcid-mock` and `@nemarorg/orcid-mock-testing`, or on the scope (a package that does not exist yet cannot be named, so a scope-wide token is the simple choice before the first release), and "Bypass 2FA" checked, because nobody is present to enter a one-time password in a workflow.
-  A granular token that can write is capped at 90 days ([GitHub changelog, 5 November 2025](https://github.blog/changelog/2025-11-05-npm-security-update-classic-token-creation-disabled-and-granular-token-changes/)), so put the expiry date in your calendar and replace the secret before it passes; the workflow's `bun pm whoami` check fails the release early, before anything is public, when the token has expired.
-  Be aware that npm's documentation says the ability to publish directly with a bypass-2FA token is scheduled for removal in January 2027, in favor of trusted publishing (OpenID Connect) or stage-only tokens, and that trusted publishing needs the npm command line, not `bun publish` ([oven-sh/bun#22423](https://github.com/oven-sh/bun/issues/22423)).
-  The publish job will need rework before then; [ADR 0005](.context/decisions/0005-distribution-and-release.md) records this.
-- **GitHub environment `release`** (Settings, Environments, New environment).
-  Under "Deployment branches and tags", choose "Selected branches and tags" and add a tag rule `v*.*.*`.
-  Turn on "Required reviewers" and add yourself, so every real release waits for an approval.
-  Under "Environment secrets", add `NPM_TOKEN` with the token (an environment secret, not a repository secret).
-  Only the `preflight` and `npm` jobs use the environment, and only on real runs.
-- **PyPI.**
-  The name `orcid-mock-testing` was free on PyPI on 2026-10-01.
-  The first release creates the project, through a pending trusted publisher, so create that before tagging: sign in at pypi.org, open Your account, Publishing, and add a pending publisher for the project `orcid-mock-testing` with owner `nemarOrg`, repository `orcid-mock`, workflow `release.yml`, and environment `pypi` ([PyPI's documentation](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)).
-  There is no token to create or rotate; the `pypi` job's OpenID Connect identity is the credential.
-  Nothing can check this setup before it is used: a mistyped repository, workflow, or environment name in the pending publisher surfaces only when the `pypi` job runs, which is after the image and the npm packages are public.
-  A re-run converges (the image tag, the npm versions, and the files already published are skipped), so the repair is to fix the publisher on pypi.org and re-run the failed job; but check the four values twice before tagging.
-- **GitHub environment `pypi`** (Settings, Environments, New environment).
-  Under "Deployment branches and tags", choose "Selected branches and tags" and add the tag rule `v*.*.*`, as for `release`; "Required reviewers" is optional, and it needs no secret.
-  The environment's name must match the one in the pending publisher.
-- **Tag ruleset** (Settings, Rules, Rulesets, New ruleset, New tag ruleset).
-  Name it `release tags`, set enforcement to Active, and target tags matching `v*`.
-  Turn on "Restrict creations", "Restrict updates", and "Restrict deletions".
-  Add a bypass for the Repository admin role, so you can push release tags, and for the GitHub Actions app, so the last job can move `v1`.
-  The ruleset stops anyone else from creating, moving, or deleting a `v*` tag, which the Action (`@v1`) and the release workflow trust.
-  Check on the first real release that the `promote` job could push `v1`; if the ruleset blocks it, the app is missing from the bypass list.
-- **Package visibility.**
-  After the first image push, set the `orcid-mock` package to public in the organization's package settings on GitHub, and confirm it is linked to this repository (the image's `org.opencontainers.image.source` label does that).
-  A new package starts private, and neither `docker pull` nor the Action works for anyone else until it is public.
-
 ## Contributing
+
+Report a vulnerability privately, as [`SECURITY.md`](SECURITY.md) describes.
+Maintainers cut releases as [`RELEASING.md`](RELEASING.md) describes.
 
 Bun for JavaScript and TypeScript and `uv` for Python, never `npm`, `npx`, or `pip`.
 Each gate is green before a commit:
@@ -848,6 +788,7 @@ Each gate is green before a commit:
 | the server (repository root) | `bun install`, `bun run lint`, `bun run typecheck`, `bun run test` (which runs only `tests/`; the helpers have their own, and [the conformance suite](#conformance) needs a running server) |
 | the Node helper (`clients/node`) | `bun install`, `bun run lint`, `bun run typecheck`, `bun run build`, `bun run test` (which also builds, packs, and loads the package under Node, so Node 22 or later must be on `PATH`) |
 | the Python helper (`clients/python`) | `uv sync`, `uv run ruff check`, `uv run ruff format --check`, `uv run ty check`, `uv run pytest --cov` |
+| the workflows (`.github/`) | `actionlint .github/workflows/*.yml`, and `uvx zizmor@<the version `ci.yml` pins> --offline .github/workflows action.yml` (the `check` job runs the second) |
 
 The helpers' tests start a real mock, so they need Docker, a local build of the image, and (for the Node helper's browser tests) Chromium:
 
