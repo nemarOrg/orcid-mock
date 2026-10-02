@@ -1,13 +1,18 @@
 // The Bun entry: loads the users file, builds the store and the app, and binds a real socket.
 // The readiness line and signal handling live in main.ts so tests can start servers quietly.
 
-import { createApp } from "./app";
-import { ConfigError, parsePublicBaseUrl } from "./config";
-import { FixtureError, parseUsersFile } from "./fixtures/load";
+import { createMockApp } from "./bootstrap";
+import {
+  ConfigError,
+  type CoreConfig,
+  DEFAULT_HOST,
+  DEFAULT_PORT,
+  parsePublicBaseUrl,
+} from "./config";
+import { FixtureError } from "./fixtures/load";
 import { STARTER_USERS_FILE } from "./fixtures/starter";
 import type { LogLevel } from "./log";
 import { createLogger, silentLogger } from "./log";
-import { MemoryStore } from "./store/memory";
 
 export interface StartOptions {
   /** 0 picks a free port. Default 9700. */
@@ -58,44 +63,26 @@ function boundUrl(host: string, port: number): string {
 }
 
 export async function startServer(opts: StartOptions = {}): Promise<RunningServer> {
-  const host = opts.host ?? "127.0.0.1";
-  const log = opts.quiet ? silentLogger : createLogger(opts.logLevel ?? "info");
-
-  const input = await readUsers(opts);
-  const loaded = parseUsersFile(input, Date.now());
-  if (!loaded.ok) {
-    throw new FixtureError(
-      loaded.issues,
-      opts.usersFile ? `users file ${opts.usersFile}` : "users file",
-    );
-  }
+  const host = opts.host ?? DEFAULT_HOST;
+  const logLevel = opts.logLevel ?? "info";
+  const log = opts.quiet ? silentLogger : createLogger(logLevel);
   const explicitUrl = opts.publicBaseUrl ? parsePublicBaseUrl(opts.publicBaseUrl) : null;
 
-  const store = new MemoryStore();
-  await store.setBaseline(loaded.snapshot);
-
-  // Bun starts accepting as soon as it binds, but the app needs the bound port for its base URL,
-  // and nothing awaits between the bind and the assignment below.
-  let app: ReturnType<typeof createApp> | undefined;
-  const server = Bun.serve({
-    port: opts.port ?? 9700,
-    hostname: host,
-    fetch: (request) => app?.fetch(request) ?? new Response("starting", { status: 503 }),
-  });
-  const port = server.port ?? 0;
-  const url = explicitUrl ?? boundUrl(host, port);
-  app = createApp({
-    config: { publicBaseUrl: url, logLevel: opts.logLevel ?? "info" },
-    store,
+  // The app keeps this object by reference; the real base URL is set once the port is bound,
+  // and no request can arrive before then because nothing awaits in between.
+  const config: CoreConfig = { publicBaseUrl: explicitUrl ?? "", logLevel };
+  const { app } = await createMockApp({
+    users: await readUsers(opts),
+    config,
+    nowMs: Date.now(),
     log,
+    source: opts.usersFile ? `users file ${opts.usersFile}` : "users file",
   });
 
-  log.info("server_started", {
-    url,
-    port,
-    host,
-    users: loaded.snapshot.users.length,
-    clients: loaded.snapshot.clients.length,
-  });
-  return { url, port, stop: () => server.stop(true) };
+  const server = Bun.serve({ port: opts.port ?? DEFAULT_PORT, hostname: host, fetch: app.fetch });
+  const port = server.port ?? 0;
+  config.publicBaseUrl = explicitUrl ?? boundUrl(host, port);
+
+  log.info("server_started", { url: config.publicBaseUrl, port, host });
+  return { url: config.publicBaseUrl, port, stop: () => server.stop(true) };
 }
