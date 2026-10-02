@@ -5,9 +5,22 @@
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type JsonObject = { [key: string]: Json };
 
+/**
+ * `JSON.stringify` writes a control character as `\u001f`; Jackson writes the hex digits in
+ * capitals (`\u001F`), so the digits are uppercased. The pattern walks escape sequences left to
+ * right, so the `\\` of an escaped backslash is consumed with its pair and a literal `u001f`
+ * after it is left alone.
+ * https://github.com/FasterXML/jackson-core/blob/13b67c80342b3292fb5dc5cd340b6fafa2b37db0/src/main/java/com/fasterxml/jackson/core/io/CharTypes.java
+ */
+function jacksonEscapes(json: string): string {
+  return json.replace(/\\(?:u00([0-9a-f]{2})|[\s\S])/g, (sequence, hex?: string) =>
+    hex === undefined ? sequence : `\\u00${hex.toUpperCase()}`,
+  );
+}
+
 /** Compact JSON: no whitespace and no trailing newline. */
 export function compactJson(value: Json): string {
-  return JSON.stringify(value);
+  return jacksonEscapes(JSON.stringify(value));
 }
 
 /**
@@ -57,5 +70,5 @@ export function prettyJson(value: Json): string {
     out += `\n${"  ".repeat(depth)}}`;
   };
   write(value, 0);
-  return out;
+  return jacksonEscapes(out);
 }

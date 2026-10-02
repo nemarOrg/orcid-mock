@@ -70,6 +70,21 @@ describe("prettyJson", () => {
     expect(prettyJson([])).toBe("[ ]");
   });
 
+  test("a control character is escaped with capital hex digits, as Jackson writes it", () => {
+    const value = { note: "tab\t, unit separator \u001f, vertical tab \u000b" };
+    expect(compactJson(value)).toBe(
+      '{"note":"tab\\t, unit separator \\u001F, vertical tab \\u000B"}',
+    );
+    expect(prettyJson(value)).toContain(
+      '"note" : "tab\\t, unit separator \\u001F, vertical tab \\u000B"',
+    );
+    // A backslash followed by the text u001f is not an escape and is left alone.
+    const literal = { note: "\\u001f" };
+    expect(compactJson(literal)).toBe('{"note":"\\\\u001f"}');
+    expect(JSON.parse(compactJson(value))).toEqual(value);
+    expect(JSON.parse(compactJson(literal))).toEqual(literal);
+  });
+
   test("the pretty and compact forms parse to the same value", () => {
     const value = {
       note: 'quote " and \\ and é and ☃',
