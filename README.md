@@ -234,6 +234,7 @@ One version, from `package.json`, numbers the npm package, the image, the binari
 6. To rehearse, run the workflow by hand (Actions, Release, Run workflow) with "dry-run" on, from any branch.
    It does every build and check, and does not push the image, publish, create the release, or move a tag.
    A dry run does not use the `release` environment, so it cannot check the npm token, and says so.
+7. A real release asks the environment's reviewer twice: before the preflight job (the token check) and before the npm publish, since each job that uses an environment is approved on its own.
 
 ### One-time setup, by the repository owner
 
