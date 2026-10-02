@@ -5,6 +5,7 @@ import { isValidOrcidId, mintOrcidId } from "../orcid-id";
 import type { Snapshot, Store, StoredClient, StoredUser } from "../store/types";
 import {
   crossUserIssues,
+  deprecationIssues,
   type FixtureClient,
   type FixtureUser,
   FixtureUser as FixtureUserSchema,
@@ -148,16 +149,22 @@ export function parseUsersFile(input: unknown, nowMs: number): LoadResult {
     return candidate;
   });
 
-  const issues: Issue[] = [];
-  file.users.forEach((user, i) => {
-    if (user.deprecated_to !== undefined && user.deprecated_to === orcids[i]) {
-      issues.push({
-        path: `users[${i}].deprecated_to`,
-        message: "A record cannot be deprecated to itself",
-      });
-    }
-  });
-  if (issues.length > 0) return { ok: false, issues };
+  // Minted iDs are only known now, so the deprecation rules run on the resolved iDs.
+  const deprecation = deprecationIssues(
+    file.users.map((user, i) => ({
+      orcid: orcids[i] as string,
+      deprecated_to: user.deprecated_to,
+    })),
+  );
+  if (deprecation.length > 0) {
+    return {
+      ok: false,
+      issues: deprecation.map((issue) => ({
+        path: formatPath(issue.path),
+        message: issue.message,
+      })),
+    };
+  }
 
   let highest = MIN_PUT_CODE - 1;
   for (const user of file.users) {
@@ -242,14 +249,14 @@ export async function prepareUser(
     let attempt = 0;
     orcid = mintOrcidId(`seq:${seq}`, attempt);
     while ((await store.getUser(orcid)) !== null) orcid = mintOrcidId(`seq:${seq}`, ++attempt);
-    if (user.deprecated_to === orcid) {
-      return {
-        ok: false,
-        kind: "invalid",
-        issues: [{ path: "deprecated_to", message: "A record cannot be deprecated to itself" }],
-      };
-    }
   }
+
+  // The deprecation rules on the resolved iD (the path's, the body's, or a minted one), against
+  // every other user the store holds.
+  const deprecation = deprecationIssues([...others, { orcid, deprecated_to: user.deprecated_to }])
+    .filter((issue) => issue.path[1] === others.length)
+    .map((issue) => ({ path: formatPath(issue.path.slice(2)), message: issue.message }));
+  if (deprecation.length > 0) return { ok: false, kind: "invalid", issues: deprecation };
 
   // Draw one put-code per missing one, skipping any already used by an explicit put-code.
   const used = new Set<number>(putCodes(user));

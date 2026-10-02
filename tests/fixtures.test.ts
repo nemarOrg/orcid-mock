@@ -220,6 +220,43 @@ describe("rejections", () => {
     ).toEqual(["users[0].deprecated_to"]);
   });
 
+  test("a record deprecated to its own minted iD is rejected", () => {
+    const minted = load({ clients: [], users: [userNamed("Selfish")] }).users[0]?.orcid as string;
+    expect(
+      paths({ clients: [], users: [userNamed("Selfish", { deprecated_to: minted })] }),
+    ).toEqual(["users[0].deprecated_to"]);
+  });
+
+  test("deprecation cycles of any length are rejected, chains are not", () => {
+    const [a, b, c] = ["0000-0002-1825-0097", "0000-0001-5109-3700", "0000-0002-1694-233X"];
+    const user = (name: string, orcid: string, deprecated_to?: string) =>
+      userNamed(name, { orcid, ...(deprecated_to ? { deprecated_to } : {}) });
+    expect(
+      paths({ clients: [], users: [user("A", a as string, b), user("B", b as string, a)] }),
+    ).toEqual(["users[0].deprecated_to", "users[1].deprecated_to"]);
+    expect(
+      paths({
+        clients: [],
+        users: [user("A", a as string, b), user("B", b as string, c), user("C", c as string, a)],
+      }),
+    ).toEqual(["users[0].deprecated_to", "users[1].deprecated_to", "users[2].deprecated_to"]);
+    // A chain that ends is fine, and so is a target that is not in the file.
+    expect(
+      paths({
+        clients: [],
+        users: [user("A", a as string, b), user("B", b as string, c), user("C", c as string)],
+      }),
+    ).toEqual([]);
+    expect(paths({ clients: [], users: [user("A", a as string, b)] })).toEqual([]);
+    // A record that only points into someone else's cycle is not itself reported.
+    expect(
+      paths({
+        clients: [],
+        users: [user("A", a as string, b), user("B", b as string, c), user("C", c as string, b)],
+      }),
+    ).toEqual(["users[1].deprecated_to", "users[2].deprecated_to"]);
+  });
+
   test("a dotted and bracketed path reaches into a nested section", () => {
     expect(
       paths({

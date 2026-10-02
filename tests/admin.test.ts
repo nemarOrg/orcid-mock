@@ -214,6 +214,45 @@ describe("upserting and deleting users", () => {
   });
 });
 
+describe("deprecation through the API", () => {
+  const [a, b, c] = ["0000-0002-1825-0097", "0000-0001-5109-3700", "0000-0002-1694-233X"] as const;
+
+  test("a record cannot be deprecated to the iD in its own path", async () => {
+    const issues = await invalid(person("Self", { deprecated_to: a }), "PUT", `/users/${a}`);
+    expect(issues.map((issue) => issue.path)).toEqual(["deprecated_to"]);
+    expect((await server.admin("GET", `/users/${a}`)).status).toBe(404);
+  });
+
+  test("a cycle against the stored users is rejected, at any length", async () => {
+    expect(
+      (await server.admin("PUT", `/users/${a}`, person("A", { deprecated_to: b }))).status,
+    ).toBe(201);
+    expect(
+      (await server.admin("PUT", `/users/${b}`, person("B", { deprecated_to: c }))).status,
+    ).toBe(201);
+    const issues = await invalid(person("C", { deprecated_to: a }), "PUT", `/users/${c}`);
+    expect(issues.map((issue) => issue.path)).toEqual(["deprecated_to"]);
+    expect(issues[0]?.message).toContain("cycle");
+    expect((await server.admin("GET", `/users/${c}`)).status).toBe(404);
+
+    // Without the back edge the chain is fine, and replacing A so it stops deprecating is too.
+    expect((await server.admin("PUT", `/users/${c}`, person("C"))).status).toBe(201);
+    expect((await server.admin("PUT", `/users/${a}`, person("A again"))).status).toBe(200);
+  });
+
+  test("replacing a user does not count its old deprecation against the new one", async () => {
+    await server.admin("PUT", `/users/${a}`, person("A", { deprecated_to: b }));
+    await server.admin("PUT", `/users/${b}`, person("B"));
+    // B now deprecates to A: A -> B is stored, so this is a cycle.
+    await invalid(person("B", { deprecated_to: a }), "PUT", `/users/${b}`);
+    // Re-pointing A elsewhere removes the old edge, so B -> A is fine afterwards.
+    await server.admin("PUT", `/users/${a}`, person("A", { deprecated_to: c }));
+    expect(
+      (await server.admin("PUT", `/users/${b}`, person("B", { deprecated_to: a }))).status,
+    ).toBe(200);
+  });
+});
+
 describe("clients", () => {
   test("GET /clients lists the starter's clients and GET /clients/:id reads one", async () => {
     const list = await server.admin<Array<{ client_id: string }>>("GET", "/clients");

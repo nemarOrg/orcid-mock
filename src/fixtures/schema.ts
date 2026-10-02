@@ -373,6 +373,42 @@ export function crossUserIssues(users: ReadonlyArray<CrossCheckUser>): RawIssue[
   return issues;
 }
 
+/**
+ * Deprecation rules, which need the resolved iDs (minted ones included): a record cannot be
+ * deprecated to itself, and following `deprecated_to` from a record must not lead back to it.
+ * Each issue's path is `users`, the index, `deprecated_to`.
+ */
+export function deprecationIssues(
+  users: ReadonlyArray<{ orcid: string; deprecated_to?: string | undefined }>,
+): RawIssue[] {
+  const target = new Map<string, string>();
+  for (const user of users) {
+    if (user.deprecated_to !== undefined) target.set(user.orcid, user.deprecated_to);
+  }
+  const issues: RawIssue[] = [];
+  users.forEach((user, i) => {
+    if (user.deprecated_to === undefined) return;
+    const path = ["users", i, "deprecated_to"];
+    if (user.deprecated_to === user.orcid) {
+      issues.push({ path, message: "A record cannot be deprecated to itself" });
+      return;
+    }
+    const chain = [user.orcid];
+    let next: string | undefined = user.deprecated_to;
+    while (next !== undefined) {
+      chain.push(next);
+      if (next === user.orcid) {
+        issues.push({ path, message: `Deprecation cycle: ${chain.join(" -> ")}` });
+        return;
+      }
+      // A cycle that does not include this record is reported on its own members.
+      if (chain.indexOf(next) !== chain.length - 1) return;
+      next = target.get(next);
+    }
+  });
+  return issues;
+}
+
 export const UsersFile = z
   .strictObject({
     $schema: z.string().optional(),
