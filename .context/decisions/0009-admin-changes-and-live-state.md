@@ -19,7 +19,7 @@ A request to `/__admin/*` whose `Origin` is not the origin of `PUBLIC_BASE_URL` 
 A request whose `Host` hostname is neither a loopback name (`localhost`, `127.0.0.1`, `::1`, `[::1]`, any case, any port) nor the hostname of `PUBLIC_BASE_URL` is `403 {"error":"forbidden_host"}`.
 A missing or malformed `Host` is refused too.
 `PUBLIC_BASE_URL` is how a caller on another host, such as another container, is let in: it names the address that caller uses.
-This is the one place the mock reads `Host`, and only to refuse; every URL still derives from `PUBLIC_BASE_URL` (ADR 0001), and the path and query are read from the text of the request URL, so a `Host` that does not parse no longer turns a valid request into a 500.
+This is the one place the mock reads `Host`, and only to refuse; every URL still derives from `PUBLIC_BASE_URL` (ADR 0001), and the path and query are read from the text of the request URL, so a `Host` that does not parse no longer turns a valid request into a 500, and when Bun cannot build a URL from `Host` at all (empty, absent, or holding a space, `/`, `@`, `?`, or `#`) `src/server.ts` rebuilds the request under the origin of `PUBLIC_BASE_URL` with its raw target, so routing never depends on `Host` while the admin guard still reads the original header.
 
 **Deleting a user revokes everything issued to their iD.**
 `Store.deleteUser` also removes every authorization code, access and refresh token, and session for that iD, in the same atomic step, whether or not the user existed.
@@ -50,6 +50,7 @@ The sign-in errors of `login_as` and the consent form put `error_description` fi
 - A test that deletes a user to simulate an outage and then restores the same iD now needs a new sign-in; it should use `locked` for an outage that ends.
 - Lock, deactivate, and demote are reversible without losing a session, which is what a test of an interrupted flow wants; deletion is the way to end one.
 - A token issued to a member client carries a `member` flag that is now read too: if a client is promoted again, its old limited tokens work again.
+- The sign-in page at `/oauth/authorize` still lists every fixture user, so a DNS-rebinding page can read their names and iDs; this is accepted because the data is fictional.
 - A Durable Object `Store` must make `deleteUser` clear the user and everything issued to the iD in one transaction, which the contract suite now checks.
 
 ## Alternatives considered
