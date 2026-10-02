@@ -330,7 +330,8 @@ describe("grouping and ordering of works", () => {
   test("groups are ordered by date newest first, then title, then type", async () => {
     // 3201+3202 2022-03-14; 3215 2022-03; 3216 2022; 3204 2021-10; 3203 2020; 3205-3207 2019;
     // 3208+3209 2018; 3210 2017; 3213 2016; 3218 (book) and 3217 (report) 2015; 3220 and 3219
-    // 2014 by title; 3221 with no date last. 3211+3212 are hidden and 3214 joins no group.
+    // 2014 by title; 3222+3223 2013; 3224 2012; 3221 with no date last. 3211+3212 are hidden and
+    // 3214 joins no group.
     expect(codes(groupsOf(await getRecord(server, `/v3.0/${G}/works`)))).toEqual([
       [3201, 3202],
       [3215],
@@ -345,6 +346,8 @@ describe("grouping and ordering of works", () => {
       [3217],
       [3220],
       [3219],
+      [3222, 3223],
+      [3224],
       [3221],
     ]);
   });
@@ -380,6 +383,32 @@ describe("grouping and ordering of works", () => {
     expect(group?.["work-summary"].map((w) => w["put-code"])).toEqual([3208, 3209]);
     expect(group?.["external-ids"]["external-id"]).toEqual([
       extId("doi", "10.5555/v.1", "version-of"),
+    ]);
+  });
+
+  test("a DOI is normalized as ORCID's normalizer does: the URL prefix goes, the case folds, and a bad one fails with 8001", async () => {
+    const groups = groupsOf(await getRecord(server, `/v3.0/${G}/works`));
+    const prefixed = groups.find((g) => g["work-summary"][0]?.["put-code"] === 3222);
+    // One group of two; the key is the first spelling, with the normalized value beside it.
+    expect(prefixed?.["work-summary"].map((w) => w["put-code"])).toEqual([3222, 3223]);
+    expect(prefixed?.["external-ids"]["external-id"]).toEqual([
+      extId("doi", "https://doi.org/10.5555/URL.Prefix", "self", "10.5555/url.prefix"),
+    ]);
+
+    const bad = groups.find((g) => g["work-summary"][0]?.["put-code"] === 3224);
+    expect(bad?.["external-ids"]["external-id"]).toEqual([
+      {
+        "external-id-type": "doi",
+        "external-id-value": "work:doi",
+        "external-id-normalized": null,
+        "external-id-normalized-error": {
+          "error-code": "8001",
+          "error-message": "Cannot normalize identifier value doi:work:doi",
+          transient: true,
+        },
+        "external-id-url": null,
+        "external-id-relationship": "self",
+      },
     ]);
   });
 

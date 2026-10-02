@@ -562,7 +562,9 @@ const workId = (value: string) => ({
  * 3201+3202 (2022-03-14), 3215 (2022-03), 3216 (2022), 3204 (2021-10), 3203 (2020),
  * 3205+3206+3207 (2019, one group by a bridge), 3208+3209 (2018, version-of ids group), 3210
  * (2017, no ids), 3213 (2016, whose hidden twin 3214 is not part of it), 3218 and 3217 (2015, by
- * type), 3220 and 3219 (2014, by title), and 3221 (no date). 3211+3212 are private and gone.
+ * type), 3220 and 3219 (2014, by title), 3222+3223 (2013, a DOI with a URL prefix groups with the
+ * bare one), 3224 (2012, a DOI that does not normalize), and 3221 (no date). 3211+3212 are hidden
+ * and gone.
  */
 const grouping: FixtureUser = {
   orcid: IDS.grouping,
@@ -650,6 +652,14 @@ const grouping: FixtureUser = {
     work(3219, "Mu B", { publication_date: "2014", external_ids: [doi("10.5555/m.1")] }),
     work(3220, "Mu A", { publication_date: "2014", external_ids: [doi("10.5555/m.2")] }),
     work(3221, "Nu", { external_ids: [doi("10.5555/n.1")] }),
+    // ORCID's DOI normalizer drops a URL prefix and lowercases, so these two are one group; a
+    // value that holds no DOI has no normalized value and an 8001 error.
+    work(3222, "Xi", {
+      publication_date: "2013",
+      external_ids: [doi("https://doi.org/10.5555/URL.Prefix")],
+    }),
+    work(3223, "Xi, bare", { publication_date: "2013", external_ids: [doi("10.5555/url.prefix")] }),
+    work(3224, "Omicron", { publication_date: "2012", external_ids: [doi("work:doi")] }),
   ],
   fundings: [
     {
