@@ -603,7 +603,7 @@ The cases are listed at the top of [`conformance/conformance.test.ts`](conforman
 
 The assertions are structural: keys, order, and the kind of each value, never a count or a value, because a fixture and a real record hold different data.
 Where the mock differs from ORCID on purpose, the suite avoids the case or checks only what both satisfy, with a comment naming the decision record:
-it always sends `Accept` (ORCID answers XML to none, the mock a 406, [ADR 0007](.context/decisions/0007-record-api-fidelity-and-deviations.md)), it checks that `orcid-identifier` agrees with itself and not that it names `orcid.org`, and it looks for the 415 sentence inside the body, which ORCID wraps in a web server's error page and the mock sends alone ([ADR 0004](.context/decisions/0004-oauth-surface-and-orcid-mock-choices.md)).
+it always sends `Accept` (ORCID answers XML to none, the mock a 406, [ADR 0007](.context/decisions/0007-record-api-fidelity-and-deviations.md)), it checks that `orcid-identifier` agrees with itself and not that it names `orcid.org`, and it looks for the 415 sentence inside the body, which ORCID wraps in a web server's error page and the mock sends alone (recorded under [OAuth, where ORCID is undocumented or unobserved](#where-orcid-is-undocumented-or-unobserved)).
 No assertion branches on the target.
 
 The target comes from the environment, and a missing or malformed variable stops the run with one message that names it (never its value):
@@ -613,25 +613,33 @@ The target comes from the environment, and a missing or malformed variable stops
 | `CONFORMANCE_TARGET` | `mock` or `sandbox`. |
 | `ORCID_API_BASE` | The OAuth host: the mock's base URL, or `https://sandbox.orcid.org`. |
 | `ORCID_PUB_API_BASE` | The record API host: the same base for the mock, or `https://pub.sandbox.orcid.org`. |
-| `ORCID_CLIENT_ID`, `ORCID_CLIENT_SECRET` | A registered client. |
+| `ORCID_CLIENT_ID`, `ORCID_CLIENT_SECRET` | A registered client. Not needed with `CONFORMANCE_ANONYMOUS_ONLY=1`. |
 | `ORCID_PUBLIC_ID` | An iD whose record is public and whose name is public. |
+| `CONFORMANCE_ANONYMOUS_ONLY` | `1` runs only the cases that need no registered client (groups `A` and `E`) and skips `T` and `B` with a message in the output. |
+| `CONFORMANCE_REQUIRE_ITEMS` | `1` fails a run whose works, employments, or email container is empty, so a record with nothing in it cannot pass as full coverage. |
+| `CONFORMANCE_DELAY_MS` | The least time between two requests; the default is 400 for the sandbox and 0 for the mock. |
+
+Every read prints how many items it checked, for example `A4 works: 3 groups, 4 summaries checked`, so the output shows what a pass covered.
+The client retries a request once after a 429, 502, 503, or 504, waiting for `Retry-After` (at most 30 seconds), and says so when it does.
 
 ### Against the mock
 
 ```bash
 bun run src/main.ts serve --port 0 > ready.json &     # one line on stdout: {"event":"listening","url":"http://127.0.0.1:...","port":...}
-sleep 1
+until [ -s ready.json ]; do sleep 0.1; done            # the readiness line
 export CONFORMANCE_TARGET=mock
 export ORCID_API_BASE="$(jq -r .url ready.json)" ORCID_PUB_API_BASE="$(jq -r .url ready.json)"
 export ORCID_CLIENT_ID=APP-ORCIDMOCK000001 ORCID_CLIENT_SECRET=orcid-mock-secret   # the starter fixture's public client
 export ORCID_PUBLIC_ID="$(curl -s "$ORCID_API_BASE/__admin/users" | jq -er '[.[] | select(.name.visibility == "public")][0].orcid')"
 bun run conformance
+kill $!                                                # stop the server
 ```
 
 The starter users' iDs are minted, so the iD is read from the admin API rather than written down.
+The round trip (below) calls `POST /__admin/reset`, which resets the whole mock, so run the suite against a mock you own and not one that holds data you want to keep.
 A container works the same way: start it with [the Action](#as-a-github-action) or `docker run`, and point the two bases at its `PUBLIC_BASE_URL`.
 Every push and pull request does exactly that in the `e2e` job of [`ci.yml`](.github/workflows/ci.yml):
-it builds the image from the `Dockerfile`, starts it with this repository's Action, and runs the suite against it.
+it builds the image from the `Dockerfile`, starts it with this repository's Action, and runs the suite against it with `CONFORMANCE_REQUIRE_ITEMS=1`, using the public client and a user chosen by what it holds (a public name and at least one public work, employment, and email) rather than by position.
 
 `bun run conformance` runs `bun test ./conformance`.
 The plain `bun test` and `bun run test` run only the server's own tests under `tests/`, because `bunfig.toml` sets the test root to `tests`.
@@ -648,31 +656,42 @@ bun run conformance
 
 The suite spaces its requests 400 ms apart and sends about twenty in a run, far below ORCID's anonymous limit of 12 a second.
 The sandbox is shared and cannot be reset, so it is not an environment to hammer.
-Without a sandbox client you can still run the half that needs no credentials, the anonymous reads and the error shapes, by passing any placeholder for the two client variables and selecting those groups:
+Without a sandbox client you can still run the half that needs no credentials, the anonymous reads and the error shapes, with `CONFORMANCE_ANONYMOUS_ONLY=1` and no client variables:
 
 ```bash
-ORCID_CLIENT_ID=placeholder ORCID_CLIENT_SECRET=placeholder bun test ./conformance -t "A:|E:"
+CONFORMANCE_TARGET=sandbox CONFORMANCE_ANONYMOUS_ONLY=1 \
+  ORCID_API_BASE=https://sandbox.orcid.org ORCID_PUB_API_BASE=https://pub.sandbox.orcid.org \
+  ORCID_PUBLIC_ID=... bun run conformance
 ```
 
-The group `E` case for a wrong secret then sends the placeholder and gets `invalid_client`, as it does for a real client with a wrong secret.
-The record `0000-0001-6919-3953` is a public sandbox record with a public name that this was checked against; it is not under our control, so use your own.
+The `T` and `B` cases are then skipped, and say so in the output.
+The one `E` case that names a client, a wrong secret, uses an unregistered placeholder client id and gets `invalid_client`, as it does for a real client with a wrong secret.
+The record `0000-0001-6919-3953` is a public sandbox record with a public name that this was checked against; it is nearly empty and not under our control, so use your own.
+Nothing in CI uses `CONFORMANCE_ANONYMOUS_ONLY`.
 
-The sandbox half runs weekly (Mondays, 05:23 UTC) and on demand from [`conformance.yml`](.github/workflows/conformance.yml), job `sandbox`.
-**The repository owner adds** the secrets `ORCID_SANDBOX_CLIENT_ID` and `ORCID_SANDBOX_CLIENT_SECRET` (a client registered under Developer tools at `sandbox.orcid.org`) and the variable `ORCID_SANDBOX_PUBLIC_ID` (the iD of a sandbox record with a public name, and ideally some public works and employments, so item shapes are checked too).
-Until all three exist, the job prints a `::notice::` naming what is missing, writes the same to the job summary, and succeeds without running, so a skip is visible and not silent.
+The sandbox half runs weekly (Mondays, 05:23 UTC) and on demand from [`conformance.yml`](.github/workflows/conformance.yml), job `sandbox`; a manual run has an input `job` (`sandbox`, `services-smoke`, or `both`, default `sandbox`).
+The job does not require items, and appends the items each read checked to the job summary.
+**The repository owner sets up** the job once:
+
+- Create a GitHub environment named `conformance` (Settings, Environments), with a deployment rule that restricts it to the `main` branch, and store the two secrets there, so no other branch can read them: `ORCID_SANDBOX_CLIENT_ID` and `ORCID_SANDBOX_CLIENT_SECRET`, a client registered under Developer tools at `sandbox.orcid.org`.
+  The job names that environment; repository secrets of the same names work too until it exists.
+- Add the repository variable `ORCID_SANDBOX_PUBLIC_ID`: the iD of a sandbox record with a public name, and ideally some public works and employments, so item shapes are checked too.
+
+Until all three exist, the job prints a `::warning::` naming what is missing, writes the same to the job summary, and succeeds without running, so a skip is visible and not silent.
 A failing case on the sandbox means the mock is wrong about ORCID or ORCID changed: find out which, and fix the mock or the assertion, never by weakening the check to pass.
 
 ### Sign-in is checked on the mock only
 
 Real ORCID needs a person to sign in (a browser, a password, a consent click), so the sandbox run covers the token endpoint and the record API and cannot cover sign-in.
 [`conformance/round-trip.test.ts`](conformance/round-trip.test.ts) covers it on the mock, as the definition of done for a brand-new sign-up with no browser, and is skipped with a message when `CONFORMANCE_TARGET` is not `mock`.
-It registers a client and creates a user through the admin API, signs in with `login_as`, exchanges the code for an ID token, verifies the token against the discovery document's `jwks_uri` (RS256 pinned), reads the user through userinfo and the record API, calls `POST /__admin/reset`, and checks that the user is gone (404, error 9016) while the fixture's own users remain.
+It registers a client and creates a user through the admin API, signs in with `login_as`, exchanges the code for an ID token, verifies the token against the discovery document's `jwks_uri` (RS256 pinned, with `exp`, `iat`, `sub`, `aud`, and `iss` required), reads the user through userinfo and the record API, calls `POST /__admin/reset`, and checks that the user and the test's client are gone (404, error 9016, and `invalid_client`) while the fixture's own users remain.
 
 ### The services container check
 
-The `services-smoke` job in [`conformance.yml`](.github/workflows/conformance.yml) runs the published image as a `services:` container with no `--health-cmd`, and its first step reaches `/__admin/health` once, with no retry.
-That confirms on a real runner that the image's own `HEALTHCHECK` makes the runner wait for the service.
-It runs only on a manual dispatch (input `image`, default `ghcr.io/nemarorg/orcid-mock:1`) and can pass only after the first release has published the image and made its package public, so run it once then.
+The `services-smoke` job in [`conformance.yml`](.github/workflows/conformance.yml) runs the published image as a `services:` container with no `--health-cmd`.
+Its first step asserts that Docker reports the service container `healthy`, and the next reaches `/__admin/health` once, with no retry.
+What that proves is that the image carries a `HEALTHCHECK` which a real runner accepts and reports healthy; it does not prove that the runner would wait for a slow start.
+It runs only on a manual dispatch (input `job` set to `services-smoke` or `both`, and input `image`, default `ghcr.io/nemarorg/orcid-mock:1`) and can pass only after the first release has published the image and made its package public, so run it once then.
 
 ## Why
 
