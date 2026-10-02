@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { startTestServer, type TestServer } from "./harness";
+import { authorizeUrl, CLIENTS, userIds } from "./helpers/oauth";
 
 let server: TestServer;
 beforeAll(async () => {
@@ -79,12 +80,99 @@ describe("GET /oauth/jwks", () => {
       expect(response.headers.get("access-control-allow-origin")).toBeNull();
     }
   });
+});
 
-  test("a POST is not routed and answers in the OAuth error shape", async () => {
-    const response = await fetch(`${server.baseUrl}/oauth/jwks`, { method: "POST" });
-    expect(response.status).toBe(404);
-    expect(await response.text()).toBe(
-      '{"error":"invalid_request","error_description":"Not found"}',
-    );
+/**
+ * The document https://orcid.org/.well-known/openid-configuration answered on 2026-10-01, verbatim
+ * (826 bytes, LF line endings, no trailing newline), with its base URL replaced by `base`.
+ * It is written out here, not built by the code under test, so a change to the document's bytes
+ * fails this test.
+ */
+function observedDiscovery(base: string): string {
+  return `{
+  "token_endpoint_auth_signing_alg_values_supported" : [ "RS256" ],
+  "id_token_signing_alg_values_supported" : [ "RS256" ],
+  "userinfo_endpoint" : "${base}/oauth/userinfo",
+  "authorization_endpoint" : "${base}/oauth/authorize",
+  "token_endpoint" : "${base}/oauth/token",
+  "jwks_uri" : "${base}/oauth/jwks",
+  "claims_supported" : [ "family_name", "given_name", "name", "auth_time", "iss", "sub" ],
+  "scopes_supported" : [ "openid" ],
+  "subject_types_supported" : [ "public" ],
+  "response_types_supported" : [ "code", "id_token", "id_token token" ],
+  "claims_parameter_supported" : false,
+  "token_endpoint_auth_methods_supported" : [ "client_secret_post" ],
+  "grant_types_supported" : [ "authorization_code", "implicit", "refresh_token" ],
+  "issuer" : "${base}"
+}`;
+}
+
+describe("GET /.well-known/openid-configuration", () => {
+  test("is ORCID's document, byte for byte, built from the public base URL", async () => {
+    const response = await fetch(`${server.baseUrl}/.well-known/openid-configuration`);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe(observedDiscovery(server.publicBaseUrl));
+  });
+
+  test("keeps a path prefix in every URL and strips a trailing slash from the issuer", async () => {
+    const prefixed = await startTestServer({ publicBaseUrl: "https://mock.example.test/orcid/" });
+    try {
+      const response = await fetch(`${prefixed.baseUrl}/.well-known/openid-configuration`);
+      const text = await response.text();
+      expect(text).toBe(observedDiscovery("https://mock.example.test/orcid"));
+      expect(text).toContain('"issuer" : "https://mock.example.test/orcid"\n');
+    } finally {
+      await prefixed.stop();
+    }
+  });
+
+  test("ignores the Host header: every URL derives from the configured base", async () => {
+    const response = await fetch(`${server.baseUrl}/.well-known/openid-configuration`, {
+      headers: { host: "elsewhere.example.test", "x-forwarded-host": "elsewhere.example.test" },
+    });
+    expect(await response.text()).toBe(observedDiscovery(server.publicBaseUrl));
+  });
+
+  test("is JSON with ORCID's content type and CORS, and no other CORS header", async () => {
+    const response = await fetch(`${server.baseUrl}/.well-known/openid-configuration`);
+    expect(response.headers.get("content-type")).toBe("application/json;charset=UTF-8");
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
+    expect(response.headers.get("access-control-allow-credentials")).toBeNull();
+  });
+
+  test("its jwks_uri serves the key", async () => {
+    const config = (await (
+      await fetch(`${server.baseUrl}/.well-known/openid-configuration`)
+    ).json()) as { jwks_uri: string };
+    const response = await fetch(config.jwks_uri);
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as { keys: unknown[] }).keys).toHaveLength(1);
+  });
+
+  // The document advertises the implicit flow, as ORCID's does; this mock does not implement it,
+  // so each advertised response type other than `code` is refused at the authorize endpoint.
+  test("every response type it advertises except code is refused at authorize", async () => {
+    const config = (await (
+      await fetch(`${server.baseUrl}/.well-known/openid-configuration`)
+    ).json()) as { response_types_supported: string[] };
+    const unimplemented = config.response_types_supported.filter((type) => type !== "code");
+    expect(unimplemented).toEqual(["id_token", "id_token token"]);
+    const ids = await userIds(server);
+    for (const response_type of unimplemented) {
+      const response = await fetch(
+        authorizeUrl(server.baseUrl, {
+          client_id: CLIENTS.public.client_id,
+          response_type,
+          scope: "openid",
+          redirect_uri: CLIENTS.public.redirectUri,
+          login_as: ids.alder,
+        }),
+        { redirect: "manual" },
+      );
+      expect(response.status).toBe(302);
+      expect(response.headers.get("location")).toBe(
+        `${CLIENTS.public.redirectUri}#error=unsupported_response_type`,
+      );
+    }
   });
 });

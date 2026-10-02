@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../app";
+import { discoveryEndpoint } from "../oidc/discovery";
 import { jwksEndpoint } from "../oidc/jwks";
 
 // ORCID's OpenID Connect routes: /.well-known/openid-configuration, /oauth/jwks, and
@@ -9,6 +10,7 @@ import { jwksEndpoint } from "../oidc/jwks";
 // the record API. Put route-specific middleware on the full path instead.
 export function oidcRoutes(): Hono<AppEnv> {
   const oidc = new Hono<AppEnv>();
+  oidc.get("/.well-known/openid-configuration", discoveryEndpoint);
   oidc.get("/oauth/jwks", jwksEndpoint);
   return oidc;
 }

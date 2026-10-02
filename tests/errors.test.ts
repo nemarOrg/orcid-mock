@@ -58,17 +58,20 @@ describe("an unrouted /v3.0 path answers in ORCID's record-API shape", () => {
 });
 
 describe("an unrouted OAuth or discovery path answers in OAuth's shape", () => {
-  for (const path of [
-    "/oauth/x",
-    "/oauth",
-    "/oauth/",
-    "/.well-known/x",
-    "/.well-known/openid-configuration",
-  ]) {
+  for (const path of ["/oauth/x", "/oauth", "/oauth/", "/.well-known/x"]) {
     test(`GET ${path}`, async () => {
       const { response, json } = await get(path);
       expect(response.status).toBe(404);
       expect(response.headers.get("content-type")).toContain("application/json");
+      expect(json).toEqual({ error: "invalid_request", error_description: "Not found" });
+    });
+  }
+
+  // Phase 3 serves GET on these three paths; any other method has no route.
+  for (const path of ["/.well-known/openid-configuration", "/oauth/jwks"]) {
+    test(`POST ${path}`, async () => {
+      const { response, json } = await get(path, { method: "POST" });
+      expect(response.status).toBe(404);
       expect(json).toEqual({ error: "invalid_request", error_description: "Not found" });
     });
   }
