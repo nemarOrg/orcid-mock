@@ -40,7 +40,9 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   app.route("/__admin", adminRoutes());
   app.route("/oauth", oauthRoutes());
   // Mounted at the root so phase 3 serves /.well-known/openid-configuration, /oauth/jwks, and
-  // /oauth/userinfo from one router without editing this file.
+  // /oauth/userinfo from one router without editing this file. A router mounted at the root must
+  // declare full paths and never use("*") or other wildcard middleware, which would run for every
+  // route registered after it, /v3.0/* included.
   app.route("/", oidcRoutes());
   app.route("/v3.0", recordRoutes());
 
