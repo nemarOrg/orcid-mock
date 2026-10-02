@@ -29,5 +29,6 @@ Add new entries here as you create ADRs:
 - [ADR 0003](0003-fixture-schema-and-id-minting.md): Zod as the fixture schema source, the generated JSON Schema, and the `0009-9` mint block
 - [ADR 0004](0004-oauth-surface-and-orcid-mock-choices.md): the OAuth surface, fragment error redirects, passwordless sign-in, redirect matching, lifetimes, and revoke edge cases
 - [ADR 0005](0005-distribution-and-release.md): four channels at one version, distroless image, cross-compiled binaries, release order, forward-only floating tags, and `bun publish` without provenance
+- [ADR 0006](0006-openid-connect-choices.md): the OpenID Connect choices: the 24-hour ID token, ORCID's cross-domain filter, the userinfo scope and token sources, the advertised implicit flow, and the signing key
 
 - ADR 0000 - template (do not edit)
