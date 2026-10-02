@@ -37,13 +37,27 @@ export function resolveClient(ref: ClientRef = "public"): TestClient {
   return typeof ref === "string" ? CLIENTS[ref] : ref;
 }
 
-/** The iDs of the starter users, keyed by lowercase given name (alder, sennet, briar). */
-export async function userIds(server: TestServer): Promise<Record<string, string>> {
+/** The iDs of the starter users, which are minted and so are looked up, not written down. */
+export interface StarterIds {
+  /** Public name with a credit name and a family name. */
+  alder: string;
+  /** Public name with no family name. */
+  sennet: string;
+  /** Private name, and locked. */
+  briar: string;
+}
+
+export async function userIds(server: TestServer): Promise<StarterIds> {
   const { body } = await server.admin<Array<{ orcid: string; name: { given_names: string } }>>(
     "GET",
     "/users",
   );
-  return Object.fromEntries(body.map((user) => [user.name.given_names.toLowerCase(), user.orcid]));
+  const find = (given: string): string => {
+    const user = body.find((candidate) => candidate.name.given_names === given);
+    if (!user) throw new Error(`the starter fixture has no user named ${given}`);
+    return user.orcid;
+  };
+  return { alder: find("Alder"), sennet: find("Sennet"), briar: find("Briar") };
 }
 
 /** `{baseUrl}/oauth/authorize?...`; parameters that are undefined are left out. */

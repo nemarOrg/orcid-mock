@@ -6,13 +6,14 @@ import {
   CLIENTS,
   parseForms,
   REDIRECT_URI,
+  type StarterIds,
   sessionCookie,
   submitForm,
   userIds,
 } from "./helpers/oauth";
 
 let server: TestServer;
-let ids: Record<string, string>;
+let ids: StarterIds;
 beforeAll(async () => {
   server = await startTestServer();
 }, 10_000);
@@ -69,7 +70,7 @@ function expectErrorFragment(response: Response, redirectUri: string, fragment: 
 describe("the headless round trip with login_as", () => {
   test("redirects with a six-character code and the exact state, and sets the session cookie", async () => {
     const result = await authorizeAs(server, {
-      orcid: ids.alder as string,
+      orcid: ids.alder,
       scope: "/authenticate",
       state: NASTY_STATE,
     });
@@ -94,7 +95,7 @@ describe("the headless round trip with login_as", () => {
   });
 
   test("leaves state out when the request had none, and keeps an empty one", async () => {
-    const without = await authorizeAs(server, { orcid: ids.alder as string, scope: "openid" });
+    const without = await authorizeAs(server, { orcid: ids.alder, scope: "openid" });
     expect(without.state).toBeNull();
     expect(without.location).toBe(`${REDIRECT_URI}?code=${without.code}`);
 
@@ -105,7 +106,7 @@ describe("the headless round trip with login_as", () => {
   test("each call issues a different code and a different session", async () => {
     const results = await Promise.all(
       Array.from({ length: 25 }, () =>
-        authorizeAs(server, { orcid: ids.alder as string, scope: "/authenticate" }),
+        authorizeAs(server, { orcid: ids.alder, scope: "/authenticate" }),
       ),
     );
     expect(new Set(results.map((result) => result.code)).size).toBe(25);
@@ -115,7 +116,7 @@ describe("the headless round trip with login_as", () => {
   test("codes use the whole [0-9a-zA-Z] alphabet and nothing else", async () => {
     const seen = new Set<string>();
     for (let n = 0; n < 150; n++) {
-      const { code } = await authorizeAs(server, { orcid: ids.alder as string, scope: "openid" });
+      const { code } = await authorizeAs(server, { orcid: ids.alder, scope: "openid" });
       expect(code).toMatch(/^[0-9a-zA-Z]{6}$/);
       for (const char of code) seen.add(char);
     }
@@ -127,7 +128,7 @@ describe("the headless round trip with login_as", () => {
 
   test("a redirect URI under the registered path is allowed, and its query is kept", async () => {
     const sub = await authorizeAs(server, {
-      orcid: ids.alder as string,
+      orcid: ids.alder,
       scope: "/authenticate",
       redirectUri: `${REDIRECT_URI}/sub`,
       state: "s",
@@ -135,7 +136,7 @@ describe("the headless round trip with login_as", () => {
     expect(sub.location).toBe(`${REDIRECT_URI}/sub?code=${sub.code}&state=s`);
 
     const withQuery = await authorizeAs(server, {
-      orcid: ids.alder as string,
+      orcid: ids.alder,
       scope: "/authenticate",
       redirectUri: `${REDIRECT_URI}?next=%2Fhome&x=1`,
       state: "s",
@@ -145,7 +146,7 @@ describe("the headless round trip with login_as", () => {
     );
 
     const withFragment = await authorizeAs(server, {
-      orcid: ids.alder as string,
+      orcid: ids.alder,
       scope: "/authenticate",
       redirectUri: `${REDIRECT_URI}?a=1#frag`,
     });
@@ -174,7 +175,7 @@ describe("the headless round trip with login_as", () => {
   });
 
   test("a user without a family name or with a private name can sign in", async () => {
-    for (const id of [ids.sennet as string]) {
+    for (const id of [ids.sennet]) {
       const result = await authorizeAs(server, { orcid: id, scope: "/authenticate" });
       expect(result.code).toMatch(/^[0-9a-zA-Z]{6}$/);
     }
@@ -622,7 +623,7 @@ describe("the consent page", () => {
       error: "invalid_request",
       error_description: "Missing parameter: orcid",
     });
-    const locked = await withUser(ids.briar as string);
+    const locked = await withUser(ids.briar);
     expect(locked.status).toBe(400);
     expect(await locked.json()).toEqual({
       error: "invalid_request",
@@ -656,7 +657,7 @@ describe("prompt", () => {
   const OPENID = "openid /authenticate";
 
   /** Signs Alder in with login_as and returns the session cookie the response set. */
-  async function signedIn(orcid = ids.alder as string): Promise<string> {
+  async function signedIn(orcid = ids.alder): Promise<string> {
     const { cookie } = await authorizeAs(server, { orcid, scope: OPENID });
     if (cookie === null) throw new Error("no session cookie");
     return cookie;
@@ -730,7 +731,7 @@ describe("prompt", () => {
   test("a new sign-in replaces the session the request carried", async () => {
     const first = await signedIn();
     const { cookie: second } = await authorizeAs(server, {
-      orcid: ids.sennet as string,
+      orcid: ids.sennet,
       scope: OPENID,
       cookie: first,
     });
@@ -776,7 +777,7 @@ describe("prompt", () => {
   test("prompt=login with login_as still signs in, as a forced re-login", async () => {
     const cookie = await signedIn();
     const again = await authorizeAs(server, {
-      orcid: ids.sennet as string,
+      orcid: ids.sennet,
       scope: OPENID,
       prompt: "login",
       cookie,
@@ -812,7 +813,7 @@ describe("the session cookie", () => {
       await secured.stop();
     }
     // The server under test here is plain http: no Secure flag.
-    const plain = await authorizeAs(server, { orcid: ids.alder as string, scope: "/authenticate" });
+    const plain = await authorizeAs(server, { orcid: ids.alder, scope: "/authenticate" });
     expect(plain.response.headers.getSetCookie()[0]).not.toContain("Secure");
   });
 });

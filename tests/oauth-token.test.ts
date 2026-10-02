@@ -10,12 +10,13 @@ import {
   postForm,
   REDIRECT_URI,
   refreshTokens,
+  type StarterIds,
   tokenRequest,
   userIds,
 } from "./helpers/oauth";
 
 let server: TestServer;
-let ids: Record<string, string>;
+let ids: StarterIds;
 beforeAll(async () => {
   server = await startTestServer();
 }, 10_000);
@@ -58,7 +59,7 @@ const MISMATCH =
 describe("the headless round trip", () => {
   test("login_as, then the code, gives ORCID's token response in ORCID's key order", async () => {
     const authorized = await authorizeAs(server, {
-      orcid: ids.alder as string,
+      orcid: ids.alder,
       scope: "/authenticate",
       state: NASTY_STATE,
     });
@@ -82,22 +83,22 @@ describe("the headless round trip", () => {
 
   test("scope is space-separated in the order requested, openid without a slash", async () => {
     const token = await obtainToken(server, {
-      orcid: ids.alder as string,
+      orcid: ids.alder,
       scope: "openid /read-limited /authenticate",
       client: "member",
     });
     expect(token.scope).toBe("openid /read-limited /authenticate");
     // Duplicates collapse.
     const twice = await obtainToken(server, {
-      orcid: ids.alder as string,
+      orcid: ids.alder,
       scope: "openid openid /authenticate",
     });
     expect(twice.scope).toBe("openid /authenticate");
   });
 
   test("every exchange mints different tokens, and an id_token is not added in phase 2", async () => {
-    const a = await obtainToken(server, { orcid: ids.alder as string, scope: "openid" });
-    const b = await obtainToken(server, { orcid: ids.alder as string, scope: "openid" });
+    const a = await obtainToken(server, { orcid: ids.alder, scope: "openid" });
+    const b = await obtainToken(server, { orcid: ids.alder, scope: "openid" });
     expect(new Set([a.access_token, a.refresh_token, b.access_token, b.refresh_token]).size).toBe(
       4,
     );
@@ -113,13 +114,13 @@ describe("the headless round trip", () => {
         .name;
     };
     // A public credit name wins over the real names.
-    expect(
-      await obtainToken(server, { orcid: ids.alder as string, scope: "/authenticate" }),
-    ).toMatchObject({ name: "A. Fennimore" });
+    expect(await obtainToken(server, { orcid: ids.alder, scope: "/authenticate" })).toMatchObject({
+      name: "A. Fennimore",
+    });
     // No family name: the given name alone, trimmed.
-    expect(
-      await obtainToken(server, { orcid: ids.sennet as string, scope: "/authenticate" }),
-    ).toMatchObject({ name: "Sennet" });
+    expect(await obtainToken(server, { orcid: ids.sennet, scope: "/authenticate" })).toMatchObject({
+      name: "Sennet",
+    });
     // Given and family, no credit name.
     expect(await make({ given_names: "Plain", family_name: "Person", visibility: "public" })).toBe(
       "Plain Person",
@@ -153,15 +154,15 @@ describe("the headless round trip", () => {
       `/users/${ids.briar}`,
     );
     await server.admin("PUT", `/users/${ids.briar}`, { ...briar, locked: false });
-    const token = await obtainToken(server, { orcid: ids.briar as string, scope: "/authenticate" });
+    const token = await obtainToken(server, { orcid: ids.briar, scope: "/authenticate" });
     expect(token.name).toBe("");
-    expect(token.orcid).toBe(ids.briar as string);
+    expect(token.orcid).toBe(ids.briar);
   });
 
   test("a code survives a registered redirect URI with a path and query, which must be repeated", async () => {
     const redirectUri = `${REDIRECT_URI}/sub?next=%2Fhome`;
     const { code } = await authorizeAs(server, {
-      orcid: ids.alder as string,
+      orcid: ids.alder,
       scope: "/authenticate",
       redirectUri,
     });
@@ -363,7 +364,7 @@ describe("the token endpoint's request checks", () => {
 
 describe("authorization_code", () => {
   const signIn = (over: { client?: "public" | "member"; redirectUri?: string } = {}) =>
-    authorizeAs(server, { orcid: ids.alder as string, scope: "/authenticate", ...over });
+    authorizeAs(server, { orcid: ids.alder, scope: "/authenticate", ...over });
 
   test("a missing code is 400 invalid_request", async () => {
     const reply = await tokenRequest(server, {
@@ -472,7 +473,7 @@ describe("authorization_code", () => {
 });
 
 describe("refresh_token", () => {
-  const first = () => obtainToken(server, { orcid: ids.alder as string, scope: "/authenticate" });
+  const first = () => obtainToken(server, { orcid: ids.alder, scope: "/authenticate" });
 
   test("rotates: new tokens, same scope and user, and the old refresh token stops working", async () => {
     const original = await first();
@@ -501,7 +502,7 @@ describe("refresh_token", () => {
   });
 
   test("a refresh response carries no id_token and is not a code-flow response in disguise", async () => {
-    const original = await obtainToken(server, { orcid: ids.alder as string, scope: "openid" });
+    const original = await obtainToken(server, { orcid: ids.alder, scope: "openid" });
     const reply = await refreshTokens(server, { refreshToken: original.refresh_token });
     expect(Object.keys(reply.json ?? {})).toEqual(CODE_KEYS);
   });
@@ -560,7 +561,7 @@ describe("refresh_token", () => {
 
   test("scope can narrow to a subset, and the narrowed scope stays narrowed", async () => {
     const original = await obtainToken(server, {
-      orcid: ids.alder as string,
+      orcid: ids.alder,
       scope: "openid /authenticate /read-limited",
       client: "member",
     });

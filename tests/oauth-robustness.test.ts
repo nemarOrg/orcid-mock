@@ -12,7 +12,7 @@ beforeAll(async () => {
 }, 10_000);
 beforeEach(async () => {
   await server.reset();
-  alder = (await userIds(server)).alder as string;
+  alder = (await userIds(server)).alder;
 });
 afterAll(() => server.stop());
 

@@ -8,11 +8,12 @@ import {
   obtainToken,
   postForm,
   refreshTokens,
+  type StarterIds,
   userIds,
 } from "./helpers/oauth";
 
 let server: TestServer;
-let ids: Record<string, string>;
+let ids: StarterIds;
 beforeAll(async () => {
   server = await startTestServer();
 }, 10_000);
@@ -31,7 +32,7 @@ const revoke = (
   headers: Record<string, string> = {},
 ) => postForm(server, "/oauth/revoke", { ...clientFields(client), token }, headers);
 
-const signIn = () => obtainToken(server, { orcid: ids.alder as string, scope: "/authenticate" });
+const signIn = () => obtainToken(server, { orcid: ids.alder, scope: "/authenticate" });
 
 describe("POST /oauth/revoke", () => {
   test("revoking an access token answers 200 with an empty body, and kills the refresh token too", async () => {
