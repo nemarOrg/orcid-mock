@@ -61,6 +61,7 @@ describe("GET /oauth/jwks", () => {
       "no-cache, no-store, max-age=0, must-revalidate",
     );
     expect(response.headers.get("pragma")).toBe("no-cache");
+    expect(response.headers.get("expires")).toBe("0");
   });
 
   test("the kid is stable across requests and across a reset", async () => {
@@ -762,6 +763,8 @@ describe("userinfo refuses with ORCID's one 403", () => {
     expect(response.headers.get("cache-control")).toBe(
       "no-cache, no-store, max-age=0, must-revalidate",
     );
+    expect(response.headers.get("pragma")).toBe("no-cache");
+    expect(response.headers.get("expires")).toBe("0");
     expect(response.headers.get("www-authenticate")).toBeNull();
     const text = await response.text();
     expect(text).toBe('{"error":"access_denied","error-description":"access_token is invalid"}');

@@ -27,7 +27,15 @@ export function corsHeaders(c: Context): Record<string, string> {
 /** The content type ORCID's OpenID Connect controllers answer with (observed for discovery). */
 export const OIDC_JSON = { "Content-Type": JSON_UTF8 } as const;
 
-/** What ORCID sends with its JWKS and its userinfo 403 (observed on orcid.org on 2026-10-01). */
+/**
+ * The cache headers ORCID sends with its JWKS, captured on orcid.org on 2026-10-01:
+ * `cache-control: no-cache, no-store, max-age=0, must-revalidate`, `pragma: no-cache`, and
+ * `expires: 0`. The userinfo 403 was captured with the same `cache-control` on sandbox.orcid.org
+ * on 2026-10-01; that capture does not list the other two, which orcid-mock assumes go with it
+ * (the three are one set of web-framework defaults).
+ */
 export const NO_STORE = {
   "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
+  Pragma: "no-cache",
+  Expires: "0",
 } as const;
