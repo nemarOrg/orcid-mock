@@ -1,9 +1,11 @@
-# Version updates for the kinds of pinned dependency here: GitHub Actions (pinned by commit SHA),
-# the Dockerfile's base images (pinned by digest), Bun packages (exact versions in package.json and
-# bun.lock) for the server and for the Node helper in clients/node, and Python packages for the
-# Python helper in clients/python (uv.lock). What Dependabot cannot see, such as the image digests
-# and tool versions written into the workflows, is bumped by hand: RELEASING.md lists each pin and
-# how.
+# Version updates for what Dependabot can see: GitHub Actions (pinned by full commit hash), Bun
+# packages (exact versions in package.json and bun.lock) for the server and for the Node helper in
+# clients/node, and Python packages for the Python helper in clients/python (uv.lock).
+#
+# The `docker` entry reads `FROM image:tag` lines, and the Dockerfile takes its two base images from
+# ARG defaults, so it proposes nothing today. Those images, the image digests and tool versions
+# written into the workflows, and the Bun version (which moves together with @types/bun) are bumped
+# by hand: RELEASING.md lists each pin and how.
 #
 # Every update waits seven days after its release before Dependabot proposes it, so a compromised
 # release has a week to be caught first. The cooldown applies to version updates only: security

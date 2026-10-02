@@ -70,19 +70,31 @@ A `coverage` job in the same workflow compares the names in `SHA256SUMS` with th
 Before then, remove its matrix entry from `smoke-binaries.yml` and put `orcid-mock-darwin-x64` in the `UNEXECUTED` variable of the `coverage` job, or every release and every packaging change will queue on a runner label that no longer exists.
 Add the same fact to [ADR 0005](.context/decisions/0005-distribution-and-release.md), whose amendment already says that nothing can execute the darwin x64 binary in CI after that date.
 
-## Pins that are bumped by hand
+## Pins
 
-Dependabot updates the GitHub Actions (pinned by commit SHA), the Dockerfile's two base images (by digest), the Bun packages of the server and of `clients/node`, and the Python packages of `clients/python`, each after a seven-day cooldown.
-It cannot see these, which are written into files as plain text.
+### What Dependabot proposes
+
+Each proposal waits seven days after the release, and each is a pull request to review, not an automatic merge.
+
+- **GitHub Actions:** the full commit hash and the version comment of every `uses:` line in `.github/workflows/`.
+- **Bun packages:** the exact dependencies in `package.json` and in `clients/node/package.json`, with their lockfiles.
+  That includes `@types/bun`, which must not be merged alone: see the Bun row below.
+- **Python packages:** the dependencies of `clients/python` and `uv.lock`.
+
+### What stays manual
+
+Dependabot cannot see these, because they are plain text in files it does not read.
+Its Docker updater reads `FROM image:tag` lines, and the Dockerfile takes its two base images from `ARG` defaults, so it proposes nothing for them; writing the images literally in the `FROM` lines would change that.
 Prefer a release that is at least seven days old, as the cooldown does, and let CI prove the bump.
 
 | Pin | Where | How to bump |
 |---|---|---|
-| BuildKit image (`BUILDKIT_IMAGE`), with its digest | `ci.yml`, `release.yml` | Find the new index digest with `docker buildx imagetools inspect moby/buildkit:<tag> --format '{{.Manifest.Digest}}'`, then change the tag and the digest together in both files. |
+| Base images, with their digests | `Dockerfile`: `BUN_IMAGE` (`oven/bun`) and `RUNTIME_IMAGE` (distroless) | Find the new index digest with `docker buildx imagetools inspect <image>:<tag> --format '{{.Manifest.Digest}}'`, and change the tag and the digest together; the `oven/bun` tag follows the Bun version (next row). |
+| BuildKit image (`BUILDKIT_IMAGE`), with its digest | `ci.yml`, `release.yml` | The same, for `moby/buildkit:<tag>`, in both files. |
 | QEMU registration image (`BINFMT_IMAGE`), with its digest | `release.yml` | The same, for `tonistiigi/binfmt:<tag>`. |
 | Alpine image (`ALPINE_IMAGE`), with its digest | `smoke-binaries.yml` | The same, for `alpine:<tag>`. |
+| Bun | `packageManager` and `@types/bun` in `package.json` and in `clients/node/package.json`; the `oven/bun` tag and digest in `Dockerfile` | These five move together, in one pull request: when Dependabot proposes `@types/bun`, add the rest to its branch (or bump all five by hand), then run `bun install` in both directories to refresh the lockfiles. The workflows read the version from `package.json`. |
 | `setup-uv` `version` (uv itself) | every `astral-sh/setup-uv` step in `ci.yml` and `release.yml` | Change them all to the same release (`grep -n 'version: "0' .github/workflows/*.yml` finds them), and run `uv lock --check` in `clients/python`. |
-| Bun | `packageManager` and `@types/bun` in `package.json` and in `clients/node/package.json`; the `oven/bun` tag and digest in `Dockerfile` | Change them together, then `bun install` in both directories to refresh the lockfiles. The workflows read the version from `package.json`. |
 | Node | the two `node-version` lines of `actions/setup-node` in `ci.yml` (24 and 22) | Take the newest release of each line from <https://nodejs.org/dist/index.json> that is at least seven days old. The helper's `engines.node` (`>=22`) is the range it supports, not a pin. |
 | zizmor | `uvx zizmor@<version>` in `ci.yml`, and the comment in `.github/zizmor.yml` | Change both, run `uvx zizmor@<version> --offline .github/workflows action.yml`, and fix or document any new finding. |
 
