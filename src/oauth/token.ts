@@ -5,7 +5,7 @@
 import type { Context } from "hono";
 import type { AppEnv } from "../app";
 import { serverNowMs } from "../clock";
-import { oauthError } from "../errors";
+import { JSON_UTF8, tokenEndpointError } from "../errors";
 import type { ScopeName, Store, StoredClient, TokenRecord } from "../store/types";
 import { authenticateClient } from "./client-auth";
 import { readForm } from "./form";
@@ -49,7 +49,11 @@ async function newTokenRecord(
 /** A token response: the body from `buildTokenResponse`, uncacheable (RFC 6749 section 5.1). */
 async function tokenJson(c: Ctx, input: Omit<TokenResponseInput, "deps">): Promise<Response> {
   const body = await buildTokenResponse({ deps: c.get("deps"), ...input });
-  return c.json(body, 200, { "Cache-Control": "no-store", Pragma: "no-cache" });
+  return c.json(body, 200, {
+    "Content-Type": JSON_UTF8,
+    "Cache-Control": "no-store",
+    Pragma: "no-cache",
+  });
 }
 
 export async function tokenEndpoint(c: Ctx): Promise<Response> {
@@ -60,7 +64,7 @@ export async function tokenEndpoint(c: Ctx): Promise<Response> {
   // research 3, observed on sandbox.orcid.org on 2026-10-01: 400, `error` first.
   const grantType = params.get("grant_type");
   if (grantType === null || grantType === "") {
-    return oauthError(c, 400, "unsupported_grant_type", "grant_type is missing");
+    return tokenEndpointError(c, 400, "unsupported_grant_type", "grant_type is missing");
   }
 
   const auth = await authenticateClient(c, params);
@@ -76,7 +80,12 @@ export async function tokenEndpoint(c: Ctx): Promise<Response> {
       return clientCredentialsGrant(c, client, params);
     default:
       // research 3: unobserved for a valid client; INFERRED from the missing-grant body.
-      return oauthError(c, 400, "unsupported_grant_type", `Unsupported grant type: ${grantType}`);
+      return tokenEndpointError(
+        c,
+        400,
+        "unsupported_grant_type",
+        `Unsupported grant type: ${grantType}`,
+      );
   }
 }
 
@@ -88,7 +97,7 @@ async function authorizationCodeGrant(
   const { store } = c.get("deps");
   const code = params.get("code");
   if (code === null || code === "")
-    return oauthError(c, 400, "invalid_request", "code is required");
+    return tokenEndpointError(c, 400, "invalid_request", "code is required");
 
   // The code is consumed whatever happens next, so a wrong client or redirect_uri cannot be
   // retried and a reused code is the unknown-code case (RFC 6749 section 4.1.2).
@@ -98,12 +107,12 @@ async function authorizationCodeGrant(
     // research 3, ORCID-Source orcid-api-web/tutorial/api_errors.md (April 2026): 400 "Invalid
     // authorization code: [code]"; the `invalid_grant` code is INFERRED. A code that expired, was
     // already used, or never existed all land here; a code whose user was deleted does too.
-    return oauthError(c, 400, "invalid_grant", `Invalid authorization code: ${code}`);
+    return tokenEndpointError(c, 400, "invalid_grant", `Invalid authorization code: ${code}`);
   }
   if (record.client_id !== client.client_id || params.get("redirect_uri") !== record.redirect_uri) {
     // research 3, api_errors.md: "One of the provided parameters is invalid, or, the provided
     // token/code is invalid or expired", for a wrong client id, secret, or redirect uri.
-    return oauthError(
+    return tokenEndpointError(
       c,
       400,
       "invalid_grant",
@@ -137,7 +146,7 @@ async function refreshTokenGrant(
   const { store } = c.get("deps");
   const refreshToken = params.get("refresh_token");
   if (refreshToken === null || refreshToken === "") {
-    return oauthError(c, 401, "invalid_request", "refresh_token is required");
+    return tokenEndpointError(c, 401, "invalid_request", "refresh_token is required");
   }
 
   const old = await store.getRefreshToken(refreshToken);
@@ -149,7 +158,7 @@ async function refreshTokenGrant(
     (old.orcid !== null && user === null) ||
     (await serverNowMs(store)) >= old.expires_at_ms
   ) {
-    return oauthError(c, 400, "invalid_grant", `Invalid refresh token: ${refreshToken}`);
+    return tokenEndpointError(c, 400, "invalid_grant", `Invalid refresh token: ${refreshToken}`);
   }
 
   // An empty or omitted `scope` copies the parent's; otherwise it must be a subset (ORCID-Source
@@ -161,7 +170,7 @@ async function refreshTokenGrant(
     // The message names every requested scope the parent lacks, unknown ones included, as asked.
     const outside = scopeTokens(requested).filter((t) => !(old.scopes as string[]).includes(t));
     if (outside.length > 0) {
-      return oauthError(c, 400, "invalid_scope", `Invalid scope: ${outside.join(" ")}`);
+      return tokenEndpointError(c, 400, "invalid_scope", `Invalid scope: ${outside.join(" ")}`);
     }
     scopes = parseScopes(requested).scopes;
   }
@@ -183,7 +192,7 @@ async function refreshTokenGrant(
   // Atomic: a second rotation of the same refresh token loses, as a reuse would.
   const rotated = await store.rotateRefresh(refreshToken, next, revokeOld);
   if (!rotated)
-    return oauthError(c, 400, "invalid_grant", `Invalid refresh token: ${refreshToken}`);
+    return tokenEndpointError(c, 400, "invalid_grant", `Invalid refresh token: ${refreshToken}`);
   return tokenJson(c, {
     grant: "refresh_token",
     token: rotated,
@@ -206,7 +215,7 @@ async function clientCredentialsGrant(
   if (requested !== null && requested.trim() !== "") {
     const outside = scopeTokens(requested).filter((t) => t !== "/read-public");
     if (outside.length > 0) {
-      return oauthError(c, 400, "invalid_scope", `Invalid scope: ${outside.join(" ")}`);
+      return tokenEndpointError(c, 400, "invalid_scope", `Invalid scope: ${outside.join(" ")}`);
     }
   }
   const token = await newTokenRecord(store, {

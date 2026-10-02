@@ -114,6 +114,7 @@ describe("POST /oauth/revoke", () => {
     for (const token of [undefined, ""]) {
       const reply = await revoke(token);
       expect(reply.status).toBe(400);
+      expect(reply.headers.get("content-type")).toBe("application/json;charset=UTF-8");
       expect(reply.text).toBe(errorText("invalid_request", "token is required"));
     }
   });
@@ -132,6 +133,7 @@ describe("POST /oauth/revoke", () => {
       token: token.access_token,
     });
     expect(wrong.status).toBe(401);
+    expect(wrong.headers.get("content-type")).toBe("application/json;charset=UTF-8");
     expect(wrong.text).toBe(
       '{"error_description":"Client authentication failed","error":"invalid_client"}',
     );

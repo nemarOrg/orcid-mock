@@ -66,7 +66,7 @@ describe("the headless round trip", () => {
 
     const reply = await exchangeCode(server, { code: authorized.code });
     expect(reply.status).toBe(200);
-    expect(reply.headers.get("content-type")).toContain("application/json");
+    expect(reply.headers.get("content-type")).toBe("application/json;charset=UTF-8");
     expect(reply.headers.get("cache-control")).toBe("no-store");
     expect(reply.headers.get("pragma")).toBe("no-cache");
     expect(Object.keys(reply.json ?? {})).toEqual(CODE_KEYS);
@@ -210,6 +210,23 @@ describe("the token endpoint's request checks", () => {
       body: new URLSearchParams({ grant_type: "client_credentials", ...CLIENTS.public }),
     });
     expect(response.status).toBe(200);
+  });
+
+  test("every JSON answer, success or error, is application/json;charset=UTF-8 as ORCID sends it", async () => {
+    const replies = [
+      await clientCredentials(server),
+      await tokenRequest(server, { grant_type: undefined }),
+      await postForm(server, "/oauth/token", { grant_type: "client_credentials" }),
+      await tokenRequest(server, { grant_type: "client_credentials", client_secret: "wrong" }),
+      await tokenRequest(server, { grant_type: "password" }),
+      await clientCredentials(server, { scope: "/authenticate" }),
+      await exchangeCode(server, { code: "zzzzzz" }),
+      await refreshTokens(server, { refreshToken: "nope" }),
+    ];
+    expect(replies.map((reply) => reply.status)).toEqual([200, 400, 401, 401, 400, 400, 400, 400]);
+    for (const reply of replies) {
+      expect(reply.headers.get("content-type")).toBe("application/json;charset=UTF-8");
+    }
   });
 
   test("a missing grant_type is 400, and is checked before the client", async () => {

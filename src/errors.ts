@@ -19,14 +19,34 @@ export function oauthError(
   status: ErrorStatus,
   error: string,
   description: string,
+  opts: { descriptionFirst?: boolean; contentType?: string } = {},
+): Response {
+  const body = opts.descriptionFirst
+    ? { error_description: description, error }
+    : { error, error_description: description };
+  return opts.contentType === undefined
+    ? c.json(body, status)
+    : c.json(body, status, { "Content-Type": opts.contentType });
+}
+
+/**
+ * The JSON content types ORCID was observed to send: the token endpoint, the revoke endpoint, and
+ * the record API's bad-bearer 401 use UTF-8 (observed on sandbox.orcid.org and
+ * pub.sandbox.orcid.org on 2026-10-01), and the authorization server's `/oauth2/authorize` errors
+ * use ISO-8859-1 (observed on auth.sandbox.orcid.org on 2026-10-01).
+ */
+export const JSON_UTF8 = "application/json;charset=UTF-8";
+export const JSON_LATIN1 = "application/json;charset=ISO-8859-1";
+
+/** An error from the token or revoke endpoint, in the content type ORCID sends there. */
+export function tokenEndpointError(
+  c: Context,
+  status: ErrorStatus,
+  error: string,
+  description: string,
   opts: { descriptionFirst?: boolean } = {},
 ): Response {
-  return c.json(
-    opts.descriptionFirst
-      ? { error_description: description, error }
-      : { error, error_description: description },
-    status,
-  );
+  return oauthError(c, status, error, description, { ...opts, contentType: JSON_UTF8 });
 }
 
 /**

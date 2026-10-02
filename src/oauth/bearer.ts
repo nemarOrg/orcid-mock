@@ -4,7 +4,7 @@
 import type { Context } from "hono";
 import type { AppEnv } from "../app";
 import { serverNowMs } from "../clock";
-import { oauthError } from "../errors";
+import { JSON_UTF8, oauthError } from "../errors";
 import type { Store, TokenRecord } from "../store/types";
 
 export type BearerResult =
@@ -60,5 +60,7 @@ export async function resolveBearer(c: Context<AppEnv>, store: Store): Promise<B
  * APIAuthenticationEntryPoint.java and OAuthErrorResponseHelper.java).
  */
 export function invalidTokenResponse(c: Context<AppEnv>, presented: string): Response {
-  return oauthError(c, 401, "invalid_token", `Invalid access token: ${presented}`);
+  return oauthError(c, 401, "invalid_token", `Invalid access token: ${presented}`, {
+    contentType: JSON_UTF8,
+  });
 }

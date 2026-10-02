@@ -43,10 +43,17 @@ function authorize(over: Record<string, string | undefined> = {}, init: RequestI
   );
 }
 
-async function expectJsonError(response: Response, status: number, raw: string) {
+async function expectJsonError(
+  response: Response,
+  status: number,
+  raw: string,
+  contentType = "application/json;charset=ISO-8859-1",
+) {
   expect(response.status).toBe(status);
   expect(response.headers.get("location")).toBeNull();
-  expect(response.headers.get("content-type")).toContain("application/json");
+  // The authorization server's JSON errors were observed with ISO-8859-1; orcid-mock's own
+  // login_as errors, which echo what the caller sent, are plain application/json.
+  expect(response.headers.get("content-type")).toBe(contentType);
   // The raw text carries ORCID's key order.
   expect(await response.text()).toBe(raw);
   expect(sessionCookie(response)).toBeNull();
@@ -179,6 +186,7 @@ describe("the headless round trip with login_as", () => {
       response,
       400,
       '{"error":"invalid_request","error_description":"Unknown login_as iD: 0000-0002-1825-0097"}',
+      "application/json",
     );
   });
 
@@ -298,9 +306,41 @@ describe("the up-front checks never redirect", () => {
   });
 });
 
+describe("a missing response_type is a 400, reported before a missing client", () => {
+  const MISSING_TYPE =
+    '{"error_description":"Missing parameter: response_type","error":"invalid_request"}';
+
+  test("with no query at all, response_type is the parameter named", async () => {
+    await expectJsonError(await fetch(`${server.baseUrl}/oauth/authorize`), 400, MISSING_TYPE);
+  });
+
+  test("an absent or empty response_type is a 400 even when the rest is good", async () => {
+    for (const response_type of ["", undefined]) {
+      await expectJsonError(
+        await authorize({ response_type, login_as: ids.alder }),
+        400,
+        MISSING_TYPE,
+      );
+    }
+  });
+
+  test("and it comes before a missing or unknown client", async () => {
+    await expectJsonError(
+      await authorize({ response_type: undefined, client_id: undefined }),
+      400,
+      MISSING_TYPE,
+    );
+    await expectJsonError(
+      await authorize({ response_type: undefined, client_id: "APP-NOPE" }),
+      400,
+      MISSING_TYPE,
+    );
+  });
+});
+
 describe("response_type and scope errors go back to the client as a fragment", () => {
-  test("a response_type other than code, or none, is unsupported_response_type", async () => {
-    for (const response_type of ["token", "id_token", "CODE", "code token", "", undefined]) {
+  test("a response_type other than code is unsupported_response_type", async () => {
+    for (const response_type of ["token", "id_token", "CODE", "code token"]) {
       expectErrorFragment(
         await authorize({ response_type, login_as: ids.alder }),
         REDIRECT_URI,

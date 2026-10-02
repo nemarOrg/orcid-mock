@@ -1,7 +1,7 @@
 // POST /oauth/revoke: revoke an access token or a refresh token, and with it the pair.
 import type { Context } from "hono";
 import type { AppEnv } from "../app";
-import { oauthError } from "../errors";
+import { tokenEndpointError } from "../errors";
 import { authenticateClient } from "./client-auth";
 import { readForm } from "./form";
 
@@ -25,7 +25,7 @@ export async function revokeEndpoint(c: Context<AppEnv>): Promise<Response> {
 
   const token = form.params.get("token");
   if (token === null || token === "") {
-    return oauthError(c, 400, "invalid_request", "token is required");
+    return tokenEndpointError(c, 400, "invalid_request", "token is required");
   }
   const auth = await authenticateClient(c, form.params);
   if (!auth.ok) return auth.response;
@@ -34,7 +34,7 @@ export async function revokeEndpoint(c: Context<AppEnv>): Promise<Response> {
   const record = (await store.getAccessToken(token)) ?? (await store.getRefreshToken(token));
   if (record === null) return c.body(null, 200);
   if (record.client_id !== auth.client.client_id) {
-    return oauthError(c, 400, "unauthorized_client", "Token was not issued to this client");
+    return tokenEndpointError(c, 400, "unauthorized_client", "Token was not issued to this client");
   }
   await store.revoke(token);
   return c.body(null, 200);

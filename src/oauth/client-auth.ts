@@ -1,7 +1,7 @@
 // Client authentication, shared by the token and revoke endpoints.
 import type { Context } from "hono";
 import type { AppEnv } from "../app";
-import { oauthError } from "../errors";
+import { tokenEndpointError } from "../errors";
 import type { StoredClient } from "../store/types";
 import { type Checked, fail } from "./checked";
 
@@ -42,7 +42,7 @@ export async function authenticateClient(
   const invalidClient = (): ClientAuth =>
     // Observed on sandbox.orcid.org on 2026-10-01: 401, `error_description` before `error`.
     fail(
-      oauthError(c, 401, "invalid_client", "Client authentication failed", {
+      tokenEndpointError(c, 401, "invalid_client", "Client authentication failed", {
         descriptionFirst: true,
       }),
     );
@@ -59,10 +59,10 @@ export async function authenticateClient(
     clientId = params.get("client_id");
     secret = params.get("client_secret");
     if (!clientId) {
-      return fail(oauthError(c, 401, "invalid_request", "client_id is required"));
+      return fail(tokenEndpointError(c, 401, "invalid_request", "client_id is required"));
     }
     if (!secret) {
-      return fail(oauthError(c, 401, "invalid_request", "client_secret is required"));
+      return fail(tokenEndpointError(c, 401, "invalid_request", "client_secret is required"));
     }
   }
 

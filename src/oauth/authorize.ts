@@ -1,10 +1,13 @@
 // GET and POST /oauth/authorize: the authorization-code flow's front door.
 // Real ORCID serves a single-page app on this URL, so what a client observes is the sequence of
-// calls the SPA makes to ORCID's authorization server (research 1); this module reproduces the
-// outcomes (a code redirect, an error redirect, or an error body) in one request.
+// calls the app makes to ORCID's authorization server: it reads the request, asks the server to
+// validate it (an unknown client or a missing parameter is a 400 with a JSON body), and either
+// navigates the browser to the client's redirect URI or shows its own error page. This module
+// reproduces the outcomes (a code redirect, an error redirect, or an error body) in one request.
+// Observed on auth.sandbox.orcid.org/oauth2/authorize on 2026-10-01.
 import type { Context } from "hono";
 import type { AppEnv } from "../app";
-import { oauthError } from "../errors";
+import { JSON_LATIN1, oauthError } from "../errors";
 import type { ScopeName, StoredClient, StoredUser } from "../store/types";
 import { type Checked, fail } from "./checked";
 import { issueCode } from "./codes";
@@ -27,9 +30,19 @@ interface AuthorizeRequest {
   nonce: string | null;
 }
 
+/** The 400 JSON errors the authorization server was observed to send, in its content type. */
+function authorizeError(
+  c: Ctx,
+  error: string,
+  description: string,
+  descriptionFirst: boolean,
+): Response {
+  return oauthError(c, 400, error, description, { descriptionFirst, contentType: JSON_LATIN1 });
+}
+
 /**
- * Steps 1 to 3 of the authorize validation, shared by the GET and the consent POST.
- * Real ORCID answers the first two with no redirect, because it cannot trust the `redirect_uri`
+ * The up-front checks, shared by the GET and the consent POST.
+ * Real ORCID answers the first ones with no redirect, because it cannot trust the `redirect_uri`
  * of an unknown client or a mismatch; the rest it hands back to the client app.
  */
 async function checkRequest(
@@ -38,52 +51,58 @@ async function checkRequest(
 ): Promise<Checked<{ request: AuthorizeRequest }>> {
   const { store } = c.get("deps");
 
-  // research 1.2 and 1.4, observed on auth.sandbox.orcid.org/oauth2/authorize on 2026-10-01:
-  // 400 with `error_description` before `error`, and `invalid_request` rather than `invalid_client`.
+  // Observed on auth.sandbox.orcid.org/oauth2/authorize on 2026-10-01: HTTP 400, content type
+  // `application/json;charset=ISO-8859-1`, `error_description` before `error`, code
+  // `invalid_request` (not `invalid_client`). An empty query reported `response_type` first, and a
+  // query with everything but the client reported the client, so a missing `response_type` is
+  // checked before a missing `client_id`. The order of the other missing parameters was not
+  // observed; orcid-mock checks them in the order below.
+  const responseType = params.get("response_type");
+  if (responseType === null || responseType === "") {
+    return fail(authorizeError(c, "invalid_request", "Missing parameter: response_type", true));
+  }
   const clientId = params.get("client_id");
   if (clientId === null || clientId === "") {
     return fail(
-      oauthError(c, 400, "invalid_request", "Missing parameter: client_id is missing", {
-        descriptionFirst: true,
-      }),
+      authorizeError(c, "invalid_request", "Missing parameter: client_id is missing", true),
     );
   }
   const client = await store.getClient(clientId);
   if (!client) {
-    return fail(
-      oauthError(c, 400, "invalid_request", "Invalid parameter: client_id", {
-        descriptionFirst: true,
-      }),
-    );
+    return fail(authorizeError(c, "invalid_request", "Invalid parameter: client_id", true));
   }
 
-  // research 1.4: ORCID never redirects to an unverified redirect_uri; the legacy OauthController
-  // answered `invalid_grant` with this text (ORCID-Source orcid-web/.../oauth2/OauthController.java).
-  // The current server's body is unobserved, so the legacy text is kept.
+  // ORCID never redirects to an unverified redirect_uri. The current server's body for a mismatch
+  // is unobserved, so orcid-mock keeps the text of the legacy implementation (removed upstream):
+  // https://github.com/ORCID/ORCID-Source/blob/7eeb1e7709760f328f5d3f72ebf2629f0a5d54c9/orcid-web/src/main/java/org/orcid/frontend/oauth2/OauthController.java#L442-L447
   const redirectUri = params.get("redirect_uri");
   if (!redirectUri || !redirectUriMatches(redirectUri, client.redirect_uris)) {
     return fail(
-      oauthError(
+      authorizeError(
         c,
-        400,
         "invalid_grant",
         "Redirect URI doesn't match your registered redirect URIs.",
+        false,
       ),
     );
   }
 
-  // research 1.4: the current ORCID front end hands these two back to the client app as a
-  // fragment with no description and no state (orcid-angular src/app/core/oauth/oauth.service.ts,
-  // OAUTH_SESSION_ERROR_CODES_HANDLE_BY_CLIENT_APP: `${redirectUrl}#error=${error}`).
-  if (params.get("response_type") !== "code") {
+  // The current ORCID front end hands these errors back to the client app as a fragment with no
+  // description and no state, `${redirectUrl}#error=${error}`; `unsupported_response_type` and
+  // `invalid_scope` are among the codes it treats as the client application's to handle:
+  // https://github.com/ORCID/orcid-angular/blob/005a02798b4b5e04aedf51b88087bedc783201d3/src/app/core/oauth/oauth.service.ts#L42-L47
+  // https://github.com/ORCID/orcid-angular/blob/005a02798b4b5e04aedf51b88087bedc783201d3/src/app/core/oauth/oauth.service.ts#L267-L270
+  if (responseType !== "code") {
     return fail(errorRedirect(c, redirectUri, "unsupported_response_type"));
   }
   const { scopes, unknown } = parseScopes(params.get("scope"));
   if (
     scopes.length === 0 ||
     unknown.length > 0 ||
-    // `/read-public` is a client-credentials scope; `/read-limited` needs a member client
-    // (ORCID-Source orcid-api-web/tutorial/api_errors.md: "302 Invalid scope").
+    // `/read-public` is a client-credentials scope; `/read-limited` needs a member client, and
+    // ORCID documents the failure as a redirect ("302 Invalid scope", for example that a
+    // `/read-limited` scope cannot be used with a public client):
+    // https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-api-web/tutorial/api_errors.md#L35
     scopes.includes("/read-public") ||
     (scopes.includes("/read-limited") && !client.member)
   ) {
@@ -160,13 +179,16 @@ async function completeSignIn(c: Ctx, request: AuthorizeRequest, user: StoredUse
 
 /**
  * `prompt=none`: no page and no sign-in form. With a live session the user gets a code at once
- * (ORCID-Source orcid-angular src/app/core/auth-decision/auth-decision.service.ts: `prompt=none`
- * with a logged-in user and `openid` navigates straight to the redirect URL); without one the
- * browser goes back to the client with `login_required`.
- * Two forms exist and the source wins over the docs: the current front end redirects to
- * `${redirect_uri}#login_required` (orcid-angular src/app/guards/authorize.guard.ts), a
- * fragment with no `error=` key and no state, while ORCID's older OpenID Connect guide says
- * `?error=login_required` (ORCID-Source orcid-web/ORCID_AUTH_WITH_OPENID_CONNECT.md).
+ * (in the current front end, `prompt=none` with a logged-in user and the `openid` scope navigates
+ * straight to the redirect URL:
+ * https://github.com/ORCID/orcid-angular/blob/005a02798b4b5e04aedf51b88087bedc783201d3/src/app/core/auth-decision/auth-decision.service.ts#L224-L240);
+ * without one the browser goes back to the client with `login_required`.
+ * Two forms exist and the source wins over the documentation. The current front end redirects to
+ * `${redirect_uri}#login_required`, a fragment with no `error=` key and no state:
+ * https://github.com/ORCID/orcid-angular/blob/005a02798b4b5e04aedf51b88087bedc783201d3/src/app/guards/authorize.guard.ts#L115-L127
+ * while ORCID's OpenID Connect guide says the browser returns "with an error as a query string
+ * parameter":
+ * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-web/ORCID_AUTH_WITH_OPENID_CONNECT.md#L96
  * A session whose user was deleted, locked, or deactivated since counts as no session.
  */
 async function silentSignIn(c: Ctx, request: AuthorizeRequest): Promise<Response> {
@@ -192,10 +214,14 @@ export async function authorizeGet(c: Ctx): Promise<Response> {
   if (!checked.ok) return checked.response;
   const { request } = checked;
 
-  // research 1.5 (ORCID-Source orcid-web/ORCID_AUTH_WITH_OPENID_CONNECT.md, "Query parameters"):
-  // `prompt` is honored only on requests that include the `openid` scope. `prompt=login` needs
-  // no code of its own: a session never signs anyone in except under `prompt=none`, so the page
-  // below is what a forced re-login looks like. `login_as` is ignored under `prompt=none`.
+  // `prompt` is honored only on requests that include the `openid` scope (ORCID's OpenID Connect
+  // guide, "Supports the 'prompt' and 'nonce' parameters for authorisation requests that include
+  // the 'openid' scope", and the front end's `prompt === 'login' && isOpenId`):
+  // https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-web/ORCID_AUTH_WITH_OPENID_CONNECT.md#L18
+  // https://github.com/ORCID/orcid-angular/blob/005a02798b4b5e04aedf51b88087bedc783201d3/src/app/core/auth-decision/auth-decision.service.ts#L113-L114
+  // `prompt=login` needs no code of its own: a session never signs anyone in except under
+  // `prompt=none`, so the page below is what a forced re-login looks like.
+  // orcid-mock choice: `login_as` is ignored under `prompt=none`, which takes the session's user.
   if (request.scopes.includes("openid") && request.params.get("prompt") === "none") {
     return silentSignIn(c, request);
   }
@@ -237,9 +263,10 @@ export async function authorizePost(c: Ctx): Promise<Response> {
   const { request } = checked;
 
   if (form.params.get("action") === "deny") {
-    // research 1.4, legacy OauthControllerBase.buildDenyRedirectUri (ORCID-Source
-    // orcid-web/.../oauth2/OauthControllerBase.java): the redirect URI with
-    // `?error=access_denied&error_description=User denied access` and the state.
+    // The legacy implementation (removed upstream) denied by redirecting to the redirect URI with
+    // `?error=access_denied&error_description=User denied access` and the state, `&` instead of
+    // `?` when the URI already had a query:
+    // https://github.com/ORCID/ORCID-Source/blob/7eeb1e7709760f328f5d3f72ebf2629f0a5d54c9/orcid-web/src/main/java/org/orcid/frontend/web/controllers/OauthControllerBase.java#L114-L120
     const pairs: Array<[string, string]> = [
       ["error", "access_denied"],
       ["error_description", "User denied access"],

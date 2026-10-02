@@ -225,7 +225,7 @@ describe("invalidTokenResponse", () => {
     const response = await probe(`Bearer ${presented}`);
     expect(response.status).toBe(401);
     expect(response.headers.get("www-authenticate")).toBeNull();
-    expect(response.headers.get("content-type")).toContain("application/json");
+    expect(response.headers.get("content-type")).toBe("application/json;charset=UTF-8");
     expect(await response.text()).toBe(
       `{"error":"invalid_token","error_description":"Invalid access token: ${presented}"}`,
     );
