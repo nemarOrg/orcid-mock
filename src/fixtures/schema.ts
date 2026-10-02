@@ -322,7 +322,7 @@ export const FixtureUser = UserShape.superRefine((user, ctx) => {
 export const FixtureClient = z.strictObject({
   client_id: z.string().min(1),
   client_secret: z.string().min(1),
-  name: z.string().optional().describe("Shown on the consent page; defaults to the client_id"),
+  name: z.string().optional().describe("Shown on the sign-in page; defaults to the client_id"),
   redirect_uris: z.array(z.url()).min(1),
   member: z.boolean().optional().describe("A member client may read limited items; default false"),
 });

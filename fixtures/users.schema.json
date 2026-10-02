@@ -22,7 +22,7 @@
             "minLength": 1
           },
           "name": {
-            "description": "Shown on the consent page; defaults to the client_id",
+            "description": "Shown on the sign-in page; defaults to the client_id",
             "type": "string"
           },
           "redirect_uris": {

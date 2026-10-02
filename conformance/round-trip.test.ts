@@ -1,8 +1,8 @@
-// MVP1's definition of done, in one test: a brand-new ORCID sign-up driven from an automated
-// test with no browser. It creates a user the way a sign-up would (through the admin API), signs
-// that user in with the OpenID Connect authorization-code flow, verifies the ID token against the
-// published key, reads the user back through userinfo and the record API, resets the mock, and
-// checks that the user is gone.
+// The definition-of-done round trip, in one test: a brand-new ORCID sign-up driven from an
+// automated test with no browser. It creates a user the way a sign-up would (through the admin
+// API), signs that user in with the OpenID Connect authorization-code flow, verifies the ID token
+// against the published key, reads the user back through userinfo and the record API, resets the
+// mock, and checks that the user is gone.
 //
 // Mock only. Real ORCID needs a person to sign in (a browser, a password, a consent click), so
 // the sandbox run covers the token endpoint and the record API and leaves sign-in to this file.

@@ -1,5 +1,5 @@
 // The admin API: reset, health, and the users and clients an app under test needs to register.
-// Unauthenticated by design (the server binds 127.0.0.1 by default) and without CORS in MVP1.
+// Unauthenticated by design (the server binds 127.0.0.1 by default) and without CORS.
 import { type Context, Hono } from "hono";
 import type { AppEnv } from "../app";
 import { adminError } from "../errors";
