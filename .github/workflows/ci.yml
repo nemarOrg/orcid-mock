@@ -71,6 +71,12 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
+      # The Node helper's tests run Playwright's runner on Node as well as on Bun, and load the
+      # packed package under Node, so Node is pinned to an LTS line instead of whatever the
+      # runner image ships.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
 
       # The Node helper's tests start the server from the repository (bun run src/main.ts), and its
       # type check reads the server's fixture types, so the root dependencies come first.
@@ -111,6 +117,10 @@ jobs:
       - name: Test the Python helper
         working-directory: clients/python
         run: uv run pytest --cov
+      # The lowest Python the package supports ran above; the classifiers list this one too.
+      - name: Test the Python helper on Python 3.13
+        working-directory: clients/python
+        run: uv run --locked --python 3.13 --isolated pytest
       - name: Container logs
         if: failure()
         run: |
