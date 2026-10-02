@@ -20,11 +20,17 @@ See [`.context/plan.md`](.context/plan.md) for the roadmap and [`.context/resear
 
 ## Quick start
 
-Run the mock with its starter users, from the npm package or from a checkout of this repository (both need Bun 1.4 or later):
+Run the mock with its starter users, either from the npm package or from a checkout of this repository (both need Bun 1.4 or later, and each runs in the foreground, so use one and leave it running).
+From the package:
 
 ```bash
-bunx @nemarorg/orcid-mock                  # from the package
-bun install && bun run src/main.ts         # or from a checkout
+bunx @nemarorg/orcid-mock
+```
+
+Or from a checkout:
+
+```bash
+bun install && bun run src/main.ts
 ```
 
 It listens on `http://127.0.0.1:9700` and prints one line on stdout when it is ready.
@@ -46,7 +52,7 @@ curl -s -X POST $BASE/oauth/token -d grant_type=authorization_code -d code=$CODE
 # {"access_token":"82b915f4-...","token_type":"bearer","refresh_token":"d6e12d69-...","expires_in":631138518,"scope":"/authenticate","name":"A. Fennimore","orcid":"0009-9814-3544-3504"}
 ```
 
-A test does the same with one call, `signIn`, from the [Node and Python helpers](#test-helpers).
+A test does the same with one call, `signIn` (`sign_in` in Python), from the [Node and Python helpers](#test-helpers).
 A container, a binary, and a GitHub Action run the same server: see [Install and run](#install-and-run).
 
 ## What it does
@@ -280,7 +286,7 @@ They are separate packages in this repository, [`clients/node`](clients/node) (`
   `reset()` restores the loaded file: users, clients, counters, and the clock, and clears codes, tokens, and sessions.
   A client registered with `putClient` is dropped too, so register it again after a reset.
 - **Sign-in.**
-  `signIn` is the headless sequence of [the round trip below](#a-headless-round-trip): `GET /oauth/authorize` with `login_as` without following the redirect, the code from `Location`, then `POST /oauth/token`.
+  `signIn` (`sign_in` in Python) is the headless sequence of [the round trip below](#a-headless-round-trip): `GET /oauth/authorize` with `login_as` without following the redirect, the code from `Location`, then `POST /oauth/token`.
   By default it uses the starter file's public client and `/authenticate`; any non-2xx answer is an `OrcidMockError` carrying the status and body, and a redirect that carries no code (an `error` fragment) is one with status 0.
 
 ### Testcontainers for Node
@@ -416,7 +422,7 @@ The response has ORCID's keys in ORCID's order:
 `name` is the public display name:
 the credit name if the name is public and there is one, else the given and family names if the name is public, else `""`.
 The code is six characters from `[0-9a-zA-Z]`, works once, and the `state` comes back exactly as sent.
-In a test, the [helpers](#test-helpers)' `signIn` does these two steps.
+In a test, the [helpers](#test-helpers)' `signIn` (`sign_in` in Python) does these two steps.
 
 ### The sign-in page
 
@@ -783,7 +789,7 @@ Each gate is green before a commit:
 | the server (repository root) | `bun install`, `bun run lint`, `bun run typecheck`, `bun run test` (which runs only `tests/`; the helpers have their own, and [the conformance suite](#conformance) needs a running server) |
 | the Node helper (`clients/node`) | `bun install`, `bun run lint`, `bun run typecheck`, `bun run build`, `bun run test` (which also builds, packs, and loads the package under Node, so Node 22 or later must be on `PATH`) |
 | the Python helper (`clients/python`) | `uv sync`, `uv run ruff check`, `uv run ruff format --check`, `uv run ty check`, `uv run pytest --cov` |
-| the workflows (`.github/`) | `actionlint .github/workflows/*.yml`, and `uvx zizmor@<the version `ci.yml` pins> --offline .github/workflows action.yml` (the `check` job runs the second) |
+| the workflows (`.github/`) | `actionlint .github/workflows/*.yml`, and `uvx zizmor@<version> --offline .github/workflows action.yml` with the version pinned in `ci.yml` (the `check` job runs the second) |
 
 The helpers' tests start a real mock, so they need Docker, a local build of the image, and (for the Node helper's browser tests) Chromium:
 
