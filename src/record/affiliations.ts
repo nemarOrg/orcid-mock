@@ -1,10 +1,11 @@
 // Affiliations: employments, educations, and qualifications, which the fixture holds, and the four
 // kinds it has no section for (distinctions, invited positions, memberships, services), whose
 // containers are always empty. They share one shape in ORCID's model.
+
+import type { JsonObject } from "../json";
 import type { StoredUser } from "../store/types";
 import { groupIdsJson, idsJson } from "./extid";
 import { groupItems } from "./groups";
-import type { JsonObject } from "./json";
 import { affiliationOrder, byDisplayIndex } from "./order";
 import { canSee, type Viewer } from "./viewer";
 import {

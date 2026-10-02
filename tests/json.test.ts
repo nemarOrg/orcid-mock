@@ -1,7 +1,7 @@
 // The printer is a pure function with no I/O, so it is tested directly with real inputs; the same
 // bytes are checked over HTTP in the record API tests once the routes exist.
 import { describe, expect, test } from "bun:test";
-import { compactJson, prettyJson } from "../src/record/json";
+import { compactJson, prettyJson } from "../src/json";
 
 describe("prettyJson", () => {
   test("an empty email container is the 91 bytes ORCID sends, with no trailing newline", () => {

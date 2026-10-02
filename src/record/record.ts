@@ -1,7 +1,8 @@
 // `/{iD}` and `/{iD}/record`: the whole record, composed from the section builders.
+
+import type { JsonObject } from "../json";
 import type { StoredUser } from "../store/types";
 import { activities } from "./activities";
-import type { JsonObject } from "./json";
 import { person } from "./person";
 import type { Viewer } from "./viewer";
 import { identifier, maxMs, stamp } from "./wire";

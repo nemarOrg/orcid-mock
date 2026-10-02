@@ -598,6 +598,17 @@ describe("the bulk read", () => {
     }
   });
 
+  test("an error body escapes a control character in capitals, like every other body", async () => {
+    // The unit separator, U+001F, echoed back in the NumberFormatException message.
+    const reply = await getRecord(server, `${PATH}/%1F`);
+    expect(reply.status).toBe(400);
+    expect(reply.text).toContain('For input string: \\"\\u001F\\"');
+    expect(reply.text).not.toContain("\\u001f");
+    expect(String((reply.json as { "developer-message": string })["developer-message"])).toEndWith(
+      'For input string: "\u001f"',
+    );
+  });
+
   test("100 put-codes are accepted and 101 are 400 / 9042, checked before any element is parsed", async () => {
     const hundred = Array.from({ length: 100 }, (_, i) => i + 1).join(",");
     const ok = await getRecord(server, `${PATH}/${hundred}`);

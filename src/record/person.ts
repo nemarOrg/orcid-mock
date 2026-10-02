@@ -10,8 +10,9 @@
 // `Api3_0LastModifiedDatesHelper.calculateLastModified(Person)`):
 // https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-api-common/src/main/java/org/orcid/api/publicV3/server/security/impl/PublicAPISecurityManagerV3Impl.java#L297-L344
 // https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/version/impl/Api3_0LastModifiedDatesHelper.java#L243-L262
+
+import type { JsonObject } from "../json";
 import type { StoredUser, Visibility } from "../store/types";
-import type { JsonObject } from "./json";
 import { displayOrder } from "./order";
 import { canSee, type Viewer } from "./viewer";
 import {

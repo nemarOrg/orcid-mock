@@ -2,7 +2,7 @@
 // they are written. (The person-level external identifiers are a different shape; see
 // person.ts.)
 import type { FixtureExternalId } from "../fixtures/schema";
-import type { Json, JsonObject } from "./json";
+import type { Json, JsonObject } from "../json";
 import { wrap } from "./wire";
 
 /**

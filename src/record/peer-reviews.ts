@@ -1,9 +1,10 @@
 // Peer reviews: the three-level grouped summaries (`/peer-reviews`) and one full review
 // (`/peer-review/{put-code}`).
+
+import type { Json, JsonObject } from "../json";
 import type { StoredUser } from "../store/types";
 import { groupIdsJson, idsJson } from "./extid";
 import { groupItems } from "./groups";
-import type { Json, JsonObject } from "./json";
 import { compareCompletionDesc, peerReviewOrder } from "./order";
 import { canSee, type Viewer } from "./viewer";
 import {

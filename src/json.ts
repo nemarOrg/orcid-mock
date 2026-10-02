@@ -1,6 +1,6 @@
-// The two JSON styles the record API writes: compact for `Accept: application/json`, and a
-// Jackson-default pretty form for `application/orcid+json` and `application/vnd.orcid+json`
-// (observed on pub.orcid.org/v3.0 on 2026-10-01).
+// The two JSON styles the record API and its error bodies are written in: compact for
+// `Accept: application/json`, and a Jackson-default pretty form for `application/orcid+json` and
+// `application/vnd.orcid+json` (observed on pub.orcid.org/v3.0 on 2026-10-01).
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type JsonObject = { [key: string]: Json };

@@ -5,7 +5,7 @@ import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { Issue } from "./fixtures/schema";
 import { escapeHtml } from "./html";
-import { type Json, prettyJson } from "./record/json";
+import { compactJson, type Json, prettyJson } from "./json";
 
 export type ErrorStatus = ContentfulStatusCode;
 
@@ -136,7 +136,7 @@ export function orcidApiError(
   if (opts.contentType !== undefined) headers["Content-Type"] = opts.contentType;
   return c.body(
     headerlessBody(
-      opts.pretty ? prettyJson(body) : JSON.stringify(body),
+      opts.pretty ? prettyJson(body) : compactJson(body),
       opts.contentType !== undefined,
     ),
     spec.status,

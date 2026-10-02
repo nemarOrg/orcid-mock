@@ -1,8 +1,9 @@
 // Fundings: the grouped summaries (`/fundings`) and one full funding (`/funding/{put-code}`).
+
+import type { JsonObject } from "../json";
 import type { StoredUser } from "../store/types";
 import { groupIdsJson, idsJson } from "./extid";
 import { groupItems } from "./groups";
-import type { JsonObject } from "./json";
 import { byDisplayIndex, displayOrder } from "./order";
 import { canSee, type Viewer } from "./viewer";
 import {

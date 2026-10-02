@@ -2,9 +2,9 @@
 // sources, dates, and organizations. Key order is ORCID's, observed on pub.orcid.org/v3.0 on
 // 2026-10-01.
 import type { FixtureOrganization } from "../fixtures/schema";
+import type { Json, JsonObject } from "../json";
 import { publicDisplayName } from "../oauth/display-name";
 import type { StoredUser } from "../store/types";
-import type { Json, JsonObject } from "./json";
 import type { Viewer } from "./viewer";
 
 /** A built section: its wire form and the latest `modified_ms` among what survived filtering. */

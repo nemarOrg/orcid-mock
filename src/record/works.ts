@@ -1,10 +1,10 @@
 // Works: the grouped summaries (`/works`), one full work (`/work/{put-code}`), and the bulk read
 // (`/works/{put-code,...}`).
 import { ORCID_API_ERRORS, orcidErrorBody } from "../errors";
+import type { Json, JsonObject } from "../json";
 import type { StoredUser } from "../store/types";
 import { groupIdsJson, idsJson } from "./extid";
 import { groupItems } from "./groups";
-import type { Json, JsonObject } from "./json";
 import { byDisplayIndex, compareWorks } from "./order";
 import { parseJavaLong } from "./putcode";
 import { canSee, type Viewer } from "./viewer";

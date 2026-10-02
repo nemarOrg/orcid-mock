@@ -10,9 +10,9 @@ import {
   type OrcidApiErrorSpec,
   orcidApiError,
 } from "../../errors";
+import { compactJson, type Json, prettyJson } from "../../json";
 import { invalidTokenResponse } from "../../oauth/bearer";
 import { resolveRecordBearer } from "../../record/bearer";
-import { compactJson, type Json, prettyJson } from "../../record/json";
 import { type Negotiated, negotiate } from "../../record/negotiate";
 import { parseJavaLong } from "../../record/putcode";
 import { type Blocked, blockedBy, existsOnly } from "../../record/status";
