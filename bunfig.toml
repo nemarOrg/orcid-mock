@@ -5,5 +5,7 @@ minimumReleaseAge = 604800
 
 [test]
 # The server's own tests only: the client helpers under clients/ have their own packages, and their
-# tests need Docker and a browser (they run in the CI "clients" job).
+# tests need Docker and a browser (they run in the CI "clients" job). conformance/ talks to a server
+# that is already running (orcid-mock or ORCID's sandbox), so it has its own entry point:
+# `bun run conformance`.
 root = "tests"

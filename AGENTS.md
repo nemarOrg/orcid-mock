@@ -30,6 +30,7 @@ Project-specific rules:
 - Fidelity over convenience: when in doubt, do what real ORCID does (error shapes, visibility, put-codes, `Accept` negotiation) and cite ORCID's documentation in the commit or the comment.
 - Fixture iDs must pass the ISO 7064 MOD 11-2 checksum; the generator is the only way to mint one.
 - Every absolute URL derives from `PUBLIC_BASE_URL`, never from the `Host` header.
+- `conformance/` is one suite that runs unchanged against the mock and ORCID's sandbox (README, Conformance): when you change what the mock answers, run it against a local mock, and when it disagrees with the sandbox, fix the mock or the assertion, never weaken a check to pass.
 - Semantic line breaks in prose (one sentence per line), American English, no em-dashes; spell out ORCID on first use in every document.
 
 ## Context

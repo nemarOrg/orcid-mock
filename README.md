@@ -4,9 +4,9 @@ An ephemeral mock of the Open Researcher and Contributor ID (ORCID) service for 
 the OAuth 2.0 authorization-code flow, OpenID Connect, and the public record API,
 with users defined in a JSON file and all state kept in memory.
 
-Status: the foundation is in progress on the MVP1 epic (#1).
-The server starts, loads and validates a users file, serves the admin API (health, reset, users, clients), and answers every other path in the right error shape.
-OAuth, OpenID Connect, and the record API arrive in the next phases.
+Status: the server is feature-complete for MVP1 (epic #1, read-only):
+the admin API, OAuth, OpenID Connect, and the public record API are built, and [a conformance suite](#conformance) holds the mock to ORCID's sandbox and drives a brand-new sign-up end to end in CI.
+Nothing is published until the first release, `1.0.0`.
 See [`.context/plan.md`](.context/plan.md) for the roadmap and [`.context/research.md`](.context/research.md) for the findings behind it.
 
 ## Install and run
@@ -586,6 +586,113 @@ curl -s -H 'Accept:' $BASE/v3.0/$ORCID/email
 # {"response-code":406,"developer-message":"406 Not Acceptable: orcid-mock serves JSON only, ...","error-code":9001,...}
 ```
 
+## Conformance
+
+[`conformance/`](conformance) is one test suite that runs unchanged against this mock and against ORCID's sandbox (`sandbox.orcid.org`).
+A client that passes it works against either, and a place where the mock differs from ORCID shows up as a failing case here instead of a surprise in production.
+The client under test, [`conformance/client.ts`](conformance/client.ts), is plain `fetch` with nothing specific to the mock:
+a client-credentials token request, record reads, and the raw requests the error cases need.
+The cases are listed at the top of [`conformance/conformance.test.ts`](conformance/conformance.test.ts).
+
+| Group | Cases |
+|---|---|
+| `T` token endpoint | A client-credentials grant for `/read-public`: ORCID's keys in ORCID's order, `token_type` `bearer`, `orcid` null, no `name`, and a lifetime over ten years. |
+| `A` anonymous reads | `personal-details`, `person`, `record`, `works`, `employments`, and `email` of one public record: status, `application/json`, every container's keys in order, every `path`, and the keys and value types of any item present. |
+| `B` reads with a token | The same six reads with the client-credentials bearer token. |
+| `E` error shapes | A wrong client secret (401), a JSON body at the token endpoint (415), a bad bearer (401, the token echoed, no `WWW-Authenticate`), an unknown iD and an iD with a wrong check character (404, error 9016), `Accept: text/csv` (406, error 9001, no `Content-Type`), and 101 put-codes on bulk works (400, error 9042). |
+
+The assertions are structural: keys, order, and the kind of each value, never a count or a value, because a fixture and a real record hold different data.
+Where the mock differs from ORCID on purpose, the suite avoids the case or checks only what both satisfy, with a comment naming the decision record:
+it always sends `Accept` (ORCID answers XML to none, the mock a 406, [ADR 0007](.context/decisions/0007-record-api-fidelity-and-deviations.md)), it checks that `orcid-identifier` agrees with itself and not that it names `orcid.org`, and it looks for the 415 sentence inside the body, which ORCID wraps in a web server's error page and the mock sends alone (recorded under [OAuth, where ORCID is undocumented or unobserved](#where-orcid-is-undocumented-or-unobserved)).
+No assertion branches on the target.
+
+The target comes from the environment, and a missing or malformed variable stops the run with one message that names it (never its value):
+
+| Variable | Meaning |
+|---|---|
+| `CONFORMANCE_TARGET` | `mock` or `sandbox`. |
+| `ORCID_API_BASE` | The OAuth host: the mock's base URL, or `https://sandbox.orcid.org`. |
+| `ORCID_PUB_API_BASE` | The record API host: the same base for the mock, or `https://pub.sandbox.orcid.org`. |
+| `ORCID_CLIENT_ID`, `ORCID_CLIENT_SECRET` | A registered client. Not needed with `CONFORMANCE_ANONYMOUS_ONLY=1`. |
+| `ORCID_PUBLIC_ID` | An iD whose record is public and whose name is public. |
+| `CONFORMANCE_ANONYMOUS_ONLY` | `1` runs only the cases that need no registered client (groups `A` and `E`) and skips `T` and `B` with a message in the output. |
+| `CONFORMANCE_REQUIRE_ITEMS` | `1` fails a run whose works, employments, or email container is empty, so a record with nothing in it cannot pass as full coverage. |
+| `CONFORMANCE_DELAY_MS` | The least time between two requests; the default is 400 for the sandbox and 0 for the mock. |
+
+Every read prints how many items it checked, for example `A4 works: 3 groups, 4 summaries checked`, so the output shows what a pass covered.
+The client retries a request once after a 429, 502, 503, or 504, waiting for `Retry-After` (at most 30 seconds), and says so when it does.
+
+### Against the mock
+
+```bash
+bun run src/main.ts serve --port 0 > ready.json &     # one line on stdout: {"event":"listening","url":"http://127.0.0.1:...","port":...}
+until [ -s ready.json ]; do sleep 0.1; done            # the readiness line
+export CONFORMANCE_TARGET=mock
+export ORCID_API_BASE="$(jq -r .url ready.json)" ORCID_PUB_API_BASE="$(jq -r .url ready.json)"
+export ORCID_CLIENT_ID=APP-ORCIDMOCK000001 ORCID_CLIENT_SECRET=orcid-mock-secret   # the starter fixture's public client
+export ORCID_PUBLIC_ID="$(curl -s "$ORCID_API_BASE/__admin/users" | jq -er '[.[] | select(.name.visibility == "public")][0].orcid')"
+bun run conformance
+kill $!                                                # stop the server
+```
+
+The starter users' iDs are minted, so the iD is read from the admin API rather than written down.
+The round trip (below) calls `POST /__admin/reset`, which resets the whole mock, so run the suite against a mock you own and not one that holds data you want to keep.
+A container works the same way: start it with [the Action](#as-a-github-action) or `docker run`, and point the two bases at its `PUBLIC_BASE_URL`.
+Every push and pull request does exactly that in the `e2e` job of [`ci.yml`](.github/workflows/ci.yml):
+it builds the image from the `Dockerfile`, starts it with this repository's Action, and runs the suite against it with `CONFORMANCE_REQUIRE_ITEMS=1`, using the public client and a user chosen by what it holds (a public name and at least one public work, employment, and email) rather than by position.
+
+`bun run conformance` runs `bun test ./conformance`.
+The plain `bun test` and `bun run test` run only the server's own tests under `tests/`, because `bunfig.toml` sets the test root to `tests`.
+
+### Against the sandbox
+
+```bash
+export CONFORMANCE_TARGET=sandbox
+export ORCID_API_BASE=https://sandbox.orcid.org ORCID_PUB_API_BASE=https://pub.sandbox.orcid.org
+export ORCID_CLIENT_ID=... ORCID_CLIENT_SECRET=...      # a client you registered in the sandbox
+export ORCID_PUBLIC_ID=...                              # a sandbox record with a public name
+bun run conformance
+```
+
+The suite spaces its requests 400 ms apart and sends about twenty in a run, far below ORCID's anonymous limit of 12 a second.
+The sandbox is shared and cannot be reset, so it is not an environment to hammer.
+Without a sandbox client you can still run the half that needs no credentials, the anonymous reads and the error shapes, with `CONFORMANCE_ANONYMOUS_ONLY=1` and no client variables:
+
+```bash
+CONFORMANCE_TARGET=sandbox CONFORMANCE_ANONYMOUS_ONLY=1 \
+  ORCID_API_BASE=https://sandbox.orcid.org ORCID_PUB_API_BASE=https://pub.sandbox.orcid.org \
+  ORCID_PUBLIC_ID=... bun run conformance
+```
+
+The `T` and `B` cases are then skipped, and say so in the output.
+The one `E` case that names a client, a wrong secret, uses an unregistered placeholder client id and gets `invalid_client`, as it does for a real client with a wrong secret.
+The record `0000-0001-6919-3953` is a public sandbox record with a public name that this was checked against; it is nearly empty and not under our control, so use your own.
+Nothing in CI uses `CONFORMANCE_ANONYMOUS_ONLY`.
+
+The sandbox half runs weekly (Mondays, 05:23 UTC) and on demand from [`conformance.yml`](.github/workflows/conformance.yml), job `sandbox`; a manual run has an input `job` (`sandbox`, `services-smoke`, or `both`, default `sandbox`).
+The job does not require items, and appends the items each read checked to the job summary.
+**The repository owner sets up** the job once:
+
+- Create a GitHub environment named `conformance` (Settings, Environments), with a deployment rule that restricts it to the `main` branch, and store the two secrets there, so no other branch can read them: `ORCID_SANDBOX_CLIENT_ID` and `ORCID_SANDBOX_CLIENT_SECRET`, a client registered under Developer tools at `sandbox.orcid.org`.
+  The job names that environment; repository secrets of the same names work too until it exists.
+- Add the repository variable `ORCID_SANDBOX_PUBLIC_ID`: the iD of a sandbox record with a public name, and ideally some public works and employments, so item shapes are checked too.
+
+Until all three exist, the job prints a `::warning::` naming what is missing, writes the same to the job summary, and succeeds without running, so a skip is visible and not silent.
+A failing case on the sandbox means the mock is wrong about ORCID or ORCID changed: find out which, and fix the mock or the assertion, never by weakening the check to pass.
+
+### Sign-in is checked on the mock only
+
+Real ORCID needs a person to sign in (a browser, a password, a consent click), so the sandbox run covers the token endpoint and the record API and cannot cover sign-in.
+[`conformance/round-trip.test.ts`](conformance/round-trip.test.ts) covers it on the mock, as the definition of done for a brand-new sign-up with no browser, and is skipped with a message when `CONFORMANCE_TARGET` is not `mock`.
+It registers a client and creates a user through the admin API, signs in with `login_as`, exchanges the code for an ID token, verifies the token against the discovery document's `jwks_uri` (RS256 pinned, with `exp`, `iat`, `sub`, `aud`, and `iss` required), reads the user through userinfo and the record API, calls `POST /__admin/reset`, and checks that the user and the test's client are gone (404, error 9016, and `invalid_client`) while the fixture's own users remain.
+
+### The services container check
+
+The `services-smoke` job in [`conformance.yml`](.github/workflows/conformance.yml) runs the published image as a `services:` container with no `--health-cmd`.
+Its first step asserts that Docker reports the service container `healthy`, and the next reaches `/__admin/health` once, with no retry.
+What that proves is that the image carries a `HEALTHCHECK` which a real runner accepts and reports healthy; it does not prove that the runner would wait for a slow start.
+It runs only on a manual dispatch (input `job` set to `services-smoke` or `both`, and input `image`, default `ghcr.io/nemarorg/orcid-mock:1`) and can pass only after the first release has published the image and made its package public, so run it once then.
+
 ## Why
 
 ORCID's sandbox is shared, cannot be reset from an API, delivers mail only to one throwaway provider, and needs real accounts,
@@ -695,7 +802,7 @@ Each gate is green before a commit:
 
 | Where | Gates |
 |---|---|
-| the server (repository root) | `bun install`, `bun run lint`, `bun run typecheck`, `bun run test` (which runs only `tests/`; the helpers have their own) |
+| the server (repository root) | `bun install`, `bun run lint`, `bun run typecheck`, `bun run test` (which runs only `tests/`; the helpers have their own, and [the conformance suite](#conformance) needs a running server) |
 | the Node helper (`clients/node`) | `bun install`, `bun run lint`, `bun run typecheck`, `bun run build`, `bun run test` (which also builds, packs, and loads the package under Node, so Node 22 or later must be on `PATH`) |
 | the Python helper (`clients/python`) | `uv sync`, `uv run ruff check`, `uv run ruff format --check`, `uv run ty check`, `uv run pytest --cov` |
 
