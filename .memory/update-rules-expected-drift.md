@@ -6,14 +6,14 @@ recorded: 2026-10-02
 revalidate_after: 2026-11-01
 ---
 
-Running `project-diff-rules project` from the research-skills 0.10.0 project plugin reports seven items here that are intended and need no action:
+Running `project-diff-rules project` from the research-skills 0.10.0 project plugin reports eight items here that are intended and need no action:
 
 - `RULE_CHANGED=testing.md`: the only difference is the six-line preamble at the top.
   It explains that this project is itself a test double for the Open Researcher and Contributor ID (ORCID) service, yet its own tests still drive the real server over HTTP,
   names the exceptions, and names `bun:test` and pytest as this project's frameworks in place of the template's `vitest` or `jest`.
   The template body below it is unchanged; the template has no preamble, so accepting it wholesale removes it.
-- `RULE_CHANGED=documentation.md` and `RULE_CHANGED=self_improve.md`: each has a one-line project note after its title and is otherwise the template.
-  The first says this repository has no docs site (the README and `.context/` are the documentation), and the second says learnings go to `.memory/` and the decision records, not to `.context/scratch_history.md`.
+- `RULE_CHANGED=documentation.md`, `RULE_CHANGED=self_improve.md`, and `RULE_CHANGED=ci_cd.md`: each has a one-line project note after its title and is otherwise the template.
+  The first says this repository has no docs site (the README and `.context/` are the documentation), the second says learnings go to `.memory/` and the decision records, not to `.context/scratch_history.md`, and the third says the triggers are `push` on `main` plus `pull_request`, actions are pinned by full commit hash, and there is no docs job.
   Accepting the template drops the notes, and the rest of each file then contradicts this project again.
 - `RULE_CUSTOM=javascript.md`: project-written, with no template counterpart (Biome only, this repository's tree, `parseArgs`, `fetch`).
 - `RULE_MISSING=python.md`: not adopted although the repository now has Python, the Python helper under `clients/python`.
@@ -29,5 +29,5 @@ reflowing it would make the tool report it as changed.
 The `AGENTS.md` comparison always lists template sections that file does not have (Architecture Map, Quick Commands, and others);
 `AGENTS.md` here is deliberately condensed, and only the "Project memory" section was adopted.
 
-Verified by running the script on 2026-10-02.
+Verified by running the script on 2026-10-02 (eight items).
 Stale when the plugin version changes or when any of these files is edited.
