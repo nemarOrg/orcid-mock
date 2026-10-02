@@ -48,6 +48,9 @@ def repo_server() -> Iterator[str]:
     try:
         assert server.stdout is not None
         line = server.stdout.readline()
+        # The watchdog guards only the wait for the readiness line; left running, it would kill
+        # the session-scoped server 30 seconds in, under whichever test happens to be running.
+        watchdog.cancel()
         assert '"event":"listening"' in line, (
             f"no readiness line from the repository server: {line!r}"
         )
