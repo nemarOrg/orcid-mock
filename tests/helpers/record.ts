@@ -57,7 +57,8 @@ export async function getRecord(
 /**
  * A request with exactly the headers given: `fetch` always adds a wildcard `Accept` header, so a
  * request with no `Accept` header at all needs a socket, and so does a `Host` header that is not
- * the server's own (`host`). Speaks HTTP/1.1 with `Connection: close`.
+ * the server's own (`host`). Speaks HTTP/1.1 with `Connection: close`. `body` follows the headers
+ * as written, so the caller sets `Content-Length`.
  */
 export async function rawRequest(
   server: Reachable,
@@ -65,6 +66,7 @@ export async function rawRequest(
   path: string,
   headers: Record<string, string> = {},
   host?: string,
+  body = "",
 ): Promise<RecordReply> {
   const url = new URL(server.baseUrl);
   const lines = [
@@ -82,7 +84,7 @@ export async function rawRequest(
       port: Number(url.port),
       socket: {
         open(socket) {
-          socket.write(lines.join("\r\n"));
+          socket.write(lines.join("\r\n") + body);
         },
         data(_socket, data) {
           chunks.push(new Uint8Array(data));

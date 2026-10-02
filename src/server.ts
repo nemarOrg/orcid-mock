@@ -80,6 +80,19 @@ function boundUrl(host: string, port: number): string {
   return `http://${name.includes(":") && !name.startsWith("[") ? `[${name}]` : name}:${port}`;
 }
 
+/**
+ * The request with an absolute URL, so that routing never depends on `Host`. Bun builds
+ * `Request.url` from the `Host` header and, when that header cannot be made into a URL (empty,
+ * or holding a space, `/`, `@`, `?`, or `#`, or absent in HTTP/1.0), leaves it as the bare
+ * request target; Hono's router then misreads the path and answers 404 to every route. The copy
+ * puts the raw target under the origin of `PUBLIC_BASE_URL` and keeps the method, the headers
+ * (the original `Host` included, which the admin guard reads to refuse it), and the body.
+ */
+function withStableUrl(request: Request, publicBaseUrl: string): Request {
+  if (!request.url.startsWith("/")) return request;
+  return new Request(`${new URL(publicBaseUrl).origin}${request.url}`, request);
+}
+
 export async function startServer(opts: StartOptions = {}): Promise<RunningServer> {
   const host = opts.host ?? DEFAULT_HOST;
   const logLevel = opts.logLevel ?? "info";
@@ -101,7 +114,8 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
     port: opts.port ?? DEFAULT_PORT,
     hostname: host,
     maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
-    fetch: app.fetch,
+    fetch: (request, bunServer) =>
+      app.fetch(withStableUrl(request, config.publicBaseUrl), bunServer),
   });
   const port = server.port ?? 0;
   config.publicBaseUrl = explicitUrl ?? boundUrl(host, port);
