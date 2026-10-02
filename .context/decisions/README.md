@@ -36,8 +36,8 @@ Add new entries here as you create ADRs:
 - [ADR 0004](0004-oauth-surface-and-orcid-mock-choices.md): the OAuth surface, fragment error redirects, passwordless sign-in, redirect matching, lifetimes, and revoke edge cases
 - [ADR 0005](0005-distribution-and-release.md): four channels at one version, distroless image, cross-compiled binaries, release order, forward-only floating tags, and `bun publish` without provenance (amended by ADR 0008)
 - [ADR 0006](0006-openid-connect-choices.md): the OpenID Connect choices: the 24-hour ID token, ORCID's cross-domain filter, the userinfo scope and token sources, the advertised implicit flow, and the signing key
-- [ADR 0007](0007-record-api-fidelity-and-deviations.md): the record API's JSON-only 406 for Extensible Markup Language (XML), URIs from `PUBLIC_BASE_URL`, the limited view, ordering from source, and minimal normalization
-- [ADR 0008](0008-client-helpers.md): the Node and Python client helpers, released in lockstep with the server, the start rules, `ORCID_MOCK_URL`, compiled JavaScript for the Node helper, and proxy variables ignored
+- [ADR 0007](0007-record-api-fidelity-and-deviations.md): the record API's JSON-only 406 for Extensible Markup Language (XML), URIs from `PUBLIC_BASE_URL`, the limited view, ordering from source, and minimal normalization (amended by ADR 0009)
+- [ADR 0008](0008-client-helpers.md): the Node and Python client helpers, released in lockstep with the server, the start rules, `ORCID_MOCK_URL`, compiled JavaScript for the Node helper, and proxy variables ignored (amended by ADR 0009)
 - [ADR 0009](0009-admin-changes-and-live-state.md): the admin API's `Origin` and `Host` guard, and what admin changes do to live state: delete revokes, replace keeps tokens, lock and deactivate stop exchanges and refresh, and a client that loses membership loses limited reads
 
 - ADR 0000 - template (do not edit)

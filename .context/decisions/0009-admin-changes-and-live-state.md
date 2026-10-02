@@ -1,14 +1,14 @@
-# ADR 0009: The admin API guard, and what admin changes do to live state
+# Architecture Decision Record (ADR) 0009: The admin API guard, and what admin changes do to live state
 
-**Status:** accepted
+**Status:** accepted; amends [ADR 0007](0007-record-api-fidelity-and-deviations.md) and [ADR 0008](0008-client-helpers.md)
 **Date:** 2026-10-02
 **Owner:** Seyed Yahya Shirazi
 
 ## Context
 
 The admin API of this mock of the Open Researcher and Contributor ID (ORCID) service has no authentication, by design: it listens on loopback, and every use of it is a test or a script on the same machine.
-The cross-phase review of the MVP1 epic found two gaps.
-The `Origin` rule that kept a web page from resetting or rewriting a mock did not stop a DNS-rebinding page, which the browser treats as same-origin and so sends no `Origin` on a `GET`: such a page could read every user.
+The cross-phase review of the first minimum viable product (MVP1) epic found two gaps.
+The `Origin` rule that kept a web page from resetting or rewriting a mock did not stop a Domain Name System (DNS) rebinding page, which the browser treats as same-origin and so sends no `Origin` on a `GET`: such a page could read every user.
 And the admin API changes users and clients while codes, tokens, and sessions that refer to them are live, with no stated rule for what happens next.
 A token kept working for a user who was deleted and then created again with the same iD, a locked user could still exchange a code and refresh, and a client demoted from member kept its limited reads.
 
@@ -44,7 +44,7 @@ Membership is therefore not stored on a token: the `member` field of `TokenRecor
 
 **Also decided in the same review.**
 A request body above 8 MiB is refused (413, or a closed connection for chunked uploads) by the socket before the app sees it (Bun's default is 128 MiB).
-The sign-in errors of `login_as` and the consent form put `error_description` first, like the other `invalid_request` errors of `/oauth/authorize`, and stay UTF-8 because they echo the iD the caller sent, which ISO-8859-1 cannot carry.
+The sign-in errors of `login_as` and the sign-in form put `error_description` first, like the other `invalid_request` errors of `/oauth/authorize`, and stay UTF-8 because they echo the iD the caller sent, which ISO-8859-1 cannot carry.
 
 ## Consequences
 
@@ -64,8 +64,8 @@ The sign-in errors of `login_as` and the consent form put `error_description` fi
 - **Revoking tokens on every `PUT`:** also clean, but editing a user mid-session is the common case, and an edit must not sign the person out.
 - **Revoking tokens when a user is locked:** a `PUT` cannot say why it changed a record, and a test that locks a user to check the refusal, then unlocks, would have to sign in again.
   Leaving the tokens working was also rejected: the record API already answers 409 for such a user, so the other surfaces would disagree with it.
-- **Trusting the `member` flag stored on the token alone:** a demoted client would keep limited reads until its tokens expired in twenty years.
-- **Dropping `/read-limited` silently from the token a refresh issues to a demoted client:** RFC 6749 permits a narrower grant, but the client would learn it only by a missing scope; a 400 matches what authorize does.
+- **Keeping a `member` flag on the token and trusting it alone:** a demoted client would keep limited reads until its tokens expired in twenty years.
+- **Dropping `/read-limited` silently from the token a refresh issues to a demoted client:** Request for Comments (RFC) 6749 permits a narrower grant, but the client would learn it only by a missing scope; a 400 matches what authorize does.
 
 ## Receipts
 
