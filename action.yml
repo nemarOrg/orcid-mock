@@ -13,8 +13,10 @@ branding:
 
 inputs:
   version:
+    # Tied to the Action's own major: the release workflow refuses a release whose major differs
+    # from this default, so `@v1` runs an image of the 1.x line until the Action itself moves on.
     description: Image tag to run, for example 1, 1.2, 1.2.3, or latest.
-    default: latest
+    default: "1"
   image:
     description: >-
       Image repository, without a tag; the container runs "<image>:<version>". Override it to run
@@ -31,7 +33,8 @@ inputs:
   public-base-url:
     description: >-
       The URL your application uses to reach the mock; it becomes the issuer and the base of every
-      absolute URL the mock emits. Empty means http://localhost:<port>.
+      absolute URL the mock emits. It must be an http or https URL without whitespace or control
+      characters; trailing slashes are removed. Empty means http://localhost:<port>.
     default: ""
 
 outputs:
@@ -64,17 +67,41 @@ runs:
       run: |
         set -euo pipefail
 
-        if [ "${RUNNER_OS}" != "Linux" ]; then
-          echo "::error title=orcid-mock::This action runs on Linux runners only (RUNNER_OS is ${RUNNER_OS})."
+        fail() {
+          echo "::error title=orcid-mock::$1"
           exit 1
+        }
+
+        if [ "${RUNNER_OS}" != "Linux" ]; then
+          fail "This action runs on Linux runners only (RUNNER_OS is ${RUNNER_OS})."
         fi
         if ! [[ "${INPUT_PORT}" =~ ^[0-9]+$ ]] || [ "${INPUT_PORT}" -lt 1 ] || [ "${INPUT_PORT}" -gt 65535 ]; then
-          echo "::error title=orcid-mock::port must be an integer from 1 to 65535, got '${INPUT_PORT}'."
-          exit 1
+          fail "port must be an integer from 1 to 65535."
         fi
+        if ! [[ "${INPUT_IMAGE}" =~ ^[a-z0-9][A-Za-z0-9._/:@-]*$ ]]; then
+          fail "image must be an image repository such as ghcr.io/nemarorg/orcid-mock."
+        fi
+        if ! [[ "${INPUT_VERSION}" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+          fail "version must be an image tag such as 1, 1.2.3, or latest."
+        fi
+
+        # The base URL goes into GITHUB_ENV and GITHUB_OUTPUT as NAME=value lines, so a newline in
+        # it would let a caller smuggle in another variable: refuse control characters and
+        # whitespace outright, not just in the end.
         base_url="${INPUT_PUBLIC_BASE_URL:-http://localhost:${INPUT_PORT}}"
+        if [[ "${base_url}" =~ [[:cntrl:]] ]]; then
+          fail "public-base-url must not contain control characters."
+        fi
+        # Trailing slashes are not significant to the mock, which strips them too.
+        base_url="${base_url%"${base_url##*[!/]}"}"
+        if ! [[ "${base_url}" =~ ^https?://[^[:space:]]+$ ]]; then
+          fail "public-base-url must be an http or https URL without whitespace."
+        fi
+
         image="${INPUT_IMAGE}:${INPUT_VERSION}"
-        name="orcid-mock-${INPUT_PORT}"
+        # Unique per run, attempt, job, and port, so two uses in one job (on different ports) and a
+        # re-run on a reused self-hosted runner cannot collide.
+        name="orcid-mock-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}-${GITHUB_JOB:-job}-${INPUT_PORT}"
 
         docker_args=(
           run --detach --name "${name}"
@@ -87,9 +114,12 @@ runs:
             /*) users_path="${INPUT_USERS_FILE}" ;;
             *) users_path="${GITHUB_WORKSPACE}/${INPUT_USERS_FILE}" ;;
           esac
+          # A colon would end the host side of --volume early.
+          if [[ "${users_path}" == *:* || "${users_path}" =~ [[:cntrl:]] ]]; then
+            fail "users-file must not contain a colon or a control character."
+          fi
           if [ ! -f "${users_path}" ]; then
-            echo "::error title=orcid-mock::users-file '${INPUT_USERS_FILE}' does not exist in the workspace (looked for ${users_path})."
-            exit 1
+            fail "users-file '${INPUT_USERS_FILE}' does not exist in the workspace (looked for ${users_path})."
           fi
           docker_args+=(
             --volume "${users_path}:/fixtures/users.json:ro"
@@ -99,11 +129,13 @@ runs:
 
         container="$(docker "${docker_args[@]}" "${image}")"
 
-        # Bounded wait: the container's own health command (the image has no shell or curl), then
-        # the published port from the runner, which is the way the caller will reach it.
+        # A real 60-second deadline, whatever each probe costs: the container's own health command
+        # (the image has no shell or curl), then the published port from the runner, which is the
+        # way the caller will reach it.
         healthy=0
         failure="did not become healthy within 60 seconds"
-        for _ in $(seq 1 60); do
+        SECONDS=0
+        while [ "${SECONDS}" -lt 60 ]; do
           if [ "$(docker inspect --format '{{.State.Running}}' "${container}")" != "true" ]; then
             failure="exited before it became healthy"
             break
@@ -119,8 +151,7 @@ runs:
           echo "::group::orcid-mock container logs"
           docker logs "${container}" 2>&1 || true
           echo "::endgroup::"
-          echo "::error title=orcid-mock::${image} ${failure}."
-          exit 1
+          fail "${image} ${failure}."
         fi
 
         {
