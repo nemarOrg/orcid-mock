@@ -1,6 +1,6 @@
 {
   "name": "@nemarorg/orcid-mock-testing",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Test helpers for orcid-mock, an ephemeral mock of the ORCID service: a typed admin client, a Testcontainers module, and a Playwright fixture",
   "license": "MIT",
   "private": false,
