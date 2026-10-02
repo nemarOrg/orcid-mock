@@ -13,6 +13,16 @@ export interface Built<T extends Json = JsonObject> {
   lastMs: number | null;
 }
 
+/**
+ * The answer to a single-item read: the item as the viewer sees it, or why there is none. An
+ * item the viewer may not see is `hidden` (403 / 9039), not `missing` (404 / 9016), because it
+ * exists.
+ */
+export type ItemLookup =
+  | { kind: "ok"; json: JsonObject }
+  | { kind: "hidden" }
+  | { kind: "missing" };
+
 /** The latest of the given times, ignoring nulls; null when there is none. */
 export function maxMs(values: Iterable<number | null | undefined>): number | null {
   let latest: number | null = null;

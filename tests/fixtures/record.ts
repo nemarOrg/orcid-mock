@@ -3,7 +3,7 @@
 // title, and identifier is made up, and every iD is minted in the `0009-9` block, which cannot
 // collide with a real person by construction (ADR 0003).
 // Put-codes are explicit so the tests can name them: 1xxx and 2xxx are Marisol Quenby's, 3xxx
-// the grouping user's, 4xxx the all-private user's, and 5xxx Carberry's.
+// the grouping user's, 4xxx the all-private user's, 5xxx Carberry's, and 6xxx the private-name user's.
 import type { UsersFileInput } from "../../src/fixtures/schema";
 import { STARTER_USERS_FILE } from "../../src/fixtures/starter";
 
@@ -487,6 +487,7 @@ const privateName: FixtureUser = {
     visibility: "private",
   },
   biography: { content: "A public biography under a private name.", visibility: "public" },
+  keywords: [{ put_code: 6001, content: "anonymity", visibility: "public" }],
 };
 
 const bioPrivate: FixtureUser = {

@@ -274,7 +274,7 @@ export const ORCID_API_ERRORS = {
   unroutedPutCode: (raw: string): OrcidApiErrorSpec =>
     unroutedError(
       404,
-      `HTTP 404 Not Found (java.lang.NumberFormatException: For input string: ${JSON.stringify(raw)})`,
+      `HTTP 404 Not Found (java.lang.NumberFormatException: For input string: "${raw}")`,
     ),
   /**
    * 9041 (`apiError.9041`), a record with no biography at all. Source only: `checkIsPublic`
@@ -298,7 +298,7 @@ export const ORCID_API_ERRORS = {
   badPutCode: (raw: string): OrcidApiErrorSpec => ({
     status: 400,
     code: 9006,
-    developerMessage: `The client application sent a bad request to ORCID. Full validation error: For input string: ${JSON.stringify(raw)}`,
+    developerMessage: `The client application sent a bad request to ORCID. Full validation error: For input string: "${raw}"`,
     userMessage: "The client application sent a bad request to ORCID.",
   }),
   /**
