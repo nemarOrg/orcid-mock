@@ -1,0 +1,17 @@
+# zizmor configuration. CI runs it in the `check` job, offline and at a pinned version:
+#
+#   uvx zizmor@1.30.1 --offline .github/workflows action.yml
+#
+# Every ignore is a finding that was looked at and accepted, with the reason beside it. A finding
+# that has one place in one file is ignored inline with a `# zizmor: ignore[rule]` comment (the
+# `image` input of the services-smoke job in conformance.yml, and `bun publish` in release.yml);
+# a finding that every workflow shares is ignored here.
+rules:
+  # self-repository asks for the `uses: $/...` form of an in-repository action or reusable workflow.
+  # GitHub added it in July 2026, but actionlint (the other workflow linter these files must pass,
+  # v1.7.12 at the time of writing) rejects it: rhysd/actionlint issues 711 and 732 are open. Until
+  # actionlint accepts it, the `./` form stays, and this one low-severity help finding is muted.
+  self-repository:
+    ignore:
+      - ci.yml
+      - release.yml

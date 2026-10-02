@@ -1,11 +1,70 @@
 {
   "name": "@nemarorg/orcid-mock",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "An ephemeral mock of the ORCID OAuth, OpenID Connect, and public record API for tests and CI, with users defined in JSON",
   "license": "MIT",
   "private": false,
   "type": "module",
-  "engines": { "bun": ">=1.2" },
-  "repository": { "type": "git", "url": "https://github.com/nemarOrg/orcid-mock" },
-  "keywords": ["orcid", "mock", "oauth2", "openid-connect", "testing", "ci"]
+  "packageManager": "bun@1.4.2",
+  "engines": {
+    "bun": ">=1.4"
+  },
+  "bin": {
+    "orcid-mock": "src/main.ts"
+  },
+  "exports": {
+    ".": "./src/app.ts",
+    "./bootstrap": "./src/bootstrap.ts",
+    "./server": "./src/server.ts",
+    "./fixtures/users.schema.json": "./fixtures/users.schema.json",
+    "./fixtures/users.example.json": "./fixtures/users.example.json"
+  },
+  "files": [
+    "src/",
+    "fixtures/users.schema.json",
+    "fixtures/users.example.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "lint": "biome ci .",
+    "format": "biome check --write .",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.portable.json",
+    "test": "bun test --coverage",
+    "conformance": "bun test ./conformance",
+    "schema": "bun run src/main.ts schema --out fixtures/users.schema.json",
+    "example": "bun scripts/write-example.ts",
+    "build:binaries": "bun scripts/build-binaries.ts"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nemarOrg/orcid-mock"
+  },
+  "homepage": "https://github.com/nemarOrg/orcid-mock#readme",
+  "bugs": {
+    "url": "https://github.com/nemarOrg/orcid-mock/issues"
+  },
+  "keywords": [
+    "orcid",
+    "mock",
+    "oauth2",
+    "openid-connect",
+    "testing",
+    "ci"
+  ],
+  "dependencies": {
+    "hono": "4.13.9",
+    "jose": "6.2.12",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.14",
+    "@types/bun": "1.4.2",
+    "miniflare": "4.20260730.0",
+    "typescript": "7.0.2",
+    "wrangler": "4.116.0"
+  }
 }

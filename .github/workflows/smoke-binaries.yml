@@ -1,0 +1,145 @@
+name: Smoke the binaries
+
+# Runs the compiled binaries, built once on Linux and downloaded here, so that what is released has
+# actually started on every platform it is built for: all eight targets. Each runs on a runner of
+# its kind (the Intel macOS one is the last x86_64 image GitHub offers, and goes in August 2027),
+# except the two musl builds, which run in Alpine containers on the Linux runner of the same
+# architecture. Each binary is asked for its version and mints an iD; only the linux x64 one is also
+# started as a server (the binaries job in ci.yml). Called by ci.yml (when packaging changes) and by
+# release.yml (always, before anything is published).
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: The version every binary must report, from package.json.
+        type: string
+        required: true
+      artifact:
+        description: Name of the artifact that holds dist/orcid-mock-* and dist/SHA256SUMS.
+        type: string
+        default: binaries
+
+permissions:
+  contents: read
+
+env:
+  # Runs the musl binaries. Pinned by digest like the other images, and bumped by hand (RELEASING.md).
+  ALPINE_IMAGE: alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+
+jobs:
+  # A binary that is built but has no smoke job below would ship without ever having been run, so
+  # this job compares the names in SHA256SUMS with the `file` entries of the matrix and fails on
+  # any difference. A target that is deliberately not executed goes in UNEXECUTED (none today).
+  coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      UNEXECUTED: ""
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+          no-cache: true
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact }}
+          path: dist
+      - name: Every built binary has a smoke job
+        shell: bash
+        run: |
+          set -euo pipefail
+          built="$(awk 'NF { print $2 }' dist/SHA256SUMS | sort)"
+          smoked="$(bun -e 'for (const entry of Bun.YAML.parse(await Bun.file(".github/workflows/smoke-binaries.yml").text()).jobs.smoke.strategy.matrix.include) console.log(entry.file)')"
+          # shellcheck disable=SC2086
+          expected="$(printf '%s\n' ${smoked} ${UNEXECUTED} | sort -u)"
+          echo "built:"; echo "${built}"
+          if ! diff <(echo "${built}") <(echo "${expected}"); then
+            echo "::error title=Smoke::The binaries in SHA256SUMS (<) and the smoke matrix plus UNEXECUTED (>) differ: every built binary must have a smoke job."
+            exit 1
+          fi
+
+  smoke:
+    name: ${{ matrix.file }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            file: orcid-mock-linux-x64
+          - os: ubuntu-24.04-arm
+            file: orcid-mock-linux-arm64
+          - os: ubuntu-latest
+            file: orcid-mock-linux-x64-musl
+            alpine: true
+          - os: ubuntu-24.04-arm
+            file: orcid-mock-linux-arm64-musl
+            alpine: true
+          - os: macos-15-intel
+            file: orcid-mock-darwin-x64
+          - os: macos-latest
+            file: orcid-mock-darwin-arm64
+          - os: windows-latest
+            file: orcid-mock-windows-x64.exe
+          - os: windows-11-arm
+            file: orcid-mock-windows-arm64.exe
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.artifact }}
+          path: dist
+      - name: Verify the checksum
+        shell: bash
+        env:
+          FILE: ${{ matrix.file }}
+        run: |
+          set -euo pipefail
+          cd dist
+          # The artifact transfer must not have changed the file.
+          if command -v sha256sum >/dev/null; then
+            grep " ${FILE}\$" SHA256SUMS | sha256sum --check -
+          else
+            grep " ${FILE}\$" SHA256SUMS | shasum -a 256 --check -
+          fi
+          chmod +x "${FILE}"
+      - name: Run the binary
+        if: ${{ !matrix.alpine }}
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          FILE: ${{ matrix.file }}
+        run: |
+          set -euo pipefail
+          cd dist
+          # Windows prints a carriage return, which command substitution does not strip.
+          actual="$("./${FILE}" --version | tr -d '\r')"
+          test "${actual}" = "${VERSION}" || { echo "reports ${actual}, expected ${VERSION}"; exit 1; }
+          id="$("./${FILE}" id -n 1 | tr -d '\r')"
+          echo "${id}"
+          [[ "${id}" =~ ^0009-9[0-9]{3}-[0-9]{4}-[0-9]{3}[0-9X]$ ]]
+      # The musl builds need Alpine's C++ runtime libraries, which the image does not carry (the
+      # README says to install them), so they are installed here the way a user would.
+      - name: Run the binary in an Alpine container
+        if: ${{ matrix.alpine }}
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          FILE: ${{ matrix.file }}
+        run: |
+          set -euo pipefail
+          docker run --rm --env FILE --env VERSION --volume "${PWD}/dist:/dist:ro" "${ALPINE_IMAGE}" sh -euc '
+            apk add --no-cache libstdc++ libgcc > /dev/null
+            actual="$("/dist/${FILE}" --version)"
+            test "${actual}" = "${VERSION}" || { echo "reports ${actual}, expected ${VERSION}"; exit 1; }
+            id="$("/dist/${FILE}" id -n 1)"
+            echo "${id}"
+            echo "${id}" | grep -Eq "^0009-9[0-9]{3}-[0-9]{4}-[0-9]{3}[0-9X]\$"
+          '

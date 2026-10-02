@@ -2,6 +2,9 @@
 
 This project is itself a test double for the Open Researcher and Contributor ID (ORCID) service.
 The rule still holds for its own tests: they start the real server and drive it over HTTP, and never import a handler to skip the wire.
+The exception is code with no HTTP surface, which is tested directly with real inputs and no stand-ins: the checksum, the fixture loader, and the `Store` contract suite (`tests/helpers/store-contract.ts`, written so any `Store` implementation can run it).
+The record section builders are tested the same way in `tests/record-project.test.ts`, on stored users built by the real loader and then edited, because HTTP cannot give one user items with different stamps.
+The frameworks are `bun:test` (the server, the conformance suite, and the Node helper) and pytest (the Python helper), not the `vitest` or `jest` that the Frameworks section below lists.
 The only thing faked here is ORCID, deliberately and faithfully.
 
 ## Core Philosophy: Test Reality, Not Fiction

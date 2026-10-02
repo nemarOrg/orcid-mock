@@ -1,0 +1,7 @@
+# Allowlist: the build needs only the manifest, the lockfile, the compiler script, and the sources.
+*
+!package.json
+!bun.lock
+!tsconfig.json
+!scripts/build-binaries.ts
+!src/

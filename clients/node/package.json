@@ -1,0 +1,79 @@
+{
+  "name": "@nemarorg/orcid-mock-testing",
+  "version": "1.0.0",
+  "description": "Test helpers for orcid-mock, an ephemeral mock of the ORCID service: a typed admin client, a Testcontainers module, and a Playwright fixture",
+  "license": "MIT",
+  "private": false,
+  "type": "module",
+  "packageManager": "bun@1.4.2",
+  "engines": {
+    "node": ">=22",
+    "bun": ">=1.4"
+  },
+  "exports": {
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "default": "./dist/client.js"
+    },
+    "./testcontainers": {
+      "types": "./dist/testcontainers.d.ts",
+      "default": "./dist/testcontainers.js"
+    },
+    "./playwright": {
+      "types": "./dist/playwright.d.ts",
+      "default": "./dist/playwright.js"
+    }
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "lint": "biome ci .",
+    "format": "biome check --write .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test --coverage"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nemarOrg/orcid-mock",
+    "directory": "clients/node"
+  },
+  "homepage": "https://github.com/nemarOrg/orcid-mock#test-helpers",
+  "bugs": {
+    "url": "https://github.com/nemarOrg/orcid-mock/issues"
+  },
+  "keywords": [
+    "orcid",
+    "mock",
+    "testing",
+    "testcontainers",
+    "playwright",
+    "oauth2"
+  ],
+  "peerDependencies": {
+    "@playwright/test": "^1.63.0",
+    "testcontainers": "^12.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@playwright/test": {
+      "optional": true
+    },
+    "testcontainers": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.14",
+    "@playwright/test": "1.63.0",
+    "@types/bun": "1.4.2",
+    "playwright": "1.63.0",
+    "testcontainers": "12.1.0",
+    "typescript": "7.0.2"
+  }
+}

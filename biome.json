@@ -1,0 +1,59 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.14/schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": {
+    "includes": [
+      "**",
+      "!coverage",
+      "!bun.lock",
+      "!fixtures/users.schema.json",
+      "!fixtures/users.example.json"
+    ]
+  },
+  "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
+  "javascript": { "formatter": { "quoteStyle": "double", "semicolons": "always" } },
+  "assist": { "actions": { "source": { "organizeImports": "on" } } },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "style": { "useConst": "error", "noNonNullAssertion": "warn" },
+      "suspicious": { "noExplicitAny": "error" }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["src/**", "!src/main.ts", "!src/server.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "Bun": "The portable layer uses Web APIs only (ADR 0002)",
+                  "process": "The portable layer uses Web APIs only (ADR 0002)",
+                  "Buffer": "The portable layer uses Web APIs only (ADR 0002)",
+                  "require": "The portable layer uses Web APIs only (ADR 0002)",
+                  "__dirname": "The portable layer uses Web APIs only (ADR 0002)"
+                }
+              }
+            },
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": { "bun": "The portable layer uses Web APIs only (ADR 0002)" },
+                "patterns": [
+                  {
+                    "group": ["bun:*", "node:*"],
+                    "message": "The portable layer uses Web APIs only (ADR 0002)"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

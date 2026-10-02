@@ -1,5 +1,7 @@
 # CI/CD Workflow Standards
 
+**Project note:** here the triggers are `push` on `main` plus `pull_request` (not both on every branch), third-party actions are pinned by full commit hash with a version comment (not `@v4`), and there is no docs job; the examples below are general guidance.
+
 ## Purpose: Automated Quality Gates
 **Why CI/CD?** Catch issues before users do.
 **Think:** Every pipeline failure is a production bug prevented.
