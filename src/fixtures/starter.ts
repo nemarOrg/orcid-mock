@@ -240,7 +240,11 @@ export const STARTER_USERS_FILE: UsersFileInput = {
   ],
 };
 
-/** The starter as the JSON file `orcid-mock fixture` writes and fixtures/users.example.json holds. */
-export function starterFixtureJson(): string {
-  return `${JSON.stringify({ $schema: "./users.schema.json", ...STARTER_USERS_FILE }, null, 2)}\n`;
+/**
+ * The starter as a users file in JSON, with `$schema` first so an editor validates it.
+ * `orcid-mock fixture` names the published schema URL; fixtures/users.example.json, which sits
+ * next to the schema, names `./users.schema.json`.
+ */
+export function starterFixtureJson(schemaRef: string): string {
+  return `${JSON.stringify({ $schema: schemaRef, ...STARTER_USERS_FILE }, null, 2)}\n`;
 }

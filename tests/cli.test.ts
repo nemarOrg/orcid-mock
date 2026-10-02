@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import pkg from "../package.json";
 import { parseUsersFile } from "../src/fixtures/load";
-import { usersFileJsonSchemaText } from "../src/fixtures/schema";
+import { USERS_SCHEMA_ID, usersFileJsonSchemaText } from "../src/fixtures/schema";
 import { starterFixtureJson } from "../src/fixtures/starter";
 import { isValidOrcidId } from "../src/orcid-id";
 import { type ServerProcess, spawnCli, spawnServerProcess, startTestServer } from "./harness";
@@ -59,7 +59,10 @@ describe("fixture and schema", () => {
   test("fixture prints a users file that parses and loads", async () => {
     const { exitCode, stdout } = await spawnCli(["fixture"]);
     expect(exitCode).toBe(0);
-    expect(stdout).toBe(starterFixtureJson());
+    expect(stdout).toBe(starterFixtureJson(USERS_SCHEMA_ID));
+    expect(JSON.parse(stdout).$schema).toBe(
+      "https://raw.githubusercontent.com/nemarOrg/orcid-mock/main/fixtures/users.schema.json",
+    );
     const loaded = parseUsersFile(JSON.parse(stdout), Date.now());
     expect(loaded.ok).toBe(true);
   });
@@ -69,7 +72,7 @@ describe("fixture and schema", () => {
     const { exitCode, stdout } = await spawnCli(["fixture", "--out", out]);
     expect(exitCode).toBe(0);
     expect(stdout).toBe("");
-    expect(await readFile(out, "utf8")).toBe(starterFixtureJson());
+    expect(await readFile(out, "utf8")).toBe(starterFixtureJson(USERS_SCHEMA_ID));
   });
 
   test("a written fixture serves", async () => {

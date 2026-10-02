@@ -17,7 +17,8 @@
     "format": "biome check --write .",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.portable.json",
     "test": "bun test --coverage",
-    "schema": "bun run src/main.ts schema --out fixtures/users.schema.json"
+    "schema": "bun run src/main.ts schema --out fixtures/users.schema.json",
+    "example": "bun scripts/write-example.ts"
   },
   "repository": {
     "type": "git",

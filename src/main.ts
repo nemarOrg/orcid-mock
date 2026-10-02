@@ -5,7 +5,7 @@ import { parseArgs } from "node:util";
 import pkg from "../package.json";
 import { ConfigError, type ConfigFlags, resolveConfig } from "./config";
 import { FixtureError } from "./fixtures/load";
-import { usersFileJsonSchemaText } from "./fixtures/schema";
+import { USERS_SCHEMA_ID, usersFileJsonSchemaText } from "./fixtures/schema";
 import { starterFixtureJson } from "./fixtures/starter";
 import { mintOrcidId } from "./orcid-id";
 import { startServer } from "./server";
@@ -152,7 +152,7 @@ async function main(): Promise<void> {
       return printIds(count);
     }
     case "fixture":
-      return writeOrPrint(starterFixtureJson(), values.out);
+      return writeOrPrint(starterFixtureJson(USERS_SCHEMA_ID), values.out);
     case "schema":
       return writeOrPrint(usersFileJsonSchemaText(), values.out);
     case "health":

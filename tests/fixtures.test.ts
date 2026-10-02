@@ -281,7 +281,7 @@ describe("the committed JSON files", () => {
 
   test("fixtures/users.example.json is the serialized starter and loads", async () => {
     const committed = await Bun.file(`${fixturesDir}/users.example.json`).text();
-    expect(committed).toBe(starterFixtureJson());
+    expect(committed).toBe(starterFixtureJson("./users.schema.json"));
     const parsed = JSON.parse(committed);
     expect(parsed.$schema).toBe("./users.schema.json");
     expect(Object.keys(parsed)[0]).toBe("$schema");
