@@ -72,6 +72,7 @@ A body must be JSON with a JSON `Content-Type`; anything else is `400 {"error":"
 | `PUT /__admin/users/{iD}` | upsert; the path iD wins and a body `orcid` that differs is `400`; `201` or `200` |
 | `DELETE /__admin/users/{iD}` | `204`, or `404` |
 | `GET /__admin/clients`, `GET /__admin/clients/{client_id}` | `200` the clients (secret included) in users-file form, or `404` |
+| `POST /__admin/clock` | body `{"advance_seconds": n}` with a finite, non-negative `n`; moves the server's clock forward so codes, tokens, and sessions expire without sleeping; `200 {"offset_ms": n}` is the new total offset, and `400 {"error":"invalid_request"}` for anything else; only validity checks use it, every timestamp the mock emits stays wall time, and `reset` zeroes it |
 | `PUT /__admin/clients/{client_id}` | upsert a client, so an app under test on a random port can register its `redirect_uri`; `201` or `200` |
 
 ## Why

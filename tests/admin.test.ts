@@ -401,6 +401,71 @@ describe("reset", () => {
   });
 });
 
+describe("the clock", () => {
+  const advance = (seconds: unknown) =>
+    server.admin<{ offset_ms: number }>("POST", "/clock", { advance_seconds: seconds });
+
+  test("advancing answers the new offset in milliseconds, and the offset accumulates", async () => {
+    expect(await advance(0)).toEqual({ status: 200, body: { offset_ms: 0 } });
+    expect(await advance(601)).toEqual({ status: 200, body: { offset_ms: 601_000 } });
+    expect(await advance(0.5)).toEqual({ status: 200, body: { offset_ms: 601_500 } });
+    expect(await advance(60)).toEqual({ status: 200, body: { offset_ms: 661_500 } });
+  });
+
+  test("reset zeroes the offset", async () => {
+    await advance(3600);
+    await server.reset();
+    expect(await advance(0)).toEqual({ status: 200, body: { offset_ms: 0 } });
+  });
+
+  test("a negative, missing, or non-numeric advance_seconds is a 400 naming the field", async () => {
+    for (const value of [-1, -0.001, "60", null, true, [60], {}]) {
+      const response = await server.admin<Problem>("POST", "/clock", { advance_seconds: value });
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe("invalid_request");
+      expect(response.body.issues?.[0]?.path).toBe("advance_seconds");
+    }
+    for (const body of [{}, { advance: 60 }, [], "60", null]) {
+      expect((await server.admin<Problem>("POST", "/clock", body)).status).toBe(400);
+    }
+    // A rejected advance changes nothing.
+    expect(await advance(0)).toEqual({ status: 200, body: { offset_ms: 0 } });
+  });
+
+  test("an advance past the end of the Date range is a 400, and changes nothing", async () => {
+    await advance(10);
+    const response = await advance(1e13);
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({ error: "invalid_request" });
+    expect(await advance(0)).toEqual({ status: 200, body: { offset_ms: 10_000 } });
+  });
+
+  test("a body that is not JSON is a 400, like every other admin write", async () => {
+    const response = await fetch(`${server.baseUrl}/__admin/clock`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{advance_seconds",
+    });
+    expect(response.status).toBe(400);
+    const wrongType = await fetch(`${server.baseUrl}/__admin/clock`, {
+      method: "POST",
+      headers: { "content-type": "text/plain" },
+      body: '{"advance_seconds": 1}',
+    });
+    expect(wrongType.status).toBe(400);
+  });
+
+  test("a foreign Origin is refused, so a web page cannot move the clock", async () => {
+    const response = await fetch(`${server.baseUrl}/__admin/clock`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "https://evil.example.test" },
+      body: '{"advance_seconds": 60}',
+    });
+    expect(response.status).toBe(403);
+    expect(await advance(0)).toEqual({ status: 200, body: { offset_ms: 0 } });
+  });
+});
+
 describe("bad requests", () => {
   const raw = (path: string, init: RequestInit) => fetch(`${server.baseUrl}/__admin${path}`, init);
 
