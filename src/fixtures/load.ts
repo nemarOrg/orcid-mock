@@ -5,13 +5,13 @@ import { isValidOrcidId, mintOrcidId } from "../orcid-id";
 import type { Snapshot, Store, StoredClient, StoredUser } from "../store/types";
 import {
   crossUserIssues,
+  type FixtureClient,
   type FixtureUser,
   FixtureUser as FixtureUserSchema,
   formatPath,
   type Issue,
   PUT_CODE_SECTIONS,
   UsersFile,
-  type UsersFileData,
 } from "./schema";
 
 /** The first put-code assigned when no fixture put-code is higher. */
@@ -19,7 +19,7 @@ export const MIN_PUT_CODE = 1000;
 
 export type LoadResult = { ok: true; snapshot: Snapshot } | { ok: false; issues: Issue[] };
 
-function zodIssues(error: {
+export function zodIssues(error: {
   issues: ReadonlyArray<{ path: PropertyKey[]; message: string }>;
 }): Issue[] {
   return error.issues.map((issue) => ({ path: formatPath(issue.path), message: issue.message }));
@@ -102,7 +102,8 @@ function normalizeUser(
   };
 }
 
-function normalizeClient(client: UsersFileData["clients"][number]): StoredClient {
+/** A fixture client with its defaults filled: the name is the client_id, member is false. */
+export function normalizeClient(client: FixtureClient): StoredClient {
   return {
     client_id: client.client_id,
     client_secret: client.client_secret,
