@@ -215,7 +215,7 @@ An invalid value, an unreadable users file, or a users file that fails validatio
 
 | Variable | Flag | Default | Meaning |
 |---|---|---|---|
-| `PUBLIC_BASE_URL` | `--base-url` | `http://{host}:{port}` | Absolute `http` or `https` URL, with no query, fragment, or credentials; trailing slashes are stripped and a path prefix is kept. Every absolute URL the mock emits derives from it, never from the `Host` header. |
+| `PUBLIC_BASE_URL` | `--base-url` | `http://{host}:{port}` | Absolute `http` or `https` URL, with no query, fragment, or credentials; trailing slashes are stripped and a path prefix is kept. Every absolute URL the mock emits derives from it, never from the `Host` header; only the admin API reads `Host`, to refuse a foreign one. |
 | `PORT` | `--port` | `9700` | `0` picks a free port; the readiness line reports the one it bound. |
 | `HOST` | `--host` | `127.0.0.1` | Interface to bind. The admin API is unauthenticated, so the default is loopback; `0.0.0.0` exposes it to the network, and the container image sets it only because the container's network is the boundary. |
 | `USERS_FILE` | `--users` | the bundled starter | Path to a users file. |
@@ -224,6 +224,7 @@ An invalid value, an unreadable users file, or a users file that fails validatio
 When `PUBLIC_BASE_URL` is unset, the base URL is built from the bound address: `http://127.0.0.1:{port}` for the default host, and also for a wildcard host (`0.0.0.0` or `::`).
 Inside a container the bound address means nothing to a caller, so set `PUBLIC_BASE_URL` explicitly there.
 A path prefix in `PUBLIC_BASE_URL` (`https://example.test/orcid`) is only used to build URLs: the server still routes at the root, so a reverse proxy must strip the prefix before forwarding.
+The socket refuses a request body above 8 MiB, with a `413` or, for a chunked upload, a closed connection, before the app sees it.
 
 The other commands are `orcid-mock schema [--out FILE]` (the JSON Schema for the users file), `orcid-mock health [--url URL]` (exit code 0 when `{URL}/__admin/health` answers 200 and 1 otherwise, printing nothing on success, for health checks in images without `curl`; without `--url` it checks `http://127.0.0.1:$PORT`, port 9700 when `PORT` is unset), `--version`, and `--help`.
 
@@ -243,21 +244,29 @@ The Architecture Decision Record (ADR) [0003](.context/decisions/0003-fixture-sc
 No authentication and no cross-origin resource sharing (CORS) in MVP1, so keep the server on loopback:
 anyone who can reach it can read every user and client secret and reset or rewrite all state.
 A request that carries an `Origin` header other than the server's own (the origin of `PUBLIC_BASE_URL`) is refused with `403 {"error":"forbidden_origin"}`: browsers always send `Origin` on a cross-origin request, so a web page cannot reset or rewrite a local mock, while `curl` and test clients, which send none, are unaffected.
+A request whose `Host` hostname is neither a loopback name (`localhost`, `127.0.0.1`, `::1`, `[::1]`) nor the hostname of `PUBLIC_BASE_URL` is refused with `403 {"error":"forbidden_host"}`:
+a page reached through Domain Name System (DNS) rebinding is same-origin to the browser, so it sends no `Origin` on a `GET`, but its `Host` is the attacker's name.
+A caller that reaches the mock by another name, such as another container, therefore needs `PUBLIC_BASE_URL` set to that name.
+A missing or malformed `Host` is refused too; `GET /__admin/health` alone is exempt, so an orchestrator's probe sent to a pod address works (the `Origin` rule still applies to it).
 Users are read and written in the users-file form, with the minted iD and every put-code filled in, which is how a test learns them.
 A body must be JSON with a JSON `Content-Type`; anything else is `400 {"error":"invalid_request"}`, and a body that fails validation is `400 {"error":"invalid_fixture","issues":[{"path","message"}]}`.
 
 | Request | Answer |
 |---|---|
-| `GET /__admin/health` | `200 {"status":"ok","users":n,"clients":n}` |
+| `GET /__admin/health` | `200 {"status":"ok","users":n,"clients":n}`; exempt from the `Host` rule |
 | `POST /__admin/reset` | `200`, same body as health; users, clients, and counters return to the loaded file, codes, tokens, and sessions are cleared |
 | `GET /__admin/users` | `200`, an array of users |
 | `GET /__admin/users/{iD}` | `200` the user, or `404` |
 | `POST /__admin/users` | create only; an omitted or empty `orcid` mints one; `201` with the user, or `409 {"error":"conflict"}` if the iD exists |
-| `PUT /__admin/users/{iD}` | upsert; the path iD wins and a body `orcid` that differs is `400`; `201` or `200` |
-| `DELETE /__admin/users/{iD}` | `204`, or `404` |
+| `PUT /__admin/users/{iD}` | upsert; the path iD wins and a body `orcid` that differs is `400`; `201` or `200`; the user's codes, tokens, and sessions stay, since it is the same person edited |
+| `DELETE /__admin/users/{iD}` | `204`, or `404`; also removes every code, token, and session issued to the iD, so a user created later with the same iD starts clean |
 | `GET /__admin/clients`, `GET /__admin/clients/{client_id}` | `200` the clients (secret included) in users-file form, or `404` |
-| `PUT /__admin/clients/{client_id}` | upsert a client, so an app under test on a random port can register its `redirect_uri`; `201` or `200` |
+| `PUT /__admin/clients/{client_id}` | upsert a client, so an app under test on a random port can register its `redirect_uri`; `201` or `200`; a client that stops being a member loses limited reads, and cannot refresh with `/read-limited` |
 | `POST /__admin/clock` | body `{"advance_seconds": n}` with a finite, non-negative `n`; moves the server's clock forward, so codes, tokens, and sessions expire without sleeping; `200 {"offset_ms": n}` is the new total offset; `reset` zeroes it |
+
+Admin changes take effect on live state at once ([ADR 0009](.context/decisions/0009-admin-changes-and-live-state.md)).
+A locked or deactivated user can no longer exchange a code, refresh, or call userinfo, and the record API answers 409; the tokens are not revoked, so unlocking the user lets a client carry on.
+Deleting a user is the way to end their sessions and tokens.
 
 ## Test helpers
 
@@ -270,6 +279,7 @@ They are separate packages in this repository, [`clients/node`](clients/node) (`
   When it is set (the [GitHub Action](#as-a-github-action) sets it), the Playwright fixtures, `startOrConnect`, and the pytest fixtures use that running instance, start nothing, and never stop it.
   Handing them a users file is an error then, because a running instance's users cannot be set from outside: load them where it starts.
   The container classes themselves (`OrcidMockContainer`) always start a container.
+  The mock's admin API refuses a `Host` that is neither a loopback name nor the host of its own `PUBLIC_BASE_URL` (`403 forbidden_host`), so the address in `ORCID_MOCK_URL` must be one of those, and a mock reached by another name needs `PUBLIC_BASE_URL` set to it ([The admin API](#the-admin-api)).
 - **`ORCID_MOCK_IMAGE`.**
   Otherwise a helper starts a container from this image, and the default is `ghcr.io/nemarorg/orcid-mock:<the helper's version>`.
   An explicit option (a constructor argument, `withImage`, `--orcid-mock-image`) wins over the variable, which wins over the default.
@@ -451,8 +461,8 @@ Three grants are served:
 
 | `grant_type` | Notes |
 |---|---|
-| `authorization_code` | The code, the same `redirect_uri` as at authorize, and the same client; a used, expired, or unknown code is `400 invalid_grant`. |
-| `refresh_token` | Rotates both tokens; `scope` may narrow but not widen; `revoke_old` defaults to true and `false` keeps the old tokens valid. |
+| `authorization_code` | The code, the same `redirect_uri` as at authorize, and the same client; a used, expired, or unknown code is `400 invalid_grant`, and so is a code whose user has since been locked or deactivated; a `/read-limited` code for a client that is no longer a member is `400 invalid_scope`. Either way the code is spent. |
+| `refresh_token` | Rotates both tokens; `scope` may narrow but not widen; `revoke_old` defaults to true and `false` keeps the old tokens valid; a locked or deactivated user is `400 invalid_grant` (the refresh token is not spent), and keeping `/read-limited` for a client that is no longer a member is `400 invalid_scope`, so ask for a narrower `scope`. |
 | `client_credentials` | `/read-public` only; the response has `"orcid": null` and no `name`. |
 
 `POST /oauth/revoke` takes a `token` (access or refresh) and the same client credentials, revokes the pair, and answers 200 with an empty body.
@@ -465,6 +475,9 @@ These are orcid-mock's own choices, each marked "orcid-mock choice" where it is 
 - A code lives ten minutes and a session 24 hours of server time; ORCID documents only that a code works once.
 - The sign-in page and `login_as` are orcid-mock's own, and a locked or deactivated user is refused with a 400 where real ORCID would refuse the sign-in.
 - The session cookie is `Secure` when `PUBLIC_BASE_URL` is https.
+- A `login_as` or sign-in form `orcid` that is missing, names no user, or names a locked or deactivated one is a 400 `invalid_request` with `error_description` first, like the other errors of this endpoint, and in UTF-8 because it echoes the iD sent.
+- A locked or deactivated user is also refused at the code exchange and the refresh grant (`400 invalid_grant` naming the state), and a client that stops being a member can neither get nor keep `/read-limited` (`400 invalid_scope`): orcid-mock's own rules for admin changes to live state, which ORCID could not be observed to apply ([ADR 0009](.context/decisions/0009-admin-changes-and-live-state.md)).
+- Nothing here reads `Host`: the path and query come from the request target, so a malformed or missing `Host` is routed and answered like any other, and only the admin API checks it, to refuse a foreign one.
 - Revoke: a missing `token` is `400 invalid_request`, an unknown token is a 200 (RFC 7009 section 2.2), and a token issued to another client is `400 unauthorized_client` and is left alone (RFC 7009 section 2.1).
 - ORCID documents the messages "Invalid authorization code: [code]" and "One of the provided parameters is invalid, or, the provided token/code is invalid or expired" for a failed code exchange, but not their error codes, so `invalid_grant` is orcid-mock's inference.
 - `unsupported_grant_type` for an unknown grant, `code is required`, and `Invalid refresh token: <token>` are orcid-mock's own wording, because ORCID's answers were not observed.
@@ -565,7 +578,7 @@ The token must be a live access token with the `/authenticate` or the `openid` s
 
 `id` is the iD under `PUBLIC_BASE_URL`, `sub` the bare iD.
 A name that is not public, and any field that does not exist, is `null`, not left out.
-Everything else, including no token, an unknown, revoked, or expired token, a refresh token, and a token without the scope, is ORCID's single answer: `403` with `{"error":"access_denied","error-description":"access_token is invalid"}`.
+Everything else, including no token, an unknown, revoked, or expired token, a refresh token, a token without the scope, and a token whose user was deleted, locked, or deactivated (an orcid-mock choice), is ORCID's single answer: `403` with `{"error":"access_denied","error-description":"access_token is invalid"}`.
 The key is hyphenated, unlike the underscore in every other ORCID error body, and there is no `WWW-Authenticate` header.
 
 ### OpenID Connect: where ORCID is undocumented or unobserved
@@ -574,7 +587,7 @@ The key is hyphenated, unlike the underscore in every other ORCID error body, an
 - The preflight answer copies ORCID's allowed methods and headers.
   What ORCID answers to an `OPTIONS` request that has no `Access-Control-Request-Method` was not observed, so it is a 404 here, as for any unrouted method.
 - No success response of ORCID's 2026 authorization server was captured, so the ID token's claims follow its documentation and its removed legacy implementation, and the userinfo body, with `id` and the nulls, follows ORCID's source.
-- A userinfo token whose user was deleted answers 403, as an unknown token does.
+- A userinfo token whose user was deleted, locked, or deactivated answers 403, as an unknown token does.
 
 ## Record API
 
@@ -620,7 +633,7 @@ An item's `visibility` is `public`, `limited`, or `private`.
 
 - **Anonymous, or any token that does not qualify below:** only `public` items.
   Non-public items are removed, not redacted, and a group left empty is removed; a non-public `name` or `biography` is `null`; every container, group, and `person` or `personal-details` date is recomputed from what survives, so none leaks the date of a hidden item (`history.last-modified-date` is the record's own and counts everything).
-- **A member client's token with `/read-limited`, for the record's own iD:** also `limited` items.
+- **A token with `/read-limited` for the record's own iD, whose client is a member when the read happens:** also `limited` items.
 - **`private`:** never served, to anyone.
 - **A bad token:** `401 {"error":"invalid_token","error_description":"Invalid access token: <token>"}` on every `/v3.0` path, with no `WWW-Authenticate`.
   The token is read from `Authorization: Bearer` first, then from an `access_token` query parameter; a blank value is no token.
@@ -642,7 +655,7 @@ Every response, errors included, carries `access-control-allow-origin: *`, `cach
 
 - Every URI is built from `PUBLIC_BASE_URL`: `orcid-identifier.uri` is `PUBLIC_BASE_URL/{iD}`, and `host` is that URL's host, port included, where ORCID writes `https://orcid.org/{iD}` and `orcid.org`.
 - Every item is self-asserted: `source-orcid` is the user, `source-client-id` and the three `assertion-origin-*` keys are null, and `source-name` is the user's public display name, or null when the name is not public.
-- A valid token for another iD, a public client's token, and a client-credentials token get the public view, not an error; ORCID serves `limited` reads from its member host, which was not observed.
+- A valid token for another iD, a public client's token, a client-credentials token, and a token whose client has stopped being a member get the public view, not an error; ORCID serves `limited` reads from its member host, which was not observed.
 - `history` is orcid-mock's: `WEBSITE`, no `completion-date`, `submission-date` from the name, `last-modified-date` the latest edit of anything, `claimed` from the fixture, and `verified-email` and `verified-primary-email` computed from every email whatever its visibility, as ORCID does; `preferences` is `{"locale": "en"}`.
 - An unclaimed record is always 409 / 9036; ORCID blocks it only while younger than a ten-day claim wait period.
 - Normalization: work, affiliation, and peer-review ids carry `{"value", "transient": true}`; only a Digital Object Identifier (DOI) is changed (lowercased and reduced to its `10.<registrant>/<suffix>` part, with ORCID's 8001 error when that fails); funding ids carry null, as observed.

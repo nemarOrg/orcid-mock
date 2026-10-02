@@ -10,6 +10,7 @@ import type { AppEnv } from "../app";
 import { serverNowMs } from "../clock";
 import { JSON_UTF8, tokenEndpointError } from "../errors";
 import type { ScopeName, Store, StoredClient, TokenRecord } from "../store/types";
+import { grantRefusal } from "./account-state";
 import { authenticateClient } from "./client-auth";
 import { readForm } from "./form";
 import { parseScopes, scopeTokens } from "./scopes";
@@ -40,7 +41,6 @@ async function newTokenRecord(
     client_id: init.client.client_id,
     orcid: init.orcid,
     scopes: init.scopes,
-    member: init.client.member,
     // Emitted times are wall time; only the expiry, a validity check, uses the admin offset.
     issued_at_ms: Date.now(),
     expires_at_ms: (await serverNowMs(store)) + TOKEN_TTL_SECONDS * 1000,
@@ -134,6 +134,16 @@ async function authorizationCodeGrant(
       "One of the provided parameters is invalid, or, the provided token/code is invalid or expired",
     );
   }
+  // orcid-mock choice: a user locked or deactivated since sign-in gets no token (ADR 0009). The
+  // code is already consumed, so unlocking does not bring it back.
+  const refused = grantRefusal(user);
+  if (refused !== null) return tokenEndpointError(c, 400, "invalid_grant", refused);
+  // orcid-mock choice: a client the admin API has demoted between authorize and the exchange
+  // cannot carry `/read-limited` into a token, the same refusal authorize and refresh give it
+  // (ADR 0009). The code is already consumed, so promoting the client again does not bring it back.
+  if (record.scopes.includes("/read-limited") && !client.member) {
+    return tokenEndpointError(c, 400, "invalid_scope", "Invalid scope: /read-limited");
+  }
 
   const token = await newTokenRecord(store, {
     client,
@@ -180,6 +190,10 @@ async function refreshTokenGrant(
     // the "Invalid authorization code: [code]" wording of its documented code-exchange error.
     return tokenEndpointError(c, 400, "invalid_grant", `Invalid refresh token: ${refreshToken}`);
   }
+  // orcid-mock choice: a user locked or deactivated since sign-in cannot refresh (ADR 0009). The
+  // refresh token is left as it is, so unlocking the user lets the client carry on.
+  const refused = user === null ? null : grantRefusal(user);
+  if (refused !== null) return tokenEndpointError(c, 400, "invalid_grant", refused);
 
   // An empty or omitted `scope` copies the parent's; otherwise it must be a subset
   // (https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-api-web/tutorial/refresh_tokens.md#L28).
@@ -196,6 +210,12 @@ async function refreshTokenGrant(
       return tokenEndpointError(c, 400, "invalid_scope", `Invalid scope: ${outside.join(" ")}`);
     }
     scopes = parseScopes(requested).scopes;
+  }
+  // orcid-mock choice: a client the admin API has demoted since sign-in cannot carry
+  // `/read-limited` into a new token, the same refusal authorize gives it (ADR 0009). It can
+  // refresh by asking for a narrower `scope`.
+  if (scopes.includes("/read-limited") && !client.member) {
+    return tokenEndpointError(c, 400, "invalid_scope", "Invalid scope: /read-limited");
   }
 
   // The legacy implementation (removed upstream) defaulted `revoke_old` to true when absent and

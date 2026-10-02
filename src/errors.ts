@@ -197,7 +197,7 @@ function badRequest(detail: string): OrcidApiErrorSpec {
 const CLIENT_NAME_PLACEHOLDER = "${clientName}";
 
 /**
- * The canonical record-API errors phase 4 serves. Each message is the `apiError.<code>` entry in
+ * The canonical record-API errors. Each message is the `apiError.<code>` entry in
  * api_en.properties, with the ` Full validation error: ...` suffix `getDeveloperMessage` appends
  * where there is one (not for the 404 codes 9011, 9016, 9027, 9028, 9029, and 9041):
  * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-core/src/main/java/org/orcid/core/exception/OrcidCoreExceptionMapper.java#L249-L296

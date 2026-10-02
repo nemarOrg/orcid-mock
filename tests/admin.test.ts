@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { isValidOrcidId } from "../src/orcid-id";
 import { startTestServer, type TestServer } from "./harness";
+import { userIds } from "./helpers/oauth";
+import { rawRequest } from "./helpers/record";
 
 interface FixtureUserBody {
   orcid: string;
@@ -749,5 +751,206 @@ describe("cross-origin protection", () => {
     } finally {
       await proxied.stop();
     }
+  });
+});
+
+describe("DNS-rebinding protection", () => {
+  // `fetch` always sends the server's own `Host`, so these go over a raw socket. A rebinding page
+  // is same-origin to the browser, so its GET carries no `Origin`; only its `Host` gives it away.
+  const get = (path: string, host: string, headers: Record<string, string> = {}) =>
+    rawRequest(server, "GET", `/__admin${path}`, { Accept: "application/json", ...headers }, host);
+
+  const REBOUND_HOSTS = [
+    "evil.example",
+    "evil.example:9700",
+    "localhost.evil.example",
+    "127.0.0.1.evil.example:9700",
+    "[::1",
+    "a:b:c",
+    "10.0.0.5:9700",
+  ];
+
+  test("a rebinding Host with no Origin cannot read the admin API", async () => {
+    for (const host of REBOUND_HOSTS) {
+      for (const path of ["/clients", "/users"]) {
+        const reply = await get(path, host);
+        expect([host, path, reply.status, reply.json]).toEqual([
+          host,
+          path,
+          403,
+          { error: "forbidden_host" },
+        ]);
+      }
+    }
+  });
+
+  test("GET /__admin/health alone is exempt from the Host rule, so a probe sent to a pod IP works", async () => {
+    const expected = (await server.admin("GET", "/health")).body;
+    for (const host of [...REBOUND_HOSTS, "10.1.2.3:9700"]) {
+      const reply = await get("/health", host);
+      expect([host, reply.status, reply.json]).toEqual([host, 200, expected]);
+    }
+    // The Origin rule still applies to it.
+    const foreign = await get("/health", "10.1.2.3:9700", { Origin: "https://evil.example.test" });
+    expect([foreign.status, foreign.json]).toEqual([403, { error: "forbidden_origin" }]);
+    // Any other method on the same path is guarded like the rest.
+    for (const method of ["POST", "PUT", "DELETE"]) {
+      const reply = await rawRequest(
+        server,
+        method,
+        "/__admin/health",
+        { "Content-Length": "0" },
+        "10.1.2.3:9700",
+      );
+      expect([method, reply.status, reply.json]).toEqual([
+        method,
+        403,
+        { error: "forbidden_host" },
+      ]);
+    }
+  });
+
+  test("it cannot write either, and nothing changes", async () => {
+    const before = (await server.admin("GET", "/health")).body;
+    for (const [method, path] of [
+      ["POST", "/__admin/reset"],
+      ["POST", "/__admin/users"],
+      ["PUT", "/__admin/users/0000-0002-1825-0097"],
+      ["DELETE", "/__admin/users/0000-0002-1825-0097"],
+      ["PUT", "/__admin/clients/APP-EVIL"],
+      ["POST", "/__admin/clock"],
+    ] as const) {
+      const reply = await rawRequest(
+        server,
+        method,
+        path,
+        { "Content-Length": "0" },
+        "evil.example",
+      );
+      expect([method, path, reply.status, reply.json]).toEqual([
+        method,
+        path,
+        403,
+        { error: "forbidden_host" },
+      ]);
+    }
+    expect((await server.admin("GET", "/health")).body).toEqual(before);
+  });
+
+  test("loopback names pass, with or without a port and in any case", async () => {
+    const own = new URL(server.baseUrl).host;
+    for (const host of [
+      own,
+      "localhost",
+      "localhost:1",
+      "LocalHost:9700",
+      "127.0.0.1",
+      "[::1]",
+      "[::1]:9700",
+      "::1",
+    ]) {
+      const reply = await get("/clients", host);
+      expect([host, reply.status]).toEqual([host, 200]);
+    }
+  });
+
+  test("the public base URL's host passes, and nothing else does", async () => {
+    const named = await startTestServer({ publicBaseUrl: "http://orcid-mock.test:9700" });
+    try {
+      for (const host of ["orcid-mock.test:9700", "orcid-mock.test", "ORCID-Mock.test:1"]) {
+        const reply = await rawRequest(named, "GET", "/__admin/clients", {}, host);
+        expect([host, reply.status]).toEqual([host, 200]);
+      }
+      for (const host of ["other.test:9700", "orcid-mock.test.evil.example", "evil.example"]) {
+        const reply = await rawRequest(named, "GET", "/__admin/clients", {}, host);
+        expect([host, reply.status, reply.json]).toEqual([host, 403, { error: "forbidden_host" }]);
+      }
+    } finally {
+      await named.stop();
+    }
+  });
+
+  test("only the listed loopback spellings pass: not a trailing dot, an expanded ::1, or fullwidth letters", async () => {
+    for (const host of [
+      "localhost.",
+      "localhost.:9700",
+      "[0:0:0:0:0:0:0:1]",
+      "[0:0:0:0:0:0:0:1]:9700",
+      "[::ffff:127.0.0.1]",
+      "127.1",
+      "0x7f.0.0.1",
+      "\uFF4C\uFF4F\uFF43\uFF41\uFF4C\uFF48\uFF4F\uFF53\uFF54", // fullwidth "localhost"
+      "\uFF4C\uFF4F\uFF43\uFF41\uFF4C\uFF48\uFF4F\uFF53\uFF54:9700",
+    ]) {
+      const reply = await get("/users", host);
+      expect([host, reply.status, reply.json]).toEqual([host, 403, { error: "forbidden_host" }]);
+    }
+  });
+
+  test("two Host headers are refused whichever comes first", async () => {
+    const own = new URL(server.baseUrl).host;
+    // The helper writes its own `Host` line first, then any header given, so each order is a
+    // request with two `Host` headers.
+    for (const [first, second] of [
+      [own, "evil.example"],
+      ["evil.example", own],
+      ["evil.example", "evil.example"],
+    ] as const) {
+      const reply = await rawRequest(
+        server,
+        "GET",
+        "/__admin/users",
+        { Accept: "application/json", Host: second },
+        first,
+      );
+      // Bun joins the two values with a comma, which is not a valid hostname.
+      expect([first, second, reply.status, reply.json]).toEqual([
+        first,
+        second,
+        403,
+        { error: "forbidden_host" },
+      ]);
+    }
+  });
+
+  test("an absolute-form request target is judged by its Host header, which a browser controls", async () => {
+    // A browser always sends the origin form, so a rebinding page cannot produce this request, and
+    // whoever can write one can send any `Host` anyway. Bun builds the URL from `Host` and ignores
+    // the target's authority, so the guard sees the same name the router does.
+    const refused = await rawRequest(
+      server,
+      "GET",
+      "http://evil/__admin/users",
+      { Accept: "application/json" },
+      "evil",
+    );
+    expect([refused.status, refused.json]).toEqual([403, { error: "forbidden_host" }]);
+
+    const served = await rawRequest(
+      server,
+      "GET",
+      "http://evil/__admin/users",
+      { Accept: "application/json" },
+      new URL(server.baseUrl).host,
+    );
+    expect(served.status).toBe(200);
+    expect(Array.isArray(served.json)).toBe(true);
+  });
+
+  test("a foreign Origin on a loopback Host is still the origin error", async () => {
+    const reply = await get("/health", "localhost", { Origin: "https://evil.example.test" });
+    expect([reply.status, reply.json]).toEqual([403, { error: "forbidden_origin" }]);
+  });
+
+  test("the rule only guards /__admin", async () => {
+    const { alder } = await userIds(server);
+    const reply = await rawRequest(
+      server,
+      "GET",
+      `/v3.0/${alder}/email`,
+      { Accept: "application/json" },
+      "evil.example",
+    );
+    expect(reply.status).toBe(200);
   });
 });

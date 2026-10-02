@@ -1,6 +1,6 @@
 # Architecture Decision Record (ADR) 0008: Client helpers, released in lockstep
 
-**Status:** accepted
+**Status:** accepted; amended by [ADR 0009](0009-admin-changes-and-live-state.md), which makes the admin API refuse a `Host` that is neither a loopback name nor the host of `PUBLIC_BASE_URL`, so `ORCID_MOCK_URL` at any other address gets a 403 on admin calls
 **Date:** 2026-10-01 (revised 2026-10-02 after review: the Node helper ships compiled JavaScript)
 **Owner:** Seyed Yahya Shirazi
 
@@ -51,6 +51,7 @@ A test with a recording proxy proves both.
 - The Node helper's types for users are a minimal copy, since the server package exports none; `clients/node/tests/types.ts` fails the type check if the server's fixture type stops being assignable to it.
 - The Node helper has a build step, and its tests need `dist/` (the package test builds it).
 - A Docker daemon on another machine does not work, because the base URL says `localhost`.
+- With `ORCID_MOCK_URL`, the helpers' admin calls are refused (`403 forbidden_host`) unless the address is a loopback name or the host of the mock's own `PUBLIC_BASE_URL`, so a mock reached by another name needs `PUBLIC_BASE_URL` set to it ([ADR 0009](0009-admin-changes-and-live-state.md)); `GET /__admin/health` is exempt.
 - A mistyped PyPI trusted publisher cannot be checked before it is used, so it surfaces after the image and npm are public; a re-run converges.
 - The first release needs the owner to create the PyPI project and its trusted publisher ([`RELEASING.md`](../../RELEASING.md) lists the steps), and an npm token that may publish a second package.
 

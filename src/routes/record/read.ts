@@ -10,6 +10,7 @@ import {
   type OrcidApiErrorSpec,
   orcidApiError,
 } from "../../errors";
+import { NO_STORE } from "../../headers";
 import { compactJson, type Json, prettyJson } from "../../json";
 import { invalidTokenResponse } from "../../oauth/bearer";
 import { resolveRecordBearer } from "../../record/bearer";
@@ -18,6 +19,7 @@ import { parseJavaLong } from "../../record/putcode";
 import { type Blocked, blockedBy, existsOnly } from "../../record/status";
 import { type Viewer, viewerFor } from "../../record/viewer";
 import type { ItemLookup } from "../../record/wire";
+import { requestTarget } from "../../request-target";
 import type { StoredUser, TokenRecord } from "../../store/types";
 
 export type RecordEnv = {
@@ -39,9 +41,7 @@ export type RecordContext = Context<RecordEnv>;
  */
 const RECORD_HEADERS: Record<string, string> = {
   "access-control-allow-origin": "*",
-  "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
-  pragma: "no-cache",
-  expires: "0",
+  ...NO_STORE,
   "x-content-type-options": "nosniff",
   "x-frame-options": "DENY",
 };
@@ -125,9 +125,12 @@ function blockedSpec(
     case "deactivated":
       return { spec: ORCID_API_ERRORS.deactivated(orcid) };
     case "deprecated": {
-      // `/v3.0/<iD>` and what follows it, such as `/email` or a trailing slash.
-      const suffix = new URL(c.req.url).pathname
-        .split("/")
+      // `/v3.0/<iD>` and what follows it, such as `/email` or a trailing slash. The raw path is
+      // used, still percent-encoded: `c.req.path` is decoded, and a decoded control character or
+      // space does not belong in a header, while `new URL(c.req.url)` would throw on a malformed
+      // `Host`.
+      const suffix = requestTarget(c.req.url)
+        .path.split("/")
         .slice(3)
         .map((segment) => `/${segment}`)
         .join("");
@@ -189,11 +192,14 @@ function serve<A>(
     }
 
     const token = c.get("token") ?? null;
+    // Membership is read now, not from the token: a client the admin API demoted since sign-in
+    // loses its limited reads at once (ADR 0009).
+    const client = token === null ? null : await deps.store.getClient(token.client_id);
     return handler(
       {
         c,
         user,
-        viewer: viewerFor(token, user, baseUrl),
+        viewer: viewerFor(token, user, baseUrl, client?.member === true),
         negotiated,
         token,
         send: (body) =>

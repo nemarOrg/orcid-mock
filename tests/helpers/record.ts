@@ -56,18 +56,23 @@ export async function getRecord(
 
 /**
  * A request with exactly the headers given: `fetch` always adds a wildcard `Accept` header, so a
- * request with no `Accept` header at all needs a socket. Speaks HTTP/1.1 with `Connection: close`.
+ * request with no `Accept` header at all needs a socket, and so does a `Host` header that is not
+ * the server's own (`host`). Speaks HTTP/1.1 with `Connection: close`, except that `host: null`
+ * sends HTTP/1.0 with no `Host` header at all. `body` follows the headers as written, so the
+ * caller sets `Content-Length`.
  */
 export async function rawRequest(
   server: Reachable,
   method: string,
   path: string,
   headers: Record<string, string> = {},
+  host?: string | null,
+  body = "",
 ): Promise<RecordReply> {
   const url = new URL(server.baseUrl);
   const lines = [
-    `${method} ${path} HTTP/1.1`,
-    `Host: ${url.host}`,
+    `${method} ${path} HTTP/${host === null ? "1.0" : "1.1"}`,
+    ...(host === null ? [] : [`Host: ${host ?? url.host}`]),
     "Connection: close",
     ...Object.entries(headers).map(([name, value]) => `${name}: ${value}`),
     "",
@@ -80,7 +85,7 @@ export async function rawRequest(
       port: Number(url.port),
       socket: {
         open(socket) {
-          socket.write(lines.join("\r\n"));
+          socket.write(lines.join("\r\n") + body);
         },
         data(_socket, data) {
           chunks.push(new Uint8Array(data));
@@ -106,7 +111,7 @@ export async function rawRequest(
   const raw = new TextDecoder().decode(bytes);
   const split = raw.indexOf("\r\n\r\n");
   const head = raw.slice(0, split).split("\r\n");
-  const status = Number(/^HTTP\/1\.1 (\d{3})/.exec(head[0] ?? "")?.[1]);
+  const status = Number(/^HTTP\/1\.[01] (\d{3})/.exec(head[0] ?? "")?.[1]);
   const responseHeaders = new Headers();
   for (const line of head.slice(1)) {
     const colon = line.indexOf(":");

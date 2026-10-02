@@ -1,7 +1,7 @@
 // The one way a request reaches the generic 500 handler on the OpenID Connect routes: a stored
 // signing key that cannot be used. Nothing a client sends can produce one, so the key is put in
-// the real store directly, as bearer.test.ts puts probe routes on the real app; the app, its
-// routes, and the server are the real ones, and every check is an HTTP request.
+// the real store directly; the app, its routes, and the server are the real ones, and every check
+// is an HTTP request.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createMockApp } from "../src/bootstrap";
 import { STARTER_USERS_FILE } from "../src/fixtures/starter";

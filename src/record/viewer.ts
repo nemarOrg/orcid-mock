@@ -24,20 +24,27 @@ export function canSee(viewer: Viewer, visibility: Visibility): boolean {
 }
 
 /**
- * The viewer for a request: `limited` when the token carries `/read-limited` and belongs to the
- * record's own iD; otherwise `public`. Membership is not checked here: the authorize endpoint
- * refuses `/read-limited` to a client that is not a member (src/oauth/authorize.ts), so only a
- * member client's token can carry it.
- * orcid-mock choice for a token that fails either test (another user's token, a token without
- * the scope, or a client-credentials token): the public view, not an error. ORCID's member API
- * host, where `/read-limited` applies, was not observed.
+ * The viewer for a request: `limited` when the token carries `/read-limited`, belongs to the
+ * record's own iD, and its client is a member now (`clientIsMember`, which the caller reads from
+ * the store at request time so that an admin change takes effect at once). Authorize, the code
+ * exchange, and refresh refuse `/read-limited` to a client that is not a member, so only a
+ * member client's token can carry it; the membership test here covers a client that stops being
+ * a member after the token was issued, and nothing else about membership is stored on a token
+ * (ADR 0009).
+ * orcid-mock choice for a token that fails any test (another user's token, a token without the
+ * scope, a client-credentials token, or a client that lost its membership): the public view, not
+ * an error. ORCID's member API host, where `/read-limited` applies, was not observed.
  */
 export function viewerFor(
   token: TokenRecord | null,
   user: Pick<StoredUser, "orcid">,
   baseUrl: string,
+  clientIsMember: boolean,
 ): Viewer {
   const limited =
-    token !== null && token.orcid === user.orcid && token.scopes.includes("/read-limited");
+    clientIsMember &&
+    token !== null &&
+    token.orcid === user.orcid &&
+    token.scopes.includes("/read-limited");
   return { level: limited ? "limited" : "public", baseUrl };
 }

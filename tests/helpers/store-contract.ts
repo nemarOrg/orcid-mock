@@ -37,6 +37,7 @@ function code(value: string, over: Partial<AuthCode> = {}): AuthCode {
   };
 }
 
+// A token record holds no client membership: it is read from the client at request time (ADR 0009).
 function token(access: string, refresh: string, over: Partial<TokenRecord> = {}): TokenRecord {
   return {
     access_token: access,
@@ -44,7 +45,6 @@ function token(access: string, refresh: string, over: Partial<TokenRecord> = {})
     client_id: "APP-ORCIDMOCK000001",
     orcid: "0000-0002-1825-0097",
     scopes: ["/authenticate"],
-    member: false,
     issued_at_ms: 1_000,
     expires_at_ms: 631_139_518_000,
     revoked: false,
@@ -142,6 +142,76 @@ export function runStoreContract(name: string, makeStore: () => Store | Promise<
         expect(await store.deleteUser(user.orcid)).toBe(true);
         expect(await store.getUser(user.orcid)).toBeNull();
         expect(await store.deleteUser(user.orcid)).toBe(false);
+      });
+
+      /** Codes, tokens, and sessions for `mine`, and for `theirs`, in one store. */
+      const populate = async (store: Store, mine: string, theirs: string): Promise<void> => {
+        await store.putCode(code("mine00", { orcid: mine }));
+        await store.putCode(code("thei00", { orcid: theirs }));
+        await store.putTokens(token("a-mine", "r-mine", { orcid: mine }));
+        await store.putTokens(token("a-mine2", "r-mine2", { orcid: mine }));
+        await store.putTokens(token("a-theirs", "r-theirs", { orcid: theirs }));
+        await store.putTokens(token("a-cc", "r-cc", { orcid: null, auth_time_ms: null }));
+        await store.putSession({ ...session("s-mine"), orcid: mine });
+        await store.putSession({ ...session("s-theirs"), orcid: theirs });
+      };
+
+      test("deleteUser also removes that iD's codes, tokens, and sessions, and no one else's", async () => {
+        const store = await fresh();
+        const [mine, theirs] = (await store.listUsers()).map((user) => user.orcid);
+        if (mine === undefined || theirs === undefined) throw new Error("the baseline has users");
+        await populate(store, mine, theirs);
+
+        expect(await store.deleteUser(mine)).toBe(true);
+
+        expect(await store.consumeCode("mine00")).toBeNull();
+        expect(await store.getAccessToken("a-mine")).toBeNull();
+        expect(await store.getRefreshToken("r-mine")).toBeNull();
+        expect(await store.getAccessToken("a-mine2")).toBeNull();
+        expect(await store.getRefreshToken("r-mine2")).toBeNull();
+        expect(await store.getSession("s-mine")).toBeNull();
+
+        expect((await store.consumeCode("thei00"))?.orcid).toBe(theirs);
+        expect((await store.getAccessToken("a-theirs"))?.orcid).toBe(theirs);
+        expect((await store.getRefreshToken("r-theirs"))?.access_token).toBe("a-theirs");
+        expect((await store.getAccessToken("a-cc"))?.orcid).toBeNull();
+        expect((await store.getSession("s-theirs"))?.orcid).toBe(theirs);
+      });
+
+      test("deleteUser of an iD with no user still removes what was issued to it", async () => {
+        const store = await fresh();
+        const orcid = "0000-0002-1825-0097";
+        await populate(store, orcid, "0000-0001-5109-3700");
+
+        expect(await store.deleteUser(orcid)).toBe(false);
+
+        expect(await store.consumeCode("mine00")).toBeNull();
+        expect(await store.getAccessToken("a-mine")).toBeNull();
+        expect(await store.getSession("s-mine")).toBeNull();
+        expect(await store.getAccessToken("a-theirs")).not.toBeNull();
+      });
+
+      test("a revoked token is removed with its user too", async () => {
+        const store = await fresh();
+        const user = await firstUser(store);
+        await store.putTokens(token("a1", "r1", { orcid: user.orcid }));
+        await store.revoke("a1");
+        await store.deleteUser(user.orcid);
+        expect(await store.getAccessToken("a1")).toBeNull();
+        expect(await store.getRefreshToken("r1")).toBeNull();
+      });
+
+      test("replacing a user with upsertUser keeps their codes, tokens, and sessions", async () => {
+        const store = await fresh();
+        const user = await firstUser(store);
+        await populate(store, user.orcid, "0000-0001-5109-3700");
+
+        expect(await store.upsertUser({ ...user, locked: true })).toBe("replaced");
+
+        expect((await store.consumeCode("mine00"))?.orcid).toBe(user.orcid);
+        expect((await store.getAccessToken("a-mine"))?.orcid).toBe(user.orcid);
+        expect((await store.getRefreshToken("r-mine2"))?.orcid).toBe(user.orcid);
+        expect((await store.getSession("s-mine"))?.orcid).toBe(user.orcid);
       });
 
       test("mutating a passed-in or returned user does not change stored state", async () => {

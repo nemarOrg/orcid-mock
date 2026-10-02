@@ -8,7 +8,9 @@
 import type { Context } from "hono";
 import type { AppEnv } from "../app";
 import { JSON_LATIN1, oauthError } from "../errors";
+import { requestTarget } from "../request-target";
 import type { ScopeName, StoredClient, StoredUser } from "../store/types";
+import { accountState } from "./account-state";
 import { type Checked, fail } from "./checked";
 import { issueCode } from "./codes";
 import { renderConsentPage } from "./consent-page";
@@ -128,9 +130,18 @@ function errorRedirect(c: Ctx, redirectUri: string, error: string): Response {
 
 /** Why a user may not sign in, or null: orcid-mock choice, real ORCID refuses these sign-ins. */
 function refusal(user: StoredUser, param: string): string | null {
-  if (user.deactivated) return `${param} iD ${user.orcid} is deactivated and cannot sign in`;
-  if (user.locked) return `${param} iD ${user.orcid} is locked and cannot sign in`;
-  return null;
+  const state = accountState(user);
+  return state === null ? null : `${param} iD ${user.orcid} is ${state} and cannot sign in`;
+}
+
+/**
+ * A 400 for a sign-in the caller asked for by name (`login_as` or the consent form's `orcid`).
+ * `error_description` comes first, like the other `invalid_request` errors of this endpoint, but
+ * the content type is not ISO-8859-1 like theirs: this text echoes the iD the caller sent, which
+ * can hold any character, so it stays UTF-8 (`application/json` is UTF-8 by definition).
+ */
+function signInError(c: Ctx, description: string): Response {
+  return oauthError(c, 400, "invalid_request", description, { descriptionFirst: true });
 }
 
 /** The user a `login_as` or consent-form `orcid` names, or the 400 that says why not. */
@@ -141,14 +152,12 @@ async function signInTarget(
 ): Promise<Checked<{ user: StoredUser }>> {
   const { store } = c.get("deps");
   if (orcid === null || orcid === "") {
-    return fail(oauthError(c, 400, "invalid_request", `Missing parameter: ${param}`));
+    return fail(signInError(c, `Missing parameter: ${param}`));
   }
   const user = await store.getUser(orcid);
-  if (!user) {
-    return fail(oauthError(c, 400, "invalid_request", `Unknown ${param} iD: ${orcid}`));
-  }
+  if (!user) return fail(signInError(c, `Unknown ${param} iD: ${orcid}`));
   const why = refusal(user, param);
-  if (why !== null) return fail(oauthError(c, 400, "invalid_request", why));
+  if (why !== null) return fail(signInError(c, why));
   return { ok: true, user };
 }
 
@@ -210,7 +219,9 @@ function codeRedirect(request: AuthorizeRequest, code: string): string {
 
 export async function authorizeGet(c: Ctx): Promise<Response> {
   const { store, config } = c.get("deps");
-  const checked = await checkRequest(c, new URL(c.req.url).searchParams);
+  // The query comes from the raw URL text: `new URL(c.req.url)` parses the `Host` header and throws
+  // on a malformed one, which would make a valid request a 500.
+  const checked = await checkRequest(c, new URLSearchParams(requestTarget(c.req.url).search));
   if (!checked.ok) return checked.response;
   const { request } = checked;
 

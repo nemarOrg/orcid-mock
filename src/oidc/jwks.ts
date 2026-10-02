@@ -1,7 +1,8 @@
 // GET /oauth/jwks: the public half of the signing key.
 import type { Context } from "hono";
 import type { AppEnv } from "../app";
-import { corsHeaders, NO_STORE, OIDC_JSON } from "./headers";
+import { NO_STORE } from "../headers";
+import { corsHeaders, OIDC_JSON } from "./headers";
 import { getSigningKey } from "./keys";
 
 /**

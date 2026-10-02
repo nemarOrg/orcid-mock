@@ -1,10 +1,12 @@
 // GET and POST /oauth/userinfo: who the access token's user is.
 import type { Context } from "hono";
 import type { AppEnv } from "../app";
+import { NO_STORE } from "../headers";
+import { accountState } from "../oauth/account-state";
 import { checkAccessToken, readBearerHeader } from "../oauth/bearer";
 import { publicNameClaims } from "../oauth/display-name";
 import type { StoredUser, TokenRecord } from "../store/types";
-import { corsHeaders, NO_STORE, OIDC_JSON } from "./headers";
+import { corsHeaders, OIDC_JSON } from "./headers";
 
 type Ctx = Context<AppEnv>;
 
@@ -69,7 +71,8 @@ async function parameterAccessToken(c: Ctx): Promise<string | null> {
  * through to the `Authorization` header, so a bad parameter does not hide a good header:
  * https://github.com/ORCID/ORCID-Source/blob/b34bb7b5d1e4eb7ac9f63a54a2094d6b37775a5c/orcid-web/src/main/java/org/orcid/frontend/web/controllers/OpenIDController.java#L93-L105
  * GET reads the header alone.
- * orcid-mock choice: a token whose user has been deleted is as invalid as an unknown one.
+ * orcid-mock choice: a token whose user has been deleted, locked, or deactivated is as invalid as
+ * an unknown one (ADR 0009).
  */
 async function userForRequest(c: Ctx): Promise<StoredUser | null> {
   const { store } = c.get("deps");
@@ -80,7 +83,7 @@ async function userForRequest(c: Ctx): Promise<StoredUser | null> {
       continue;
     }
     const user = await store.getUser(checked.token.orcid);
-    if (user !== null) return user;
+    if (user !== null && accountState(user) === null) return user;
   }
   return null;
 }

@@ -1,5 +1,5 @@
-// The Store interface and every record type. FROZEN after phase 1: phases 2 to 4 consume it and
-// cannot change a signature without the lead.
+// The Store interface and every record type. A stable interface: changing a signature affects
+// every route module and the store contract suite (tests/helpers/store-contract.ts).
 // One Store instance is one tenant, so no method takes a tenant id; all mutable state lives
 // behind this interface, never in module or process variables.
 // Everything is async so a Durable Object store can implement it; records are plain
@@ -87,7 +87,6 @@ export interface TokenRecord {
   /** Null for a client-credentials token. */
   orcid: string | null;
   scopes: ScopeName[];
-  member: boolean;
   issued_at_ms: number;
   expires_at_ms: number;
   revoked: boolean;
@@ -130,7 +129,17 @@ export interface Store {
   /** In insertion order; replacing a user keeps its place. */
   listUsers(): Promise<StoredUser[]>;
   insertUser(user: StoredUser): Promise<"created" | "conflict">;
+  /**
+   * Replacing a user keeps every code, token, and session issued to their iD: it is the same
+   * person, edited (ADR 0009).
+   */
   upsertUser(user: StoredUser): Promise<"created" | "replaced">;
+  /**
+   * Removes the user and, in the same atomic step, every authorization code, access and refresh
+   * token, and session issued to that iD, so a user later created with the same iD starts with
+   * nothing carried over (ADR 0009). Returns whether there was a user; the codes, tokens, and
+   * sessions are removed either way.
+   */
   deleteUser(orcid: string): Promise<boolean>;
 
   getClient(clientId: string): Promise<StoredClient | null>;

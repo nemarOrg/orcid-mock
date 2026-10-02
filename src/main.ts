@@ -8,7 +8,7 @@ import { FixtureError } from "./fixtures/load";
 import { USERS_SCHEMA_ID, usersFileJsonSchemaText } from "./fixtures/schema";
 import { starterFixtureJson } from "./fixtures/starter";
 import { mintOrcidId } from "./orcid-id";
-import { startServer } from "./server";
+import { type RunningServer, startServer } from "./server";
 
 const USAGE = `orcid-mock ${pkg.version}: an ephemeral mock of the ORCID OAuth, OpenID Connect, and public record API
 
@@ -55,7 +55,17 @@ function fail(message: string, code = 2): never {
 
 async function serve(flags: ConfigFlags): Promise<void> {
   const { core, server: serverConfig } = resolveConfig(process.env, flags);
-  const server = await startServer({
+  // The handlers go in before the server starts, which can take a while on a large users file: a
+  // signal that arrives first would otherwise kill the process with 143 instead of 0. One that
+  // arrives before there is a server has nothing to stop, so the process just exits 0.
+  let server: RunningServer | undefined;
+  const shutdown = async (): Promise<void> => {
+    await server?.stop();
+    process.exit(0);
+  };
+  process.once("SIGTERM", shutdown);
+  process.once("SIGINT", shutdown);
+  server = await startServer({
     port: serverConfig.port,
     host: serverConfig.host,
     usersFile: serverConfig.usersFile,
@@ -64,13 +74,6 @@ async function serve(flags: ConfigFlags): Promise<void> {
   });
   // The readiness line is the only thing on stdout; logs go to stderr.
   console.log(JSON.stringify({ event: "listening", url: server.url, port: server.port }));
-
-  const shutdown = async (): Promise<void> => {
-    await server.stop();
-    process.exit(0);
-  };
-  process.once("SIGTERM", shutdown);
-  process.once("SIGINT", shutdown);
 }
 
 function printIds(count: number): void {

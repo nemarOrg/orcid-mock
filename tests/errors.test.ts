@@ -66,7 +66,7 @@ describe("an unrouted OAuth or discovery path answers in OAuth's shape", () => {
     });
   }
 
-  // Phase 3 serves GET on these three paths; any other method has no route.
+  // Discovery and the JWKS answer GET only; any other method has no route.
   for (const path of ["/.well-known/openid-configuration", "/oauth/jwks"]) {
     test(`POST ${path}`, async () => {
       const { response, json } = await get(path, { method: "POST" });
@@ -76,7 +76,7 @@ describe("an unrouted OAuth or discovery path answers in OAuth's shape", () => {
   }
 });
 
-// The `descriptionFirst` option is covered over HTTP in phase 2, through invalid_client.
+// The `descriptionFirst` option is covered over HTTP, through invalid_client.
 describe("the OAuth error helper's default key order", () => {
   test("error comes first by default, over HTTP on an unrouted /oauth path", async () => {
     const { text } = await get("/oauth/x");

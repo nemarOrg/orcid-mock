@@ -14,6 +14,14 @@ import { STARTER_USERS_FILE } from "./fixtures/starter";
 import type { LogLevel } from "./log";
 import { createLogger, silentLogger } from "./log";
 
+/**
+ * The largest request body the socket accepts: 8 MiB, which is far above any fixture or form this
+ * server takes (a users file of thousands of users is well under 1 MiB). Bun's default is 128
+ * MiB, which an unauthenticated client could make the process buffer, and parse as JSON, once per
+ * request. Bun answers a larger body 413 and closes the connection.
+ */
+export const MAX_REQUEST_BODY_BYTES = 8 * 1024 * 1024;
+
 export interface StartOptions {
   /** 0 picks a free port. Default 9700. */
   port?: number;
@@ -72,6 +80,22 @@ function boundUrl(host: string, port: number): string {
   return `http://${name.includes(":") && !name.startsWith("[") ? `[${name}]` : name}:${port}`;
 }
 
+/**
+ * The request with an absolute URL, so that routing never depends on `Host`. Bun builds
+ * `Request.url` from the `Host` header and, when that header cannot be made into a URL (empty,
+ * or holding a space, `/`, `@`, `?`, or `#`, or absent in HTTP/1.0), leaves it as the bare
+ * request target; Hono's router then misreads the path and answers 404 to every route. The copy
+ * puts the raw target under the origin of `PUBLIC_BASE_URL` and keeps the method, the headers
+ * (the original `Host` included, which the admin guard reads to refuse it), and the body.
+ */
+function withStableUrl(request: Request, publicBaseUrl: string): Request {
+  if (!request.url.startsWith("/")) return request;
+  // `new URL(request.url, origin)` would read a target such as `//evil/x` as protocol-relative, so
+  // the target is appended to the origin as text. Parsing it as a whole URL then normalizes dot
+  // segments and backslashes exactly as Bun does for a request with a usable `Host`.
+  return new Request(new URL(`${new URL(publicBaseUrl).origin}${request.url}`).href, request);
+}
+
 export async function startServer(opts: StartOptions = {}): Promise<RunningServer> {
   const host = opts.host ?? DEFAULT_HOST;
   const logLevel = opts.logLevel ?? "info";
@@ -89,7 +113,13 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
     source: opts.usersFile ? `users file ${opts.usersFile}` : "users file",
   });
 
-  const server = Bun.serve({ port: opts.port ?? DEFAULT_PORT, hostname: host, fetch: app.fetch });
+  const server = Bun.serve({
+    port: opts.port ?? DEFAULT_PORT,
+    hostname: host,
+    maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
+    fetch: (request, bunServer) =>
+      app.fetch(withStableUrl(request, config.publicBaseUrl), bunServer),
+  });
   const port = server.port ?? 0;
   config.publicBaseUrl = explicitUrl ?? boundUrl(host, port);
 

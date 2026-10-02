@@ -1,6 +1,6 @@
 # Architecture Decision Record (ADR) 0007: Record API fidelity and deviations
 
-**Status:** accepted
+**Status:** accepted; amended by [ADR 0009](0009-admin-changes-and-live-state.md), which makes the `limited` view depend on the token's client being a member when the read happens, not on a flag stored on the token
 **Date:** 2026-10-01
 **Owner:** Seyed Yahya Shirazi
 
