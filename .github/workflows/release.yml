@@ -225,7 +225,7 @@ jobs:
         working-directory: dist
         run: sha256sum --check SHA256SUMS
       # What the platform runs test is exactly what the release job uploads.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: binaries
           path: |
@@ -274,7 +274,7 @@ jobs:
           ls -l ../../node-dist
           test -f "../../node-dist/nemarorg-orcid-mock-testing-${VERSION}.tgz"
           test "$(find ../../node-dist -type f | wc -l)" -eq 1
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: node-dist
           path: node-dist/*.tgz
@@ -323,7 +323,7 @@ jobs:
           test -f "dist/orcid_mock_testing-${normalized}.tar.gz"
           # uv build also writes dist/.gitignore, so count only the distribution files.
           test "$(find dist -type f \( -name '*.whl' -o -name '*.tar.gz' \) | wc -l)" -eq 2
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: python-dist
           path: |
