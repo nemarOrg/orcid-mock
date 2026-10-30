@@ -9,7 +9,7 @@
 
 # The builder runs on the machine doing the build and cross-compiles for TARGETARCH, so a
 # multi-arch build never runs Bun under emulation; only the final stage is per-architecture.
-FROM --platform=$BUILDPLATFORM oven/bun:1.4.2@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895 AS build
+FROM --platform=$BUILDPLATFORM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d AS build
 ARG TARGETARCH
 WORKDIR /app
 COPY package.json bun.lock ./
